@@ -116,6 +116,21 @@ describe("Cursor config", () => {
     expect(JSON.stringify(merged)).not.toContain("ghp_");
   });
 
+  it("can merge Anchor with a custom executable path", () => {
+    const merged = mergeAnchorMcpConfig(
+      {},
+      {
+        command: "/usr/local/bin/anchor",
+        args: ["serve"],
+      },
+    );
+
+    expect(merged.mcpServers?.anchor).toEqual({
+      command: "/usr/local/bin/anchor",
+      args: ["serve"],
+    });
+  });
+
   it("creates Cursor MCP config and rule files", () => {
     const cwd = tempDir();
     const config = ensureCursorConfig(cwd);

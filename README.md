@@ -182,6 +182,15 @@ Run `anchor index --repo owner/name --limit 200`. Confirm merged PRs exist and t
 MCP server not visible in Cursor:
 Rerun `anchor init`, reload Cursor, and confirm `.cursor/mcp.json` contains the `anchor` server entry.
 
+If Cursor was opened from the macOS app and cannot find the global `anchor` command, update Anchor and rerun `anchor init`:
+
+```bash
+npm install -g @pratik7368patil/anchor@latest
+anchor init
+```
+
+Newer Anchor versions write the resolved executable path into `.cursor/mcp.json` when possible, which avoids GUI app `PATH` issues.
+
 SQLite database missing:
 Run `anchor index`. The expected path is `.anchor/index.sqlite`.
 

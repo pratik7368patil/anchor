@@ -1,4 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
+  anchorMcpEntry,
   detectGitHubRepo,
   detectGitRoot,
   ensureAnchorGitExclude,
@@ -17,6 +20,14 @@ export type InitResult = {
   gitExcludeUpdated: boolean;
 };
 
+function cursorMcpEntryForCurrentInstall(): Record<string, unknown> {
+  const invokedPath = process.argv[1];
+  if (invokedPath && path.isAbsolute(invokedPath) && fs.existsSync(invokedPath) && !invokedPath.endsWith(".ts")) {
+    return anchorMcpEntry(invokedPath, ["serve"]);
+  }
+  return anchorMcpEntry("npx", ["-y", "@pratik7368patil/anchor@latest", "serve"]);
+}
+
 export function runInit(cwd: string): InitResult {
   const gitRoot = detectGitRoot(cwd);
   if (!gitRoot) {
@@ -28,7 +39,7 @@ export function runInit(cwd: string): InitResult {
     throw new Error("No GitHub origin remote detected. Set origin to a GitHub repo, then rerun anchor init.");
   }
 
-  const config = ensureCursorConfig(gitRoot);
+  const config = ensureCursorConfig(gitRoot, cursorMcpEntryForCurrentInstall());
   const rule = ensureCursorRule(gitRoot);
   const gitExclude = ensureAnchorGitExclude(gitRoot);
 

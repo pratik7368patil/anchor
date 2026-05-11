@@ -20,14 +20,17 @@ export type CursorMcpConfig = {
   [key: string]: unknown;
 };
 
-export function anchorMcpEntry(): Record<string, unknown> {
+export function anchorMcpEntry(command = "anchor", args = ["serve"]): Record<string, unknown> {
   return {
-    command: "anchor",
-    args: ["serve"],
+    command,
+    args,
   };
 }
 
-export function mergeAnchorMcpConfig(existing: unknown): CursorMcpConfig {
+export function mergeAnchorMcpConfig(
+  existing: unknown,
+  anchorEntry: Record<string, unknown> = anchorMcpEntry(),
+): CursorMcpConfig {
   const base =
     existing && typeof existing === "object" && !Array.isArray(existing)
       ? ({ ...(existing as Record<string, unknown>) } as CursorMcpConfig)
@@ -41,12 +44,15 @@ export function mergeAnchorMcpConfig(existing: unknown): CursorMcpConfig {
     ...base,
     mcpServers: {
       ...currentServers,
-      anchor: anchorMcpEntry(),
+      anchor: anchorEntry,
     },
   };
 }
 
-export function ensureCursorConfig(cwd: string): { path: string; created: boolean; updated: boolean } {
+export function ensureCursorConfig(
+  cwd: string,
+  anchorEntry: Record<string, unknown> = anchorMcpEntry(),
+): { path: string; created: boolean; updated: boolean } {
   const cursorDir = path.join(cwd, ".cursor");
   const configPath = path.join(cursorDir, "mcp.json");
   fs.mkdirSync(cursorDir, { recursive: true });
@@ -60,7 +66,7 @@ export function ensureCursorConfig(cwd: string): { path: string; created: boolea
     created = true;
   }
 
-  const merged = mergeAnchorMcpConfig(existing);
+  const merged = mergeAnchorMcpConfig(existing, anchorEntry);
   const next = `${JSON.stringify(merged, null, 2)}\n`;
   const previous = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
   const updated = previous !== next;
