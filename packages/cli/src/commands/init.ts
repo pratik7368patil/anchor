@@ -40,5 +40,5 @@ export function printInitResult(result: InitResult): void {
   console.log(`Cursor rule: ${result.rulePath}`);
   console.log(`MCP config ${result.mcpConfigUpdated ? "updated" : "already up to date"}.`);
   console.log(`Cursor rule ${result.ruleCreated ? "created" : "already existed"}.`);
-  console.log("No GitHub token was written to disk. Cursor will read ${env:GITHUB_TOKEN} at runtime.");
+  console.log("No GitHub token was written to disk. Anchor can use GITHUB_TOKEN, GH_TOKEN, or gh auth token for indexing.");
 }

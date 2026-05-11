@@ -24,9 +24,6 @@ export function anchorMcpEntry(): Record<string, unknown> {
   return {
     command: "anchor",
     args: ["serve"],
-    env: {
-      GITHUB_TOKEN: "${env:GITHUB_TOKEN}",
-    },
   };
 }
 

@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { SCHEMA_SQL } from "./migrations.js";
 import type { IndexStatus, PullRequestRecord, SourceType, WisdomUnit } from "../types.js";
 import { redactedHistoricalText, sanitizeHistoricalText } from "../security/sanitize.js";
+import { resolveGitHubToken } from "../utils/github-token.js";
 
 export type AnchorDatabase = Database.Database;
 
@@ -248,7 +249,7 @@ export function upsertPullRequest(
 
 export function getIndexStatus(
   cwd: string,
-  githubTokenConfigured = Boolean(process.env.GITHUB_TOKEN),
+  githubTokenConfigured = Boolean(resolveGitHubToken({ cwd }).token),
   databasePath = defaultDatabasePath(cwd),
 ): IndexStatus {
   if (!fs.existsSync(databasePath)) {

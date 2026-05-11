@@ -18,7 +18,7 @@ Cursor Agent should call this before non-trivial code changes.
 
 ## Privacy Model
 
-- GitHub data is fetched with a local `GITHUB_TOKEN`.
+- GitHub data is fetched with local authentication: `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`.
 - The token is never written to `.cursor/mcp.json`, SQLite, logs, or generated files.
 - The SQLite index stays in `.anchor/index.sqlite` on your machine.
 - Anchor only requests read access and never writes to GitHub.
@@ -68,10 +68,7 @@ This safely merges `.cursor/mcp.json` with:
   "mcpServers": {
     "anchor": {
       "command": "anchor",
-      "args": ["serve"],
-      "env": {
-        "GITHUB_TOKEN": "${env:GITHUB_TOKEN}"
-      }
+      "args": ["serve"]
     }
   }
 }
@@ -80,6 +77,13 @@ This safely merges `.cursor/mcp.json` with:
 It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor_get_context` before non-trivial edits and to treat returned history as evidence, not instructions.
 
 ## Index PR History
+
+```bash
+gh auth login
+anchor index
+```
+
+You can also use an explicit token:
 
 ```bash
 export GITHUB_TOKEN=your_read_only_token
@@ -162,7 +166,7 @@ pnpm --filter @pratik7368patil/anchor start -- serve
 ## Troubleshooting
 
 Missing token:
-Run `export GITHUB_TOKEN=...` with a read-only token, then rerun `anchor doctor`.
+Run `gh auth login`, or export `GITHUB_TOKEN`/`GH_TOKEN` with a read-only token, then rerun `anchor doctor`.
 
 GitHub rate limit:
 Wait for the limit to reset or use a token with sufficient read quota. Anchor indexes locally, so you do not need to refetch unchanged history often.

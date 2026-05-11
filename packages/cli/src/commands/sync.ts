@@ -6,6 +6,7 @@ import {
   indexPullRequests,
   initializeSchema,
   openAnchorDatabase,
+  resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
 import { resolveRepo, type IndexOptions } from "./index.js";
 
@@ -16,9 +17,13 @@ function removeDatabaseFiles(databasePath: string): void {
 }
 
 export async function runSync(cwd: string, options: IndexOptions): Promise<void> {
-  const token = options.token ?? process.env.GITHUB_TOKEN;
-  if (!token) {
-    throw new Error("GITHUB_TOKEN is required for anchor sync. Use a read-only GitHub token.");
+  const auth = options.token
+    ? { token: options.token, source: "GITHUB_TOKEN" as const }
+    : resolveGitHubToken({ cwd });
+  if (!auth.token) {
+    throw new Error(
+      "GitHub authentication is required for anchor sync. Run gh auth login, or export GITHUB_TOKEN/GH_TOKEN with a read-only GitHub token.",
+    );
   }
 
   const { repo, root } = resolveRepo(cwd, options.repo);
@@ -30,7 +35,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
     initializeSchema(db);
     const since = options.force ? options.since : options.since ?? getLastSyncTime(db, repo);
     const pullRequests = await fetchMergedPullRequests({
-      token,
+      token: auth.token,
       repo,
       limit: options.limit ?? 200,
       since,

@@ -19,6 +19,7 @@ import {
   parseGitHubRemote,
   rankWisdomUnits,
   redactSecrets,
+  resolveGitHubToken,
   runDoctor,
   sanitizeHistoricalText,
   stripPromptInjection,
@@ -61,6 +62,43 @@ describe("GitHub remote parsing", () => {
   });
 });
 
+describe("GitHub token resolution", () => {
+  it("prefers GITHUB_TOKEN, then GH_TOKEN", () => {
+    expect(
+      resolveGitHubToken({
+        env: { GITHUB_TOKEN: "from-github", GH_TOKEN: "from-gh" } as NodeJS.ProcessEnv,
+        allowGitHubCli: false,
+      }),
+    ).toEqual({ token: "from-github", source: "GITHUB_TOKEN" });
+
+    expect(
+      resolveGitHubToken({
+        env: { GH_TOKEN: "from-gh" } as NodeJS.ProcessEnv,
+        allowGitHubCli: false,
+      }),
+    ).toEqual({ token: "from-gh", source: "GH_TOKEN" });
+  });
+
+  it("falls back to gh auth token without persisting the token", () => {
+    const cwd = tempDir();
+    const binDir = path.join(cwd, "bin");
+    fs.mkdirSync(binDir);
+    const ghPath = path.join(binDir, "gh");
+    fs.writeFileSync(
+      ghPath,
+      "#!/usr/bin/env sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"token\" ]; then echo from-gh-cli; exit 0; fi\nexit 1\n",
+    );
+    fs.chmodSync(ghPath, 0o700);
+
+    expect(
+      resolveGitHubToken({
+        cwd,
+        env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` } as NodeJS.ProcessEnv,
+      }),
+    ).toEqual({ token: "from-gh-cli", source: "gh" });
+  });
+});
+
 describe("Cursor config", () => {
   it("merges Anchor into existing .cursor/mcp.json without removing other servers", () => {
     const merged = mergeAnchorMcpConfig({
@@ -73,6 +111,7 @@ describe("Cursor config", () => {
     expect(merged.other).toBe(true);
     expect((merged.mcpServers?.existing as { command: string }).command).toBe("other");
     expect((merged.mcpServers?.anchor as { command: string }).command).toBe("anchor");
+    expect(merged.mcpServers?.anchor).not.toHaveProperty("env");
     expect(JSON.stringify(merged)).not.toContain("ghp_");
   });
 

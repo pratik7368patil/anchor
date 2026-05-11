@@ -6,6 +6,7 @@ import {
   fetchMergedPullRequests,
   indexPullRequests,
   openAnchorDatabase,
+  resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
 
 export type IndexOptions = {
@@ -33,9 +34,13 @@ export function resolveRepo(cwd: string, repoOption?: string): { repo: string; r
 }
 
 export async function runIndex(cwd: string, options: IndexOptions): Promise<void> {
-  const token = options.token ?? process.env.GITHUB_TOKEN;
-  if (!token) {
-    throw new Error("GITHUB_TOKEN is required for anchor index. Use a read-only GitHub token.");
+  const auth = options.token
+    ? { token: options.token, source: "GITHUB_TOKEN" as const }
+    : resolveGitHubToken({ cwd });
+  if (!auth.token) {
+    throw new Error(
+      "GitHub authentication is required for anchor index. Run gh auth login, or export GITHUB_TOKEN/GH_TOKEN with a read-only GitHub token.",
+    );
   }
 
   const { repo, root } = resolveRepo(cwd, options.repo);
@@ -45,7 +50,7 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
   const db = openAnchorDatabase(root, databasePath);
   try {
     const pullRequests = await fetchMergedPullRequests({
-      token,
+      token: auth.token,
       repo,
       limit: options.limit ?? 200,
       since: options.since,

@@ -11,7 +11,7 @@ npm install -g @pratik7368patil/anchor
 Use it inside a GitHub-backed repo:
 
 ```bash
-export GITHUB_TOKEN=your_read_only_token
+gh auth login
 anchor init
 anchor index
 anchor doctor

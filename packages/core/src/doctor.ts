@@ -4,6 +4,7 @@ import type { Octokit } from "@octokit/rest";
 import { checkSchema, defaultDatabasePath, openAnchorDatabase } from "./db/database.js";
 import type { DoctorCheck, DoctorReport } from "./types.js";
 import { createGitHubClient } from "./github/client.js";
+import { githubAuthFixMessage, resolveGitHubToken } from "./utils/github-token.js";
 import { detectGitHubRepo, detectGitRoot } from "./utils/git.js";
 
 export type DoctorOptions = {
@@ -42,13 +43,14 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     ),
   );
 
-  const token = env.GITHUB_TOKEN;
+  const auth = resolveGitHubToken({ cwd: gitRoot ?? cwd, env });
+  const token = auth.token;
   checks.push(
     check(
-      "GITHUB_TOKEN present",
+      "GitHub auth token available",
       Boolean(token),
-      token ? "GITHUB_TOKEN is configured." : "GITHUB_TOKEN is missing.",
-      "Export a read-only GitHub token: export GITHUB_TOKEN=...",
+      token ? `GitHub token resolved from ${auth.source}.` : "No GitHub token source found.",
+      githubAuthFixMessage(),
     ),
   );
 
@@ -73,7 +75,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
         "GitHub API reachable",
         false,
         "Skipped because repo or token is missing.",
-        "Fix the GitHub remote and GITHUB_TOKEN, then rerun anchor doctor.",
+        `Fix the GitHub remote and authentication. ${githubAuthFixMessage()}`,
       ),
     );
   }
