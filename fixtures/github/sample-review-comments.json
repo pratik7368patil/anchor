@@ -1,0 +1,14 @@
+[
+  {
+    "user": { "login": "reviewer-a" },
+    "body": "Do not remove the `AuthCache` lazy constraint; this broke login on cold starts before.",
+    "path": "src/auth/cache.ts",
+    "created_at": "2024-02-02T11:00:00Z"
+  },
+  {
+    "user": { "login": "security-reviewer" },
+    "body": "Security note: should not log bearer tokens.",
+    "path": "src/payments/webhook.ts",
+    "created_at": "2024-04-02T08:00:00Z"
+  }
+]

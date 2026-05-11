@@ -1,0 +1,23 @@
+{
+  "name": "cli",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "anchor": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap",
+    "start": "tsx src/index.ts",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "@anchor/core": "workspace:*",
+    "@anchor/mcp-server": "workspace:*",
+    "commander": "^14.0.2",
+    "zod": "^4.1.13"
+  }
+}

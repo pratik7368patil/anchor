@@ -1,0 +1,21 @@
+{
+  "name": "@anchor/mcp-server",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsup src/server.ts --format esm --dts --sourcemap",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "@anchor/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.1.13"
+  }
+}

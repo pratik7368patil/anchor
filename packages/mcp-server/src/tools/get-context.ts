@@ -1,0 +1,59 @@
+import fs from "node:fs";
+import { z } from "zod";
+import {
+  defaultDatabasePath,
+  formatAnchorContext,
+  openAnchorDatabase,
+  rankWisdomUnits,
+  truncateText,
+} from "@anchor/core";
+
+export const AnchorGetContextSchema = z.object({
+  task: z.string().min(1).max(2000),
+  files: z.array(z.string().min(1)).max(50).optional(),
+  symbols: z.array(z.string().min(1)).max(100).optional(),
+  diff: z.string().optional(),
+  currentCode: z.string().optional(),
+  maxResults: z.number().int().min(1).max(12).default(8).optional(),
+});
+
+export async function handleAnchorGetContext(input: unknown, cwd: string) {
+  const parsed = AnchorGetContextSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      content: [{ type: "text" as const, text: `Invalid anchor_get_context input: ${parsed.error.message}` }],
+      isError: true,
+    };
+  }
+
+  const databasePath = defaultDatabasePath(cwd);
+  if (!fs.existsSync(databasePath)) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Anchor index not found at ${databasePath}. Run anchor index first.`,
+        },
+      ],
+      isError: true,
+    };
+  }
+
+  const db = openAnchorDatabase(cwd, databasePath);
+  try {
+    const query = {
+      ...parsed.data,
+      diff: truncateText(parsed.data.diff, 12000),
+      currentCode: truncateText(parsed.data.currentCode, 12000),
+      maxResults: parsed.data.maxResults ?? 8,
+    };
+    const units = rankWisdomUnits(db, query);
+    const formatted = formatAnchorContext(units, query);
+    return {
+      content: [{ type: "text" as const, text: formatted.markdown }],
+      structuredContent: formatted.metadata,
+    };
+  } finally {
+    db.close();
+  }
+}
