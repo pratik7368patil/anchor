@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { printInitResult, runInit } from "./commands/init.js";
 import { runIndex } from "./commands/index.js";
@@ -8,10 +11,20 @@ import { runServe } from "./commands/serve.js";
 
 const program = new Command();
 
+function readPackageVersion(): string {
+  try {
+    const packageJsonPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../package.json");
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as { version?: string };
+    return packageJson.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
 program
   .name("anchor")
   .description("Anchor: local-first Cursor MCP context from GitHub PR history")
-  .version("0.1.0");
+  .version(readPackageVersion());
 
 program
   .command("init")
