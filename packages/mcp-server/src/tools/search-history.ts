@@ -5,7 +5,7 @@ import {
   formatSearchHistory,
   openAnchorDatabase,
   rankWisdomUnits,
-} from "@anchor/core";
+} from "@pratik7368patil/anchor-core";
 
 const WisdomCategorySchema = z.enum([
   "architecture_decision",

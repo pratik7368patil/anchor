@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { formatIndexStatus, getIndexStatus } from "@anchor/core";
+import { formatIndexStatus, getIndexStatus } from "@pratik7368patil/anchor-core";
 
 export const AnchorIndexStatusSchema = z.object({});
 

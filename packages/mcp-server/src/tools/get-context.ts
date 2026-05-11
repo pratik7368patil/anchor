@@ -6,7 +6,7 @@ import {
   openAnchorDatabase,
   rankWisdomUnits,
   truncateText,
-} from "@anchor/core";
+} from "@pratik7368patil/anchor-core";
 
 export const AnchorGetContextSchema = z.object({
   task: z.string().min(1).max(2000),

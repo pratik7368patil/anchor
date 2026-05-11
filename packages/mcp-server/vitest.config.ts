@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@anchor/core": path.resolve(__dirname, "../core/src/index.ts"),
+      "@pratik7368patil/anchor-core": path.resolve(__dirname, "../core/src/index.ts"),
     },
   },
 });

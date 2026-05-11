@@ -32,10 +32,10 @@ importers:
 
   packages/cli:
     dependencies:
-      '@anchor/core':
+      '@pratik7368patil/anchor-core':
         specifier: workspace:*
         version: link:../core
-      '@anchor/mcp-server':
+      '@pratik7368patil/anchor-mcp-server':
         specifier: workspace:*
         version: link:../mcp-server
       commander:
@@ -63,12 +63,12 @@ importers:
 
   packages/mcp-server:
     dependencies:
-      '@anchor/core':
-        specifier: workspace:*
-        version: link:../core
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
+      '@pratik7368patil/anchor-core':
+        specifier: workspace:*
+        version: link:../core
       zod:
         specifier: ^4.1.13
         version: 4.4.3

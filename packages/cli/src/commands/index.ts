@@ -6,7 +6,7 @@ import {
   fetchMergedPullRequests,
   indexPullRequests,
   openAnchorDatabase,
-} from "@anchor/core";
+} from "@pratik7368patil/anchor-core";
 
 export type IndexOptions = {
   repo?: string;

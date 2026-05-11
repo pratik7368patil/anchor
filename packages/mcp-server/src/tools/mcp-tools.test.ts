@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { indexPullRequests, openAnchorDatabase, type PullRequestRecord } from "@anchor/core";
+import { indexPullRequests, openAnchorDatabase, type PullRequestRecord } from "@pratik7368patil/anchor-core";
 import { createAnchorMcpServer } from "../server.js";
 import { handleAnchorGetContext } from "./get-context.js";
 import { handleAnchorIndexStatus } from "./index-status.js";

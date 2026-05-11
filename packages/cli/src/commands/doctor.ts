@@ -1,5 +1,5 @@
-import { runDoctor } from "@anchor/core";
-import { createAnchorMcpServer } from "@anchor/mcp-server";
+import { runDoctor } from "@pratik7368patil/anchor-core";
+import { createAnchorMcpServer } from "@pratik7368patil/anchor-mcp-server";
 
 export async function runDoctorCommand(cwd: string): Promise<boolean> {
   const report = await runDoctor({

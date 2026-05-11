@@ -1,10 +1,28 @@
 {
-  "name": "@anchor/core",
+  "name": "@pratik7368patil/anchor-core",
   "version": "0.1.0",
+  "description": "Core local indexing, sanitization, and retrieval engine for Anchor.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "src/db/schema.sql"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pratik7368patil/anchor.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/pratik7368patil/anchor/issues"
+  },
+  "homepage": "https://github.com/pratik7368patil/anchor#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": "./dist/index.js",
     "./db/schema.sql": "./src/db/schema.sql"

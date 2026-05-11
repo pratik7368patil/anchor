@@ -1,4 +1,4 @@
-import { detectGitHubRepo, detectGitRoot, ensureCursorConfig, ensureCursorRule } from "@anchor/core";
+import { detectGitHubRepo, detectGitRoot, ensureCursorConfig, ensureCursorRule } from "@pratik7368patil/anchor-core";
 
 export type InitResult = {
   gitRoot: string;

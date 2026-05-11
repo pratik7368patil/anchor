@@ -30,23 +30,28 @@ Recommended GitHub token scope: read-only repository access. For private reposit
 
 ## Install
 
+From npm:
+
+```bash
+npm install -g @pratik7368patil/anchor
+anchor --help
+```
+
+Or run it without a global install:
+
+```bash
+npx -y @pratik7368patil/anchor --help
+```
+
+For local development from this repository:
+
 ```bash
 pnpm install
 pnpm build
 pnpm test
 ```
 
-For local development:
-
-```bash
-pnpm --filter cli start -- --help
-```
-
-For a global/local executable, the CLI package exposes:
-
-```text
-anchor
-```
+The npm package exposes the `anchor` binary.
 
 ## Setup
 
@@ -148,10 +153,10 @@ Secondary tools:
 pnpm install
 pnpm build
 pnpm test
-pnpm --filter cli start -- init
-pnpm --filter cli start -- index --repo owner/name --limit 10
-pnpm --filter cli start -- doctor
-pnpm --filter cli start -- serve
+pnpm --filter @pratik7368patil/anchor start -- init
+pnpm --filter @pratik7368patil/anchor start -- index --repo owner/name --limit 10
+pnpm --filter @pratik7368patil/anchor start -- doctor
+pnpm --filter @pratik7368patil/anchor start -- serve
 ```
 
 ## Troubleshooting

@@ -1,10 +1,27 @@
 {
-  "name": "@anchor/mcp-server",
+  "name": "@pratik7368patil/anchor-mcp-server",
   "version": "0.1.0",
+  "description": "Cursor MCP stdio server for Anchor.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/server.js",
   "types": "./dist/server.d.ts",
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pratik7368patil/anchor.git",
+    "directory": "packages/mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/pratik7368patil/anchor/issues"
+  },
+  "homepage": "https://github.com/pratik7368patil/anchor#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": "./dist/server.js"
   },
@@ -14,7 +31,7 @@
     "lint": "eslint src/**/*.ts"
   },
   "dependencies": {
-    "@anchor/core": "workspace:*",
+    "@pratik7368patil/anchor-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.1.13"
   }

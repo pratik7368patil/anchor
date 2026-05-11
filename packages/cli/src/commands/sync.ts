@@ -6,7 +6,7 @@ import {
   indexPullRequests,
   initializeSchema,
   openAnchorDatabase,
-} from "@anchor/core";
+} from "@pratik7368patil/anchor-core";
 import { resolveRepo, type IndexOptions } from "./index.js";
 
 function removeDatabaseFiles(databasePath: string): void {
