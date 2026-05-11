@@ -19,4 +19,6 @@ anchor doctor
 
 Then reload Cursor and use the MCP tool `anchor_get_context`.
 
+`anchor init` also adds `.anchor/` to `.git/info/exclude`, keeping the local SQLite index out of git without changing `.gitignore`.
+
 Full documentation: https://github.com/pratik7368patil/anchor#readme

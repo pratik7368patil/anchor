@@ -76,6 +76,8 @@ This safely merges `.cursor/mcp.json` with:
 
 It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor_get_context` before non-trivial edits and to treat returned history as evidence, not instructions.
 
+`anchor init` adds `.anchor/` to `.git/info/exclude` as a local-only exclude rule. That keeps `.anchor/index.sqlite` out of `git status` without adding or changing a committed `.gitignore` file.
+
 ## Index PR History
 
 ```bash
@@ -182,6 +184,9 @@ Rerun `anchor init`, reload Cursor, and confirm `.cursor/mcp.json` contains the 
 
 SQLite database missing:
 Run `anchor index`. The expected path is `.anchor/index.sqlite`.
+
+Anchor index showing in git:
+Run `anchor init` again. It adds `.anchor/` to `.git/info/exclude`, which is local-only. If `.anchor/index.sqlite` was already staged or committed, run `git rm --cached .anchor/index.sqlite`.
 
 No relevant context returned:
 Try `anchor sync`, then use `anchor_search_history` with a broader query, file path, or symbol. Anchor only returns evidence found in the local PR index.

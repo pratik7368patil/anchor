@@ -81,3 +81,19 @@ export function ensureCursorRule(cwd: string): { path: string; created: boolean 
   fs.writeFileSync(rulePath, ANCHOR_CURSOR_RULE, { mode: 0o600 });
   return { path: rulePath, created: true };
 }
+
+export function ensureAnchorGitExclude(gitRoot: string): { path: string; updated: boolean } {
+  const excludePath = path.join(gitRoot, ".git", "info", "exclude");
+  fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+
+  const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf8") : "";
+  const lines = existing.split(/\r?\n/).map((line) => line.trim());
+  if (lines.includes(".anchor/") || lines.includes(".anchor")) {
+    return { path: excludePath, updated: false };
+  }
+
+  const separator = existing.length === 0 || existing.endsWith("\n") ? "" : "\n";
+  const next = `${existing}${separator}\n# Anchor local index\n.anchor/\n`;
+  fs.writeFileSync(excludePath, next, { mode: 0o600 });
+  return { path: excludePath, updated: true };
+}

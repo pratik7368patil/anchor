@@ -7,6 +7,7 @@ import {
   ANCHOR_CURSOR_RULE,
   checkSchema,
   defaultDatabasePath,
+  ensureAnchorGitExclude,
   ensureCursorConfig,
   ensureCursorRule,
   extractWisdomUnits,
@@ -123,6 +124,20 @@ describe("Cursor config", () => {
     expect(fs.existsSync(config.path)).toBe(true);
     expect(fs.existsSync(rule.path)).toBe(true);
     expect(fs.readFileSync(rule.path, "utf8")).toBe(ANCHOR_CURSOR_RULE);
+  });
+
+  it("adds .anchor/ to local git exclude without changing .gitignore", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    const gitignorePath = path.join(cwd, ".gitignore");
+
+    const first = ensureAnchorGitExclude(cwd);
+    const second = ensureAnchorGitExclude(cwd);
+
+    expect(first.updated).toBe(true);
+    expect(second.updated).toBe(false);
+    expect(fs.readFileSync(first.path, "utf8")).toContain(".anchor/");
+    expect(fs.existsSync(gitignorePath)).toBe(false);
   });
 });
 
