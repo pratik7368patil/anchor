@@ -13,6 +13,8 @@ import { printFetchProgress, printIndexProgress } from "./progress.js";
 export type IndexOptions = {
   repo?: string;
   limit?: number;
+  all?: boolean;
+  concurrency?: number;
   since?: string;
   force?: boolean;
   token?: string;
@@ -29,7 +31,9 @@ export function resolveRepo(cwd: string, repoOption?: string): { repo: string; r
   if (repoOption) return { repo: repoOption, root: gitRoot ?? cwd };
   const repo = gitRoot ? detectGitHubRepo(gitRoot) : undefined;
   if (!repo) {
-    throw new Error("Could not detect GitHub repo. Pass --repo owner/name or set a GitHub origin remote.");
+    throw new Error(
+      "Could not detect GitHub repo. Pass --repo owner/name or set a GitHub origin remote.",
+    );
   }
   return { repo: repo.fullName, root: gitRoot };
 }
@@ -58,6 +62,8 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
       token: auth.token,
       repo,
       limit: options.limit ?? 200,
+      all: options.all,
+      detailConcurrency: options.concurrency,
       since: options.since,
       onProgress: printFetchProgress,
     });

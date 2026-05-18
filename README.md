@@ -96,11 +96,15 @@ Options:
 
 ```bash
 anchor index --repo owner/name --limit 10
+anchor index --repo owner/name --all
+anchor index-all --repo owner/name --concurrency 6
 anchor index --repo owner/name --since 2024-01-01
 anchor index --repo owner/name --force
 ```
 
-Default limit: 200 merged PRs.
+Default limit: 200 merged PRs. `--limit` is capped at 1000 merged PRs for normal runs.
+Use `anchor index --all` or `anchor index-all` when you intentionally want to fetch every merged PR in the repository. Full-history indexing can take a long time on large repositories and is still subject to GitHub API rate limits.
+PR detail fetching uses bounded parallelism. The default concurrency is 5, and `--concurrency` is capped at 10 to reduce the chance of GitHub secondary rate limits.
 
 The local database is written to:
 
@@ -115,9 +119,10 @@ Incrementally fetch PRs updated since the last sync:
 ```bash
 anchor sync
 anchor sync --repo owner/name
+anchor sync --all --concurrency 6
 ```
 
-`anchor sync` is safe to run repeatedly. Use `--force` to rebuild the local database.
+`anchor sync` is safe to run repeatedly. Use `--all` to fetch every merged PR updated since the sync cursor. Use `--force` to rebuild the local database.
 
 ## Doctor
 

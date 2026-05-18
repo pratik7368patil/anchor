@@ -14,6 +14,7 @@ Use it inside a GitHub-backed repo:
 gh auth login
 anchor init
 anchor index
+anchor index-all --concurrency 6
 anchor doctor
 ```
 
