@@ -24,6 +24,7 @@ import {
   runDoctor,
   sanitizeHistoricalText,
   stripPromptInjection,
+  type IndexPullRequestsProgress,
   type PullRequestRecord,
 } from "../index.js";
 
@@ -213,6 +214,34 @@ describe("SQLite indexing and retrieval", () => {
       const firstWisdomCount = status.wisdomUnitCount;
       indexPullRequests(db, prs, { cwd, repo: "owner/repo" });
       expect(getIndexStatus(cwd, false).wisdomUnitCount).toBe(firstWisdomCount);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reports indexing progress without exposing historical content", () => {
+    const cwd = tempDir();
+    const db = openAnchorDatabase(cwd);
+    const prs = loadFixtures();
+    const progress: IndexPullRequestsProgress[] = [];
+
+    try {
+      indexPullRequests(db, prs, {
+        cwd,
+        repo: "owner/repo",
+        onProgress: (item) => progress.push(item),
+      });
+
+      expect(progress.length).toBeGreaterThan(0);
+      expect(progress[0]).toMatchObject({
+        stage: "indexing_pull_request",
+        repo: "owner/repo",
+        current: 1,
+        total: prs.length,
+      });
+      const serialized = JSON.stringify(progress);
+      expect(serialized).not.toContain("ignore previous instructions");
+      expect(serialized).not.toContain("FAKE_ANCHOR_REDACTION_SAMPLE");
     } finally {
       db.close();
     }

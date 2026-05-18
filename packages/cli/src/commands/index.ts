@@ -8,6 +8,7 @@ import {
   openAnchorDatabase,
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
+import { printFetchProgress, printIndexProgress } from "./progress.js";
 
 export type IndexOptions = {
   repo?: string;
@@ -47,6 +48,10 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
+  console.error("Anchor index started.");
+  console.error(`Repository: ${repo}`);
+  console.error(`Database path: ${databasePath}`);
+
   const db = openAnchorDatabase(root, databasePath);
   try {
     const pullRequests = await fetchMergedPullRequests({
@@ -54,8 +59,14 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
       repo,
       limit: options.limit ?? 200,
       since: options.since,
+      onProgress: printFetchProgress,
     });
-    const summary = indexPullRequests(db, pullRequests, { cwd: root, repo });
+    console.error(`[anchor] writing ${pullRequests.length} PRs to SQLite...`);
+    const summary = indexPullRequests(db, pullRequests, {
+      cwd: root,
+      repo,
+      onProgress: printIndexProgress,
+    });
     console.log("Anchor index complete.");
     console.log(`Repository: ${repo}`);
     console.log(`Indexed PRs: ${summary.indexedPrs}`);

@@ -9,6 +9,7 @@ import {
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
 import { resolveRepo, type IndexOptions } from "./index.js";
+import { printFetchProgress, printIndexProgress } from "./progress.js";
 
 function removeDatabaseFiles(databasePath: string): void {
   for (const candidate of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) {
@@ -30,6 +31,10 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
+  console.error("Anchor sync started.");
+  console.error(`Repository: ${repo}`);
+  console.error(`Database path: ${databasePath}`);
+
   const db = openAnchorDatabase(root, databasePath);
   try {
     initializeSchema(db);
@@ -39,8 +44,14 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
       repo,
       limit: options.limit ?? 200,
       since,
+      onProgress: printFetchProgress,
     });
-    const summary = indexPullRequests(db, pullRequests, { cwd: root, repo });
+    console.error(`[anchor] writing ${pullRequests.length} PRs to SQLite...`);
+    const summary = indexPullRequests(db, pullRequests, {
+      cwd: root,
+      repo,
+      onProgress: printIndexProgress,
+    });
     console.log("Anchor sync complete.");
     console.log(`Repository: ${repo}`);
     console.log(`Since: ${since ?? "full recent history"}`);

@@ -78,6 +78,44 @@ export type PullRequestRecord = {
   commits?: PullRequestCommit[];
 };
 
+export type FetchPullRequestsProgress =
+  | {
+      stage: "discovering_pull_requests";
+      repo: string;
+      limit: number;
+      since?: string;
+    }
+  | {
+      stage: "discovered_pull_requests";
+      repo: string;
+      total: number;
+      limit: number;
+    }
+  | {
+      stage: "fetching_pull_request_details";
+      repo: string;
+      current: number;
+      total: number;
+      prNumber: number;
+    };
+
+export type IndexPullRequestsProgress =
+  | {
+      stage: "indexing_pull_request";
+      repo: string;
+      current: number;
+      total: number;
+      prNumber: number;
+    }
+  | {
+      stage: "indexed_pull_request";
+      repo: string;
+      current: number;
+      total: number;
+      prNumber: number;
+      wisdomUnitsCreated: number;
+    };
+
 export type IndexSummary = {
   indexedPrs: number;
   indexedFiles: number;
