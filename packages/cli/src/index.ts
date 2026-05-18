@@ -11,10 +11,21 @@ import { runServe } from "./commands/serve.js";
 
 const program = new Command();
 
+function parseIntegerOption(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
+  return parsed;
+}
+
 function readPackageVersion(): string {
   try {
-    const packageJsonPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../package.json");
-    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as { version?: string };
+    const packageJsonPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../package.json",
+    );
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
+      version?: string;
+    };
     return packageJson.version ?? "0.0.0";
   } catch {
     return "0.0.0";
@@ -38,7 +49,13 @@ program
   .command("index")
   .description("Fetch merged GitHub PRs and build the local Anchor index")
   .option("--repo <owner/name>", "GitHub repository to index")
-  .option("--limit <number>", "Maximum merged PRs to fetch", (value) => Number.parseInt(value, 10), 200)
+  .option("--limit <number>", "Maximum merged PRs to fetch", parseIntegerOption, 200)
+  .option("--all", "Fetch every merged PR without Anchor's default or maximum PR limit")
+  .option(
+    "--concurrency <number>",
+    "Concurrent PR detail fetches (default: 5, max: 10)",
+    parseIntegerOption,
+  )
   .option("--since <YYYY-MM-DD>", "Fetch PRs updated since this date")
   .option("--force", "Rebuild the local database before indexing")
   .action(async (options) => {
@@ -46,10 +63,31 @@ program
   });
 
 program
+  .command("index-all")
+  .description("Fetch every merged GitHub PR and build the local Anchor index")
+  .option("--repo <owner/name>", "GitHub repository to index")
+  .option(
+    "--concurrency <number>",
+    "Concurrent PR detail fetches (default: 5, max: 10)",
+    parseIntegerOption,
+  )
+  .option("--since <YYYY-MM-DD>", "Fetch PRs updated since this date")
+  .option("--force", "Rebuild the local database before indexing")
+  .action(async (options) => {
+    await runIndex(process.cwd(), { ...options, all: true });
+  });
+
+program
   .command("sync")
   .description("Incrementally sync PRs updated since the last Anchor sync")
   .option("--repo <owner/name>", "GitHub repository to sync")
-  .option("--limit <number>", "Maximum merged PRs to fetch", (value) => Number.parseInt(value, 10), 200)
+  .option("--limit <number>", "Maximum merged PRs to fetch", parseIntegerOption, 200)
+  .option("--all", "Fetch every merged PR updated since the sync cursor")
+  .option(
+    "--concurrency <number>",
+    "Concurrent PR detail fetches (default: 5, max: 10)",
+    parseIntegerOption,
+  )
   .option("--since <YYYY-MM-DD>", "Override the sync cursor")
   .option("--force", "Rebuild the local database before syncing")
   .action(async (options) => {

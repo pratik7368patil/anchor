@@ -82,14 +82,25 @@ export type FetchPullRequestsProgress =
   | {
       stage: "discovering_pull_requests";
       repo: string;
-      limit: number;
+      all: boolean;
+      limit?: number;
       since?: string;
+    }
+  | {
+      stage: "scanned_pull_request_page";
+      repo: string;
+      all: boolean;
+      limit?: number;
+      scannedPullRequests: number;
+      matchedMergedPullRequests: number;
     }
   | {
       stage: "discovered_pull_requests";
       repo: string;
+      all: boolean;
       total: number;
-      limit: number;
+      limit?: number;
+      detailConcurrency: number;
     }
   | {
       stage: "fetching_pull_request_details";
@@ -97,6 +108,15 @@ export type FetchPullRequestsProgress =
       current: number;
       total: number;
       prNumber: number;
+      detailConcurrency: number;
+    }
+  | {
+      stage: "fetched_pull_request_details";
+      repo: string;
+      current: number;
+      total: number;
+      prNumber: number;
+      detailConcurrency: number;
     };
 
 export type IndexPullRequestsProgress =

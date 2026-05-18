@@ -20,6 +20,8 @@ import {
   parseGitHubRemote,
   rankWisdomUnits,
   redactSecrets,
+  resolvePullRequestDetailConcurrency,
+  resolvePullRequestFetchLimit,
   resolveGitHubToken,
   runDoctor,
   sanitizeHistoricalText,
@@ -88,7 +90,7 @@ describe("GitHub token resolution", () => {
     const ghPath = path.join(binDir, "gh");
     fs.writeFileSync(
       ghPath,
-      "#!/usr/bin/env sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"token\" ]; then echo from-gh-cli; exit 0; fi\nexit 1\n",
+      '#!/usr/bin/env sh\nif [ "$1" = "auth" ] && [ "$2" = "token" ]; then echo from-gh-cli; exit 0; fi\nexit 1\n',
     );
     fs.chmodSync(ghPath, 0o700);
 
@@ -98,6 +100,24 @@ describe("GitHub token resolution", () => {
         env: { PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}` } as NodeJS.ProcessEnv,
       }),
     ).toEqual({ token: "from-gh-cli", source: "gh" });
+  });
+});
+
+describe("GitHub PR fetch limits", () => {
+  it("keeps safe defaults unless all history is explicitly requested", () => {
+    expect(resolvePullRequestFetchLimit({})).toBe(200);
+    expect(resolvePullRequestFetchLimit({ limit: 5000 })).toBe(1000);
+    expect(resolvePullRequestFetchLimit({ limit: 0 })).toBe(1);
+    expect(resolvePullRequestFetchLimit({ all: true })).toBeUndefined();
+    expect(resolvePullRequestFetchLimit({ all: true, limit: 10 })).toBeUndefined();
+  });
+
+  it("uses bounded PR detail fetch concurrency", () => {
+    expect(resolvePullRequestDetailConcurrency({})).toBe(5);
+    expect(resolvePullRequestDetailConcurrency({ detailConcurrency: 1 })).toBe(1);
+    expect(resolvePullRequestDetailConcurrency({ detailConcurrency: 20 })).toBe(10);
+    expect(resolvePullRequestDetailConcurrency({ detailConcurrency: 0 })).toBe(1);
+    expect(resolvePullRequestDetailConcurrency({ detailConcurrency: Number.NaN })).toBe(5);
   });
 });
 
@@ -188,14 +208,18 @@ describe("wisdom extraction", () => {
     const webhookUnits = extractWisdomUnits(webhookPr);
 
     expect(authUnits.some((unit) => unit.category === "architecture_decision")).toBe(true);
-    expect(authUnits.some((unit) => unit.category === "bug_regression" || unit.category === "constraint")).toBe(
-      true,
-    );
+    expect(
+      authUnits.some(
+        (unit) => unit.category === "bug_regression" || unit.category === "constraint",
+      ),
+    ).toBe(true);
     expect(webhookUnits.some((unit) => unit.category === "api_contract")).toBe(true);
     expect(webhookUnits.some((unit) => unit.category === "security_note")).toBe(true);
     expect(authUnits.flatMap((unit) => unit.filePaths)).toContain("src/auth/cache.ts");
     expect(authUnits.flatMap((unit) => unit.symbols)).toContain("AuthCache");
-    expect(authUnits.map((unit) => unit.sanitizedText).join("\n")).not.toContain("ignore previous instructions");
+    expect(authUnits.map((unit) => unit.sanitizedText).join("\n")).not.toContain(
+      "ignore previous instructions",
+    );
   });
 });
 
@@ -351,7 +375,9 @@ describe("doctor", () => {
     expect(report.ok).toBe(true);
     expect(report.checks.find((item) => item.name === "GitHub API reachable")?.ok).toBe(true);
     expect(report.checks.find((item) => item.name === "SQLite schema valid")?.ok).toBe(true);
-    expect(report.checks.find((item) => item.name === ".anchor/index.sqlite exists")?.ok).toBe(true);
+    expect(report.checks.find((item) => item.name === ".anchor/index.sqlite exists")?.ok).toBe(
+      true,
+    );
     expect(report.checks.find((item) => item.name === "Cursor rule file exists")?.ok).toBe(true);
     expect(report.checks.find((item) => item.name === "SQLite schema valid")?.fix).toBeUndefined();
   });

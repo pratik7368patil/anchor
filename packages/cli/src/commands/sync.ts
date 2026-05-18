@@ -38,11 +38,13 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
   const db = openAnchorDatabase(root, databasePath);
   try {
     initializeSchema(db);
-    const since = options.force ? options.since : options.since ?? getLastSyncTime(db, repo);
+    const since = options.force ? options.since : (options.since ?? getLastSyncTime(db, repo));
     const pullRequests = await fetchMergedPullRequests({
       token: auth.token,
       repo,
       limit: options.limit ?? 200,
+      all: options.all,
+      detailConcurrency: options.concurrency,
       since,
       onProgress: printFetchProgress,
     });

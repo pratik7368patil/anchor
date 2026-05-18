@@ -1,23 +1,57 @@
-import type { FetchPullRequestsProgress, IndexPullRequestsProgress } from "@pratik7368patil/anchor-core";
+import type {
+  FetchPullRequestsProgress,
+  IndexPullRequestsProgress,
+} from "@pratik7368patil/anchor-core";
 
 function shouldPrintIndexProgress(progress: IndexPullRequestsProgress): boolean {
-  return progress.current === 1 || progress.current === progress.total || progress.current % 25 === 0;
+  return (
+    progress.current === 1 || progress.current === progress.total || progress.current % 25 === 0
+  );
+}
+
+function fetchScope(progress: { all: boolean; limit?: number }): string {
+  return progress.all ? "all merged PRs" : `up to ${progress.limit ?? 200} merged PRs`;
 }
 
 export function printFetchProgress(progress: FetchPullRequestsProgress): void {
   switch (progress.stage) {
     case "discovering_pull_requests": {
       const since = progress.since ? ` updated since ${progress.since}` : "";
-      console.error(`[anchor] finding up to ${progress.limit} merged PRs in ${progress.repo}${since}...`);
+      console.error(`[anchor] finding ${fetchScope(progress)} in ${progress.repo}${since}...`);
       return;
     }
+    case "scanned_pull_request_page":
+      if (
+        progress.all &&
+        (progress.scannedPullRequests <= 100 || progress.scannedPullRequests % 500 === 0)
+      ) {
+        console.error(
+          `[anchor] scanned ${progress.scannedPullRequests} closed PRs, found ${progress.matchedMergedPullRequests} merged PRs...`,
+        );
+      }
+      return;
     case "discovered_pull_requests":
-      console.error(`[anchor] found ${progress.total} merged PRs. Fetching PR details...`);
+      console.error(
+        `[anchor] found ${progress.total} merged PRs. Fetching PR details with concurrency ${progress.detailConcurrency}...`,
+      );
       return;
     case "fetching_pull_request_details":
-      console.error(
-        `[anchor] fetching PR details ${progress.current}/${progress.total}: #${progress.prNumber}`,
-      );
+      if (progress.current <= progress.detailConcurrency) {
+        console.error(
+          `[anchor] fetching PR details ${progress.current}/${progress.total}: #${progress.prNumber}`,
+        );
+      }
+      return;
+    case "fetched_pull_request_details":
+      if (
+        progress.current === 1 ||
+        progress.current === progress.total ||
+        progress.current % 25 === 0
+      ) {
+        console.error(
+          `[anchor] fetched PR details ${progress.current}/${progress.total}: #${progress.prNumber}`,
+        );
+      }
       return;
   }
 }
