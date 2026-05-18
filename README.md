@@ -170,6 +170,26 @@ pnpm --filter @pratik7368patil/anchor start -- doctor
 pnpm --filter @pratik7368patil/anchor start -- serve
 ```
 
+## Release Automation
+
+The repository includes a GitHub Actions workflow that publishes missing package versions to npm after changes land on `main`.
+
+Required repository secret:
+
+```text
+NPM_TOKEN
+```
+
+Release flow:
+
+```bash
+npm --prefix packages/core version 0.1.7 --no-git-tag-version
+npm --prefix packages/mcp-server version 0.1.7 --no-git-tag-version
+npm --prefix packages/cli version 0.1.7 --no-git-tag-version
+```
+
+Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.
+
 ## Troubleshooting
 
 Missing token:

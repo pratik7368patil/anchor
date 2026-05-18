@@ -1,0 +1,74 @@
+name: Publish npm packages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-npm.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "packages/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish missing package versions
+    runs-on: ubuntu-latest
+    if: github.repository == 'pratik7368patil/anchor'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify npm authentication
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish packages that are not on npm yet
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          publish_if_missing() {
+            local package_name="$1"
+            local package_dir="$2"
+            local package_version
+
+            package_version="$(node -p "require('./${package_dir}/package.json').version")"
+
+            if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+              echo "${package_name}@${package_version} is already published; skipping."
+            else
+              echo "Publishing ${package_name}@${package_version}..."
+              pnpm --filter "${package_name}" publish --access public --no-git-checks
+            fi
+          }
+
+          publish_if_missing "@pratik7368patil/anchor-core" "packages/core"
+          publish_if_missing "@pratik7368patil/anchor-mcp-server" "packages/mcp-server"
+          publish_if_missing "@pratik7368patil/anchor" "packages/cli"
