@@ -15,6 +15,7 @@ gh auth login
 anchor init
 anchor index
 anchor index-all --concurrency 6
+anchor index-code
 anchor doctor
 ```
 

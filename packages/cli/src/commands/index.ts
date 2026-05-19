@@ -4,17 +4,19 @@ import {
   detectGitHubRepo,
   detectGitRoot,
   fetchMergedPullRequests,
+  indexCodebase,
   indexPullRequests,
   openAnchorDatabase,
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
-import { printFetchProgress, printIndexProgress } from "./progress.js";
+import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
 
 export type IndexOptions = {
   repo?: string;
   limit?: number;
   all?: boolean;
   concurrency?: number;
+  code?: boolean;
   since?: string;
   force?: boolean;
   token?: string;
@@ -73,6 +75,14 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
       repo,
       onProgress: printIndexProgress,
     });
+    const codeSummary =
+      options.code === false
+        ? undefined
+        : indexCodebase(db, {
+            cwd: root,
+            repo,
+            onProgress: printCodeIndexProgress,
+          });
     console.log("Anchor index complete.");
     console.log(`Repository: ${repo}`);
     console.log(`Indexed PRs: ${summary.indexedPrs}`);
@@ -80,6 +90,38 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
     console.log(`Indexed comments: ${summary.indexedComments}`);
     console.log(`Wisdom units created: ${summary.wisdomUnitsCreated}`);
     console.log(`Skipped items: ${summary.skippedItems}`);
+    if (codeSummary) {
+      console.log(`Indexed code files: ${codeSummary.indexedFiles}`);
+      console.log(`Code chunks created: ${codeSummary.codeChunksCreated}`);
+      console.log(`Skipped code files: ${codeSummary.skippedFiles}`);
+    }
+    console.log(`Database path: ${summary.databasePath}`);
+  } finally {
+    db.close();
+  }
+}
+
+export async function runIndexCode(cwd: string, options: IndexOptions): Promise<void> {
+  const { repo, root } = resolveRepo(cwd, options.repo);
+  const databasePath = defaultDatabasePath(root);
+  if (options.force) removeDatabaseFiles(databasePath);
+
+  console.error("Anchor code index started.");
+  console.error(`Repository: ${repo}`);
+  console.error(`Database path: ${databasePath}`);
+
+  const db = openAnchorDatabase(root, databasePath);
+  try {
+    const summary = indexCodebase(db, {
+      cwd: root,
+      repo,
+      onProgress: printCodeIndexProgress,
+    });
+    console.log("Anchor code index complete.");
+    console.log(`Repository: ${repo}`);
+    console.log(`Indexed code files: ${summary.indexedFiles}`);
+    console.log(`Code chunks created: ${summary.codeChunksCreated}`);
+    console.log(`Skipped code files: ${summary.skippedFiles}`);
     console.log(`Database path: ${summary.databasePath}`);
   } finally {
     db.close();

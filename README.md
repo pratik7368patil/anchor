@@ -98,6 +98,8 @@ Options:
 anchor index --repo owner/name --limit 10
 anchor index --repo owner/name --all
 anchor index-all --repo owner/name --concurrency 6
+anchor index --repo owner/name --no-code
+anchor index-code --repo owner/name
 anchor index --repo owner/name --since 2024-01-01
 anchor index --repo owner/name --force
 ```
@@ -105,6 +107,10 @@ anchor index --repo owner/name --force
 Default limit: 200 merged PRs. `--limit` is capped at 1000 merged PRs for normal runs.
 Use `anchor index --all` or `anchor index-all` when you intentionally want to fetch every merged PR in the repository. Full-history indexing can take a long time on large repositories and is still subject to GitHub API rate limits.
 PR detail fetching uses bounded parallelism. The default concurrency is 5, and `--concurrency` is capped at 10 to reduce the chance of GitHub secondary rate limits.
+
+Anchor also indexes the local codebase by default after PR indexing. Code discovery uses `git ls-files --cached --others --exclude-standard`, so it includes tracked files plus untracked files that are not ignored by git. Generated/private paths such as `.anchor/`, `.cursor/`, `.codex/`, `.aws/`, `.ssh/`, `node_modules/`, `.nuxt/`, `.next/`, `dist/`, `build/`, `coverage/`, and secret-like files such as `.env*`, `.npmrc`, `.netrc`, `*.pem`, `*.key`, and `id_rsa` are always skipped.
+
+Use `anchor index-code` to refresh only the local codebase index without GitHub authentication. Use `--no-code` on PR indexing commands when you only want PR history.
 
 The local database is written to:
 
@@ -120,9 +126,10 @@ Incrementally fetch PRs updated since the last sync:
 anchor sync
 anchor sync --repo owner/name
 anchor sync --all --concurrency 6
+anchor sync --no-code
 ```
 
-`anchor sync` is safe to run repeatedly. Use `--all` to fetch every merged PR updated since the sync cursor. Use `--force` to rebuild the local database.
+`anchor sync` is safe to run repeatedly. Use `--all` to fetch every merged PR updated since the sync cursor. Use `--force` to rebuild the local database. Codebase indexing is refreshed by default unless `--no-code` is passed.
 
 ## Doctor
 
@@ -224,6 +231,9 @@ Run `anchor init` again. It adds `.anchor/` to `.git/info/exclude`, which is loc
 
 No relevant context returned:
 Try `anchor sync`, then use `anchor_search_history` with a broader query, file path, or symbol. Anchor only returns evidence found in the local PR index.
+
+Codebase context missing:
+Run `anchor index-code` from the repository root. Confirm `anchor_index_status` reports non-zero code files and code chunks.
 
 ## Safety Notes
 

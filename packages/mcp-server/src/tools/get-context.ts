@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   defaultDatabasePath,
   formatAnchorContext,
+  initializeSchema,
   openAnchorDatabase,
+  rankCodeChunks,
   rankWisdomUnits,
   truncateText,
 } from "@pratik7368patil/anchor-core";
@@ -21,7 +23,12 @@ export async function handleAnchorGetContext(input: unknown, cwd: string) {
   const parsed = AnchorGetContextSchema.safeParse(input);
   if (!parsed.success) {
     return {
-      content: [{ type: "text" as const, text: `Invalid anchor_get_context input: ${parsed.error.message}` }],
+      content: [
+        {
+          type: "text" as const,
+          text: `Invalid anchor_get_context input: ${parsed.error.message}`,
+        },
+      ],
       isError: true,
     };
   }
@@ -41,6 +48,7 @@ export async function handleAnchorGetContext(input: unknown, cwd: string) {
 
   const db = openAnchorDatabase(cwd, databasePath);
   try {
+    initializeSchema(db);
     const query = {
       ...parsed.data,
       diff: truncateText(parsed.data.diff, 12000),
@@ -48,7 +56,8 @@ export async function handleAnchorGetContext(input: unknown, cwd: string) {
       maxResults: parsed.data.maxResults ?? 8,
     };
     const units = rankWisdomUnits(db, query);
-    const formatted = formatAnchorContext(units, query);
+    const codeChunks = rankCodeChunks(db, query);
+    const formatted = formatAnchorContext(units, query, codeChunks);
     return {
       content: [{ type: "text" as const, text: formatted.markdown }],
       structuredContent: formatted.metadata,

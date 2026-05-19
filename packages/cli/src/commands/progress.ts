@@ -1,4 +1,5 @@
 import type {
+  CodeIndexProgress,
   FetchPullRequestsProgress,
   IndexPullRequestsProgress,
 } from "@pratik7368patil/anchor-core";
@@ -65,6 +66,38 @@ export function printIndexProgress(progress: IndexPullRequestsProgress): void {
       if (!shouldPrintIndexProgress(progress)) return;
       console.error(
         `[anchor] indexed PR ${progress.current}/${progress.total}: #${progress.prNumber} (${progress.wisdomUnitsCreated} wisdom units)`,
+      );
+      return;
+  }
+}
+
+function shouldPrintCodeProgress(progress: CodeIndexProgress): boolean {
+  return (
+    "current" in progress &&
+    (progress.current === 1 || progress.current === progress.total || progress.current % 100 === 0)
+  );
+}
+
+export function printCodeIndexProgress(progress: CodeIndexProgress): void {
+  switch (progress.stage) {
+    case "discovering_code_files":
+      console.error(
+        `[anchor] discovering git-tracked and non-ignored code files in ${progress.repo}...`,
+      );
+      return;
+    case "discovered_code_files":
+      console.error(
+        `[anchor] found ${progress.files} code files to index (${progress.skippedFiles} skipped).`,
+      );
+      return;
+    case "indexing_code_file":
+      if (progress.current === 1)
+        console.error(`[anchor] indexing ${progress.total} code files...`);
+      return;
+    case "indexed_code_file":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] indexed code file ${progress.current}/${progress.total}: ${progress.filePath} (${progress.chunks} chunks)`,
       );
       return;
   }
