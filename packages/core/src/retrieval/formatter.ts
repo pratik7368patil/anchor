@@ -1,4 +1,10 @@
-import type { AnchorContextInput, IndexStatus, RankedWisdomUnit, WisdomCategory } from "../types.js";
+import type {
+  AnchorContextInput,
+  IndexStatus,
+  RankedCodeChunk,
+  RankedWisdomUnit,
+  WisdomCategory,
+} from "../types.js";
 import { clipSentence } from "../utils/text.js";
 
 export type FormattedResult = {
@@ -33,10 +39,16 @@ function whyItMatters(unit: RankedWisdomUnit, input: AnchorContextInput): string
 function riskLines(units: RankedWisdomUnit[]): string[] {
   const risks = new Set<string>();
   for (const unit of units) {
-    if (unit.category === "security_note") risks.add("Avoid logging, exposing, or weakening security-sensitive values.");
-    if (unit.category === "bug_regression") risks.add("Check for regressions similar to the cited PR history.");
-    if (unit.category === "api_contract") risks.add("Preserve documented API and backward-compatibility contracts.");
-    if (unit.category === "constraint") risks.add("Do not remove constraints without verifying the original reason no longer applies.");
+    if (unit.category === "security_note")
+      risks.add("Avoid logging, exposing, or weakening security-sensitive values.");
+    if (unit.category === "bug_regression")
+      risks.add("Check for regressions similar to the cited PR history.");
+    if (unit.category === "api_contract")
+      risks.add("Preserve documented API and backward-compatibility contracts.");
+    if (unit.category === "constraint")
+      risks.add(
+        "Do not remove constraints without verifying the original reason no longer applies.",
+      );
   }
   return [...risks].slice(0, 4);
 }
@@ -44,6 +56,7 @@ function riskLines(units: RankedWisdomUnit[]): string[] {
 export function formatAnchorContext(
   units: RankedWisdomUnit[],
   input: AnchorContextInput,
+  codeChunks: RankedCodeChunk[] = [],
 ): FormattedResult {
   const lines = ["# Anchor Context", "", "## Must know", ""];
   if (units.length === 0) {
@@ -58,6 +71,21 @@ export function formatAnchorContext(
       lines.push(`   Evidence: ${evidenceLine(unit)}`);
       lines.push(`   Why it matters: ${whyItMatters(unit, input)}`);
       lines.push(`   Link: ${unit.prUrl}`);
+      lines.push("");
+    });
+  }
+
+  lines.push("## Codebase Evidence", "");
+  if (codeChunks.length === 0) {
+    lines.push("No directly relevant indexed codebase context found.", "");
+  } else {
+    codeChunks.forEach((chunk, index) => {
+      const symbols = chunk.symbols.length
+        ? `; symbols: ${chunk.symbols.slice(0, 6).join(", ")}`
+        : "";
+      lines.push(`${index + 1}. ${chunk.filePath}:${chunk.startLine}-${chunk.endLine}${symbols}`);
+      lines.push(`   Why it matters: Current code near this match may affect the requested edit.`);
+      lines.push(`   Snippet: ${clipSentence(chunk.sanitizedText, 260)}`);
       lines.push("");
     });
   }
@@ -90,6 +118,15 @@ export function formatAnchorContext(
         filePaths: unit.filePaths,
         symbols: unit.symbols,
         duplicateCount: unit.duplicateCount,
+      })),
+      codeEvidence: codeChunks.map((chunk) => ({
+        id: chunk.id,
+        score: chunk.score,
+        filePath: chunk.filePath,
+        language: chunk.language,
+        startLine: chunk.startLine,
+        endLine: chunk.endLine,
+        symbols: chunk.symbols,
       })),
     },
   };
@@ -140,7 +177,10 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Files: ${status.fileCount}`,
     `- Comments: ${status.commentCount}`,
     `- Wisdom units: ${status.wisdomUnitCount}`,
+    `- Code files: ${status.codeFileCount}`,
+    `- Code chunks: ${status.codeChunkCount}`,
     `- Last sync: ${status.lastSyncTime ?? "never"}`,
+    `- Last code index: ${status.lastCodeIndexTime ?? "never"}`,
     `- GitHub token configured: ${status.githubTokenConfigured ? "yes" : "no"}`,
     `- Health: ${status.health}`,
   ];

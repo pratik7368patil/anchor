@@ -1,8 +1,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { indexPullRequests, openAnchorDatabase, type PullRequestRecord } from "@pratik7368patil/anchor-core";
+import {
+  indexCodebase,
+  indexPullRequests,
+  openAnchorDatabase,
+  type PullRequestRecord,
+} from "@pratik7368patil/anchor-core";
 import { createAnchorMcpServer } from "../server.js";
 import { handleAnchorGetContext } from "./get-context.js";
 import { handleAnchorIndexStatus } from "./index-status.js";
@@ -22,9 +28,17 @@ function loadFixtures(): PullRequestRecord[] {
 }
 
 function createIndexedFixture(cwd: string): void {
+  execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+  fs.mkdirSync(path.join(cwd, "src/auth"), { recursive: true });
+  fs.writeFileSync(
+    path.join(cwd, "src/auth/cache.ts"),
+    "export class AuthCache { refreshToken() { return true; } }\n",
+  );
+  execFileSync("git", ["add", "src/auth/cache.ts"], { cwd, stdio: "ignore" });
   const db = openAnchorDatabase(cwd);
   try {
     indexPullRequests(db, loadFixtures(), { cwd, repo: "owner/repo" });
+    indexCodebase(db, { cwd, repo: "owner/repo" });
   } finally {
     db.close();
   }
@@ -63,15 +77,21 @@ describe("MCP tools", () => {
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain("# Anchor Context");
     expect(result.content[0]?.text).toContain("Evidence: PR #");
+    expect(result.content[0]?.text).toContain("## Codebase Evidence");
+    expect(result.content[0]?.text).toContain("src/auth/cache.ts");
     expect(result.content[0]?.text).not.toContain("ignore previous instructions");
     expect(result.content[0]?.text).not.toContain("FAKE_ANCHOR_REDACTION_SAMPLE");
     expect(result.structuredContent?.resultCount).toBeGreaterThan(0);
+    expect(Array.isArray(result.structuredContent?.codeEvidence)).toBe(true);
   });
 
   it("supports search history and index status", async () => {
     const cwd = tempDir();
     createIndexedFixture(cwd);
-    const search = await handleAnchorSearchHistory({ query: "webhook security", maxResults: 3 }, cwd);
+    const search = await handleAnchorSearchHistory(
+      { query: "webhook security", maxResults: 3 },
+      cwd,
+    );
     const status = await handleAnchorIndexStatus({}, cwd);
     expect(search.content[0]?.text).toContain("# Anchor Search History");
     expect(status.content[0]?.text).toContain("# Anchor Index Status");

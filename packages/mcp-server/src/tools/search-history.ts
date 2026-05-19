@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   defaultDatabasePath,
   formatSearchHistory,
+  initializeSchema,
   openAnchorDatabase,
   rankWisdomUnits,
 } from "@pratik7368patil/anchor-core";
@@ -31,7 +32,12 @@ export async function handleAnchorSearchHistory(input: unknown, cwd: string) {
   const parsed = AnchorSearchHistorySchema.safeParse(input);
   if (!parsed.success) {
     return {
-      content: [{ type: "text" as const, text: `Invalid anchor_search_history input: ${parsed.error.message}` }],
+      content: [
+        {
+          type: "text" as const,
+          text: `Invalid anchor_search_history input: ${parsed.error.message}`,
+        },
+      ],
       isError: true,
     };
   }
@@ -51,6 +57,7 @@ export async function handleAnchorSearchHistory(input: unknown, cwd: string) {
 
   const db = openAnchorDatabase(cwd, databasePath);
   try {
+    initializeSchema(db);
     const units = rankWisdomUnits(db, { ...parsed.data, maxResults: parsed.data.maxResults ?? 10 });
     const formatted = formatSearchHistory(units);
     return {

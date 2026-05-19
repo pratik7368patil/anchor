@@ -3,13 +3,14 @@ import {
   defaultDatabasePath,
   fetchMergedPullRequests,
   getLastSyncTime,
+  indexCodebase,
   indexPullRequests,
   initializeSchema,
   openAnchorDatabase,
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
 import { resolveRepo, type IndexOptions } from "./index.js";
-import { printFetchProgress, printIndexProgress } from "./progress.js";
+import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
 
 function removeDatabaseFiles(databasePath: string): void {
   for (const candidate of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) {
@@ -54,6 +55,14 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
       repo,
       onProgress: printIndexProgress,
     });
+    const codeSummary =
+      options.code === false
+        ? undefined
+        : indexCodebase(db, {
+            cwd: root,
+            repo,
+            onProgress: printCodeIndexProgress,
+          });
     console.log("Anchor sync complete.");
     console.log(`Repository: ${repo}`);
     console.log(`Since: ${since ?? "full recent history"}`);
@@ -62,6 +71,11 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
     console.log(`Indexed comments: ${summary.indexedComments}`);
     console.log(`Wisdom units created: ${summary.wisdomUnitsCreated}`);
     console.log(`Skipped items: ${summary.skippedItems}`);
+    if (codeSummary) {
+      console.log(`Indexed code files: ${codeSummary.indexedFiles}`);
+      console.log(`Code chunks created: ${codeSummary.codeChunksCreated}`);
+      console.log(`Skipped code files: ${codeSummary.skippedFiles}`);
+    }
     console.log(`Database path: ${summary.databasePath}`);
   } finally {
     db.close();

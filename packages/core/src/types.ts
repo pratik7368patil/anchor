@@ -35,6 +35,38 @@ export type WisdomUnit = {
   confidence: number;
 };
 
+export type CodeFileRecord = {
+  repo: string;
+  path: string;
+  language?: string;
+  sizeBytes: number;
+  contentHash: string;
+  updatedAt: string;
+};
+
+export type CodeChunk = {
+  id: string;
+  repo: string;
+  filePath: string;
+  language?: string;
+  startLine: number;
+  endLine: number;
+  sanitizedText: string;
+  symbols: string[];
+  contentHash: string;
+  updatedAt: string;
+};
+
+export type RankedCodeChunk = CodeChunk & {
+  score: number;
+  scoreParts: {
+    filePathMatch: number;
+    symbolMatch: number;
+    textMatch: number;
+    recency: number;
+  };
+};
+
 export type PullRequestFile = {
   filename: string;
   patch?: string | null;
@@ -136,12 +168,46 @@ export type IndexPullRequestsProgress =
       wisdomUnitsCreated: number;
     };
 
+export type CodeIndexProgress =
+  | {
+      stage: "discovering_code_files";
+      repo: string;
+    }
+  | {
+      stage: "discovered_code_files";
+      repo: string;
+      files: number;
+      skippedFiles: number;
+    }
+  | {
+      stage: "indexing_code_file";
+      repo: string;
+      current: number;
+      total: number;
+      filePath: string;
+    }
+  | {
+      stage: "indexed_code_file";
+      repo: string;
+      current: number;
+      total: number;
+      filePath: string;
+      chunks: number;
+    };
+
 export type IndexSummary = {
   indexedPrs: number;
   indexedFiles: number;
   indexedComments: number;
   wisdomUnitsCreated: number;
   skippedItems: number;
+  databasePath: string;
+};
+
+export type CodeIndexSummary = {
+  indexedFiles: number;
+  codeChunksCreated: number;
+  skippedFiles: number;
   databasePath: string;
 };
 
@@ -181,7 +247,10 @@ export type IndexStatus = {
   fileCount: number;
   commentCount: number;
   wisdomUnitCount: number;
+  codeFileCount: number;
+  codeChunkCount: number;
   lastSyncTime?: string;
+  lastCodeIndexTime?: string;
   githubTokenConfigured: boolean;
   health: "ok" | "missing_database" | "schema_invalid" | "empty_index";
 };

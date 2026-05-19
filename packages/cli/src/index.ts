@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { printInitResult, runInit } from "./commands/init.js";
-import { runIndex } from "./commands/index.js";
+import { runIndex, runIndexCode } from "./commands/index.js";
 import { runSync } from "./commands/sync.js";
 import { runDoctorCommand } from "./commands/doctor.js";
 import { runServe } from "./commands/serve.js";
@@ -51,6 +51,7 @@ program
   .option("--repo <owner/name>", "GitHub repository to index")
   .option("--limit <number>", "Maximum merged PRs to fetch", parseIntegerOption, 200)
   .option("--all", "Fetch every merged PR without Anchor's default or maximum PR limit")
+  .option("--no-code", "Skip local codebase indexing")
   .option(
     "--concurrency <number>",
     "Concurrent PR detail fetches (default: 5, max: 10)",
@@ -66,6 +67,7 @@ program
   .command("index-all")
   .description("Fetch every merged GitHub PR and build the local Anchor index")
   .option("--repo <owner/name>", "GitHub repository to index")
+  .option("--no-code", "Skip local codebase indexing")
   .option(
     "--concurrency <number>",
     "Concurrent PR detail fetches (default: 5, max: 10)",
@@ -78,11 +80,21 @@ program
   });
 
 program
+  .command("index-code")
+  .description("Index the local codebase without fetching GitHub PR history")
+  .option("--repo <owner/name>", "GitHub repository to associate with this code index")
+  .option("--force", "Rebuild the local database before indexing code")
+  .action(async (options) => {
+    await runIndexCode(process.cwd(), options);
+  });
+
+program
   .command("sync")
   .description("Incrementally sync PRs updated since the last Anchor sync")
   .option("--repo <owner/name>", "GitHub repository to sync")
   .option("--limit <number>", "Maximum merged PRs to fetch", parseIntegerOption, 200)
   .option("--all", "Fetch every merged PR updated since the sync cursor")
+  .option("--no-code", "Skip local codebase indexing")
   .option(
     "--concurrency <number>",
     "Concurrent PR detail fetches (default: 5, max: 10)",

@@ -75,6 +75,48 @@ CREATE VIRTUAL TABLE IF NOT EXISTS wisdom_units_fts USING fts5(
   category
 );
 
+CREATE TABLE IF NOT EXISTS code_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  language TEXT,
+  size_bytes INTEGER NOT NULL,
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(repo_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS code_chunks (
+  id TEXT PRIMARY KEY,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  file_id INTEGER NOT NULL REFERENCES code_files(id) ON DELETE CASCADE,
+  repo TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  language TEXT,
+  start_line INTEGER NOT NULL,
+  end_line INTEGER NOT NULL,
+  sanitized_text TEXT NOT NULL,
+  symbols_json TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS code_chunks_fts USING fts5(
+  chunkId UNINDEXED,
+  sanitizedText,
+  filePath,
+  symbols,
+  language
+);
+
+CREATE TABLE IF NOT EXISTS code_index_state (
+  repo TEXT PRIMARY KEY,
+  last_indexed_at TEXT NOT NULL,
+  indexed_files INTEGER NOT NULL,
+  code_chunks INTEGER NOT NULL,
+  skipped_files INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sync_state (
   repo TEXT PRIMARY KEY,
   last_sync_at TEXT,
@@ -87,4 +129,6 @@ CREATE INDEX IF NOT EXISTS idx_pr_files_path ON pr_files(path);
 CREATE INDEX IF NOT EXISTS idx_pr_comments_source ON pr_comments(source_type);
 CREATE INDEX IF NOT EXISTS idx_wisdom_units_category ON wisdom_units(category);
 CREATE INDEX IF NOT EXISTS idx_wisdom_units_pr ON wisdom_units(pr_id);
+CREATE INDEX IF NOT EXISTS idx_code_files_path ON code_files(path);
+CREATE INDEX IF NOT EXISTS idx_code_chunks_file_path ON code_chunks(file_path);
 `;

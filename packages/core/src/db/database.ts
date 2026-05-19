@@ -2,7 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { SCHEMA_SQL } from "./migrations.js";
-import type { IndexStatus, PullRequestRecord, SourceType, WisdomUnit } from "../types.js";
+import type {
+  CodeChunk,
+  CodeFileRecord,
+  CodeIndexSummary,
+  IndexStatus,
+  PullRequestRecord,
+  SourceType,
+  WisdomUnit,
+} from "../types.js";
 import { redactedHistoricalText, sanitizeHistoricalText } from "../security/sanitize.js";
 import { resolveGitHubToken } from "../utils/github-token.js";
 
@@ -11,13 +19,18 @@ export type AnchorDatabase = Database.Database;
 type CountRow = { count: number };
 type RepoRow = { id: number; full_name: string };
 type PrRow = { id: number };
+type CodeFileRow = { id: number; path: string };
 type SyncRow = { last_sync_at?: string | null };
+type CodeIndexStateRow = { last_indexed_at?: string | null };
 
 export function defaultDatabasePath(cwd: string): string {
   return path.join(cwd, ".anchor", "index.sqlite");
 }
 
-export function openAnchorDatabase(cwd: string, databasePath = defaultDatabasePath(cwd)): AnchorDatabase {
+export function openAnchorDatabase(
+  cwd: string,
+  databasePath = defaultDatabasePath(cwd),
+): AnchorDatabase {
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
   const db = new Database(databasePath);
   db.pragma("journal_mode = WAL");
@@ -34,8 +47,12 @@ export function checkSchema(db: AnchorDatabase): boolean {
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual') AND name = ?")
       .all("wisdom_units_fts");
+    const codeTables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual') AND name = ?")
+      .all("code_chunks_fts");
     const wisdom = db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all("wisdom_units");
-    return tables.length > 0 && wisdom.length > 0;
+    const code = db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all("code_chunks");
+    return tables.length > 0 && wisdom.length > 0 && codeTables.length > 0 && code.length > 0;
   } catch {
     return false;
   }
@@ -56,9 +73,9 @@ export function ensureRepository(db: AnchorDatabase, fullName: string): number {
 }
 
 export function getLastSyncTime(db: AnchorDatabase, repo: string): string | undefined {
-  const row = db
-    .prepare("SELECT last_sync_at FROM sync_state WHERE repo = ?")
-    .get(repo) as SyncRow | undefined;
+  const row = db.prepare("SELECT last_sync_at FROM sync_state WHERE repo = ?").get(repo) as
+    | SyncRow
+    | undefined;
   return row?.last_sync_at ?? undefined;
 }
 
@@ -92,7 +109,9 @@ export function upsertPullRequest(
 ): { files: number; comments: number; wisdom: number } {
   const repoId = ensureRepository(db, pr.repo);
   const author = pr.user?.login ?? "unknown";
-  const labels = (pr.labels ?? []).map((label) => (typeof label === "string" ? label : label.name)).filter(Boolean);
+  const labels = (pr.labels ?? [])
+    .map((label) => (typeof label === "string" ? label : label.name))
+    .filter(Boolean);
   const titleText = redactedHistoricalText(pr.title);
   const bodyText = redactedHistoricalText(pr.body ?? "");
   const bodySanitized = sanitizeHistoricalText(pr.body ?? "");
@@ -243,8 +262,112 @@ export function upsertPullRequest(
 
   transaction();
 
-  const comments = (pr.reviews?.length ?? 0) + (pr.reviewComments?.length ?? 0) + (pr.issueComments?.length ?? 0);
+  const comments =
+    (pr.reviews?.length ?? 0) + (pr.reviewComments?.length ?? 0) + (pr.issueComments?.length ?? 0);
   return { files: pr.files.length, comments, wisdom: wisdomUnits.length };
+}
+
+export function replaceCodeIndex(
+  db: AnchorDatabase,
+  repo: string,
+  codeFiles: CodeFileRecord[],
+  codeChunks: CodeChunk[],
+  skippedFiles: number,
+  cwd: string,
+): CodeIndexSummary {
+  initializeSchema(db);
+  const repoId = ensureRepository(db, repo);
+  const now = new Date().toISOString();
+
+  const transaction = db.transaction(() => {
+    const existingChunks = db
+      .prepare("SELECT id FROM code_chunks WHERE repo_id = ?")
+      .all(repoId) as Array<{
+      id: string;
+    }>;
+    const deleteFts = db.prepare("DELETE FROM code_chunks_fts WHERE chunkId = ?");
+    for (const row of existingChunks) deleteFts.run(row.id);
+    db.prepare("DELETE FROM code_chunks WHERE repo_id = ?").run(repoId);
+    db.prepare("DELETE FROM code_files WHERE repo_id = ?").run(repoId);
+
+    const insertFile = db.prepare(
+      `INSERT INTO code_files
+       (repo_id, path, language, size_bytes, content_hash, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    );
+    for (const file of codeFiles) {
+      insertFile.run(
+        repoId,
+        file.path,
+        file.language ?? null,
+        file.sizeBytes,
+        file.contentHash,
+        file.updatedAt,
+      );
+    }
+
+    const fileRows = db
+      .prepare("SELECT id, path FROM code_files WHERE repo_id = ?")
+      .all(repoId) as CodeFileRow[];
+    const fileIds = new Map(fileRows.map((row) => [row.path, row.id]));
+
+    const insertChunk = db.prepare(
+      `INSERT INTO code_chunks
+       (id, repo_id, file_id, repo, file_path, language, start_line, end_line, sanitized_text,
+        symbols_json, content_hash, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const insertFts = db.prepare(
+      `INSERT INTO code_chunks_fts
+       (chunkId, sanitizedText, filePath, symbols, language)
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+
+    for (const chunk of codeChunks) {
+      const fileId = fileIds.get(chunk.filePath);
+      if (!fileId) continue;
+      insertChunk.run(
+        chunk.id,
+        repoId,
+        fileId,
+        chunk.repo,
+        chunk.filePath,
+        chunk.language ?? null,
+        chunk.startLine,
+        chunk.endLine,
+        chunk.sanitizedText,
+        JSON.stringify(chunk.symbols),
+        chunk.contentHash,
+        chunk.updatedAt,
+      );
+      insertFts.run(
+        chunk.id,
+        chunk.sanitizedText,
+        chunk.filePath,
+        chunk.symbols.join(" "),
+        chunk.language ?? "",
+      );
+    }
+
+    db.prepare(
+      `INSERT INTO code_index_state (repo, last_indexed_at, indexed_files, code_chunks, skipped_files)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(repo) DO UPDATE SET
+         last_indexed_at = excluded.last_indexed_at,
+         indexed_files = excluded.indexed_files,
+         code_chunks = excluded.code_chunks,
+         skipped_files = excluded.skipped_files`,
+    ).run(repo, now, codeFiles.length, codeChunks.length, skippedFiles);
+  });
+
+  transaction();
+
+  return {
+    indexedFiles: codeFiles.length,
+    codeChunksCreated: codeChunks.length,
+    skippedFiles,
+    databasePath: defaultDatabasePath(cwd),
+  };
 }
 
 export function getIndexStatus(
@@ -259,6 +382,8 @@ export function getIndexStatus(
       fileCount: 0,
       commentCount: 0,
       wisdomUnitCount: 0,
+      codeFileCount: 0,
+      codeChunkCount: 0,
       githubTokenConfigured,
       health: "missing_database",
     };
@@ -266,6 +391,7 @@ export function getIndexStatus(
 
   const db = openAnchorDatabase(cwd, databasePath);
   try {
+    initializeSchema(db);
     if (!checkSchema(db)) {
       return {
         databasePath,
@@ -273,19 +399,25 @@ export function getIndexStatus(
         fileCount: 0,
         commentCount: 0,
         wisdomUnitCount: 0,
+        codeFileCount: 0,
+        codeChunkCount: 0,
         githubTokenConfigured,
         health: "schema_invalid",
       };
     }
     const count = (table: string): number =>
       (db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as CountRow).count;
-    const repoRow = db
-      .prepare("SELECT full_name FROM repositories ORDER BY id LIMIT 1")
-      .get() as { full_name?: string } | undefined;
+    const repoRow = db.prepare("SELECT full_name FROM repositories ORDER BY id LIMIT 1").get() as
+      | { full_name?: string }
+      | undefined;
     const syncRow = db
       .prepare("SELECT last_sync_at FROM sync_state ORDER BY updated_at DESC LIMIT 1")
       .get() as SyncRow | undefined;
+    const codeIndexRow = db
+      .prepare("SELECT last_indexed_at FROM code_index_state ORDER BY last_indexed_at DESC LIMIT 1")
+      .get() as CodeIndexStateRow | undefined;
     const wisdomUnitCount = count("wisdom_units");
+    const codeChunkCount = count("code_chunks");
     return {
       repo: repoRow?.full_name,
       databasePath,
@@ -293,9 +425,12 @@ export function getIndexStatus(
       fileCount: count("pr_files"),
       commentCount: count("pr_comments"),
       wisdomUnitCount,
+      codeFileCount: count("code_files"),
+      codeChunkCount,
       lastSyncTime: syncRow?.last_sync_at ?? undefined,
+      lastCodeIndexTime: codeIndexRow?.last_indexed_at ?? undefined,
       githubTokenConfigured,
-      health: wisdomUnitCount > 0 ? "ok" : "empty_index",
+      health: wisdomUnitCount > 0 || codeChunkCount > 0 ? "ok" : "empty_index",
     };
   } finally {
     db.close();
