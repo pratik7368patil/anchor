@@ -45,6 +45,27 @@ Or run it without a global install:
 npx -y @pratik7368patil/anchor --help
 ```
 
+## 2-Minute Demo
+
+Try Anchor without a GitHub token or a real repository index:
+
+```bash
+npx @pratik7368patil/anchor demo
+```
+
+`anchor demo` creates a temporary workspace, indexes bundled sample PR history plus sample code, prints example output for `anchor_get_context`, `anchor_explain_file`, and `anchor_review_diff`, then cleans up the temporary workspace. Use `--keep` or `--path ./anchor-demo` if you want to inspect the demo SQLite index.
+
+Before Anchor, Cursor sees mostly the current files and your prompt. After Anchor, Cursor can also see concise, cited context like:
+
+```text
+[constraint] Do not remove the AuthCache lazy constraint...
+Evidence: PR #101, review_comment, src/auth/cache.ts
+Confidence: strong
+Current code check: current
+```
+
+The demo uses sanitized fixture text only. It does not call GitHub, npm, telemetry, SaaS, or any LLM API.
+
 For local development from this repository:
 
 ```bash
@@ -114,6 +135,8 @@ Anchor also indexes the local codebase by default after PR indexing. Code discov
 
 Use `anchor index-code` to refresh only the local codebase index without GitHub authentication. Use `--no-code` on PR indexing commands when you only want PR history.
 
+After indexing, Anchor prints outcome counts for architecture decisions, constraints, API contracts, security notes, regressions, test links, team rules, and a local coverage score. It also suggests a next Cursor prompt.
+
 The local database is written to:
 
 ```text
@@ -141,6 +164,7 @@ Team-approved constraints can live in a committed `anchor.rules.json` file:
 anchor rules init
 anchor rules validate
 anchor rules list
+anchor rules suggest
 ```
 
 Rules must cite PR evidence. A minimal rule looks like:
@@ -187,16 +211,21 @@ anchor rules check-evidence
 
 `check-evidence` confirms that cited PRs exist in the local Anchor index.
 
+`anchor rules suggest` reads local evidence and suggests draft rules from repeated or high-confidence constraints, API contracts, security notes, and regressions. It never modifies `anchor.rules.json`; the team still has to review and add any rule explicitly.
+
 ## Explain And Review
 
 Use Anchor directly from a terminal:
 
 ```bash
 anchor explain src/auth/cache.ts
+anchor explain src/auth/cache.ts --share
 anchor review
 anchor review --base main
 anchor review --diff-file change.diff --strict
+anchor review --share
 anchor health
+anchor prompts
 ```
 
 `anchor explain <file>` summarizes what the file appears to own, matching PR decisions, team rules, known regressions, related tests, and important symbols using the local index only.
@@ -204,6 +233,18 @@ anchor health
 `anchor review` reads the current `git diff` by default and groups evidence-backed findings into blockers, risks, historical constraints, regression checks, and recommended tests. It never approves or rejects code automatically.
 
 `anchor health` focuses on index quality: partial PR history, stale code index, invalid team rules, last failed index run, and the next suggested command.
+
+`--share` mode prints compact Markdown for Slack or PR comments: file summary, key constraints, known regressions, likely tests, and PR citations.
+
+`anchor prompts` prints Cursor-ready prompts for before-edit, explain-file, strict-mode, and review-diff workflows.
+
+`anchor health` and `anchor_index_status` include a local coverage score:
+
+```text
+Anchor coverage: 72% (good)
+```
+
+The score uses only local facts: PR coverage, code index freshness, code chunks, test links, regression events, wisdom units, team rules, and stale evidence.
 
 ## Test-Aware And Regression Context
 
@@ -249,6 +290,32 @@ After `anchor init`, restart or reload Cursor and verify the MCP server named `a
 Before refactoring this file, call `anchor_get_context` and summarize relevant historical constraints.
 ```
 
+## Cursor Prompt Cookbook
+
+Before edit:
+
+```text
+Before making this non-trivial code change, call `anchor_get_context` with the task, target files, relevant symbols, and current diff if available. Summarize the historical constraints before editing.
+```
+
+Explain file:
+
+```text
+Before editing this file, call `anchor_explain_file` for the target file and summarize ownership, related PR decisions, regressions, and likely tests.
+```
+
+Strict mode:
+
+```text
+For this risky refactor, call `anchor_get_context` with `strict: true` and `minConfidence: "moderate"`. Only use non-stale evidence and cite PRs that affect the implementation.
+```
+
+Review diff:
+
+```text
+After making the diff, call `anchor_review_diff` and list evidence-backed blockers, risks, historical constraints, regression checks, and recommended tests.
+```
+
 The main tool input is:
 
 ```json
@@ -269,7 +336,7 @@ Use `strict: true` when Cursor should only receive non-stale evidence at or abov
 Secondary tools:
 
 - `anchor_search_history`
-- `anchor_index_status` reports PR/code counts, history coverage, stale evidence count, team rule count, and last sync/index times.
+- `anchor_index_status` reports PR/code counts, history coverage, coverage score, stale evidence count, team rule count, and last sync/index times.
 - `anchor_explain_file`
 - `anchor_review_diff`
 
@@ -280,10 +347,13 @@ pnpm install
 pnpm build
 pnpm test
 pnpm --filter @pratik7368patil/anchor start -- init
+pnpm --filter @pratik7368patil/anchor start -- demo
+pnpm --filter @pratik7368patil/anchor start -- prompts
 pnpm --filter @pratik7368patil/anchor start -- index --repo owner/name --limit 10
 pnpm --filter @pratik7368patil/anchor start -- explain src/auth/cache.ts
 pnpm --filter @pratik7368patil/anchor start -- review
 pnpm --filter @pratik7368patil/anchor start -- health
+pnpm --filter @pratik7368patil/anchor start -- rules suggest
 pnpm --filter @pratik7368patil/anchor start -- doctor
 pnpm --filter @pratik7368patil/anchor start -- serve
 ```
@@ -301,9 +371,9 @@ NPM_TOKEN
 Release flow:
 
 ```bash
-npm --prefix packages/core version 0.1.9 --no-git-tag-version
-npm --prefix packages/mcp-server version 0.1.9 --no-git-tag-version
-npm --prefix packages/cli version 0.1.9 --no-git-tag-version
+npm --prefix packages/core version 0.1.10 --no-git-tag-version
+npm --prefix packages/mcp-server version 0.1.10 --no-git-tag-version
+npm --prefix packages/cli version 0.1.10 --no-git-tag-version
 ```
 
 Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.

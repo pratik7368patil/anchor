@@ -1,6 +1,6 @@
 {
   "name": "@pratik7368patil/anchor",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Anchor CLI: local-first Cursor MCP context from GitHub PR history.",
   "license": "MIT",
   "type": "module",

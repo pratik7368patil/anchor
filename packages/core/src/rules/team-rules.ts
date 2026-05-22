@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AnchorDatabase } from "../db/database.js";
 import { defaultDatabasePath, initializeSchema, openAnchorDatabase } from "../db/database.js";
@@ -10,13 +11,16 @@ import type {
   RankedTeamRule,
   SourceType,
   TeamRule,
+  TeamRuleSuggestion,
   WisdomCategory,
 } from "../types.js";
 import { sanitizeHistoricalText } from "../security/sanitize.js";
-import { tokenizeSearchText, uniqueStrings } from "../utils/text.js";
+import { clipSentence, tokenizeSearchText, uniqueStrings } from "../utils/text.js";
 import { detectGitRoot } from "../utils/git.js";
 import {
+  claimKeyFor,
   confidenceAtLeast,
+  confidenceLevelFor,
   evaluateFreshness,
   loadCurrentCodeSnapshot,
   sourceTypeLabel,
@@ -110,6 +114,36 @@ export type RulesEvidenceCheckResult = {
   checked: number;
   missing: Array<{ ruleId: string; prNumber: number }>;
   errors: string[];
+};
+
+export type RulesSuggestOptions = {
+  category?: WisdomCategory;
+  minConfidence?: ConfidenceLevel;
+  maxResults?: number;
+};
+
+type WisdomSuggestionRow = {
+  id: string;
+  pr_number: number;
+  pr_url: string;
+  source_type: SourceType;
+  category: WisdomCategory;
+  sanitized_text: string;
+  file_paths_json: string;
+  symbols_json: string;
+  authors_json: string;
+  confidence: number;
+};
+
+type RegressionSuggestionRow = {
+  id: string;
+  pr_number: number;
+  pr_url: string;
+  summary_sanitized: string;
+  file_paths_json: string;
+  symbols_json: string;
+  authors_json: string;
+  confidence: number;
 };
 
 function rulesPath(cwd: string): string {
@@ -420,6 +454,178 @@ export function rankTeamRules(
     .filter((rule) => passesStrictMode(rule, input))
     .sort((a, b) => b.score - a.score)
     .slice(0, 4);
+}
+
+function parseJsonArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function confidenceMinimum(level: ConfidenceLevel): number {
+  if (level === "strong") return 0.75;
+  if (level === "moderate") return 0.55;
+  return 0;
+}
+
+function suggestionSlug(category: WisdomCategory, text: string, filePaths: string[]): string {
+  const base =
+    filePaths[0]?.split(/[/.]/).filter(Boolean).slice(-2).join("-") ||
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 36) ||
+    "rule";
+  const hash = createHash("sha1").update(`${category}:${text}`).digest("hex").slice(0, 8);
+  return `${category.replace(/_/g, "-")}-${base.toLowerCase()}-${hash}`
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .slice(0, 120);
+}
+
+function sortSuggestionCandidates(a: TeamRuleSuggestion, b: TeamRuleSuggestion): number {
+  const repeated = b.repeatedEvidenceCount - a.repeatedEvidenceCount;
+  if (repeated !== 0) return repeated;
+  return confidenceMinimum(b.confidenceLevel) - confidenceMinimum(a.confidenceLevel);
+}
+
+function wisdomCategoriesForSuggestions(category?: WisdomCategory): WisdomCategory[] {
+  const defaults: WisdomCategory[] = [
+    "constraint",
+    "api_contract",
+    "security_note",
+    "bug_regression",
+    "architecture_decision",
+  ];
+  return category ? [category] : defaults;
+}
+
+function existingRuleIds(cwd: string): Set<string> {
+  const loaded = loadTeamRulesFile(cwd);
+  return new Set(loaded.rules.map((rule) => rule.id));
+}
+
+export function suggestTeamRules(
+  db: AnchorDatabase,
+  cwd: string,
+  options: RulesSuggestOptions = {},
+): TeamRuleSuggestion[] {
+  initializeSchema(db);
+  const minConfidence = options.minConfidence ?? "moderate";
+  const categories = wisdomCategoriesForSuggestions(options.category);
+  const categoryPlaceholders = categories.map(() => "?").join(", ");
+  const wisdomRows = db
+    .prepare(
+      `SELECT id, pr_number, pr_url, source_type, category, sanitized_text, file_paths_json,
+              symbols_json, authors_json, confidence
+       FROM wisdom_units
+       WHERE category IN (${categoryPlaceholders}) AND confidence >= ?
+       ORDER BY confidence DESC, pr_number DESC`,
+    )
+    .all(...categories, confidenceMinimum(minConfidence)) as WisdomSuggestionRow[];
+  const loadedIds = existingRuleIds(cwd);
+  const grouped = new Map<
+    string,
+    {
+      best: WisdomSuggestionRow;
+      rows: WisdomSuggestionRow[];
+      prNumbers: Set<number>;
+    }
+  >();
+
+  for (const row of wisdomRows) {
+    const key = claimKeyFor(row.category, row.sanitized_text);
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, { best: row, rows: [row], prNumbers: new Set([row.pr_number]) });
+    } else {
+      existing.rows.push(row);
+      existing.prNumbers.add(row.pr_number);
+      if (row.confidence > existing.best.confidence) existing.best = row;
+    }
+  }
+
+  const suggestions: TeamRuleSuggestion[] = [];
+  for (const group of grouped.values()) {
+    const row = group.best;
+    const filePaths = uniqueStrings(
+      group.rows.flatMap((item) => parseJsonArray(item.file_paths_json)),
+    );
+    const symbols = uniqueStrings(group.rows.flatMap((item) => parseJsonArray(item.symbols_json)));
+    const id = suggestionSlug(row.category, row.sanitized_text, filePaths);
+    if (loadedIds.has(id)) continue;
+    const evidence = group.rows.slice(0, 5).map((item) => ({
+      prNumber: item.pr_number,
+      prUrl: item.pr_url,
+      sourceType: item.source_type,
+      author: parseJsonArray(item.authors_json)[0],
+      filePath: parseJsonArray(item.file_paths_json)[0],
+    }));
+    suggestions.push({
+      id,
+      category: row.category,
+      text: clipSentence(row.sanitized_text, 500),
+      sanitizedText: clipSentence(row.sanitized_text, 500),
+      filePaths: filePaths.slice(0, 12),
+      symbols: symbols.slice(0, 20),
+      evidence,
+      confidenceLevel: confidenceLevelFor(
+        Math.max(row.confidence, group.prNumbers.size > 1 ? 0.8 : 0),
+      ),
+      repeatedEvidenceCount: group.prNumbers.size,
+      reason:
+        group.prNumbers.size > 1
+          ? `Repeated across ${group.prNumbers.size} PRs.`
+          : `${sourceTypeLabel(row.source_type)} with ${confidenceLevelFor(row.confidence)} confidence.`,
+    });
+  }
+
+  if (!options.category || options.category === "bug_regression") {
+    const regressionRows = db
+      .prepare(
+        `SELECT id, pr_number, pr_url, summary_sanitized, file_paths_json, symbols_json,
+                authors_json, confidence
+         FROM regression_events
+         WHERE confidence >= ?
+         ORDER BY confidence DESC, pr_number DESC`,
+      )
+      .all(confidenceMinimum(minConfidence)) as RegressionSuggestionRow[];
+    for (const row of regressionRows.slice(0, 12)) {
+      const filePaths = parseJsonArray(row.file_paths_json);
+      const id = suggestionSlug("bug_regression", row.summary_sanitized, filePaths);
+      if (loadedIds.has(id)) continue;
+      suggestions.push({
+        id,
+        category: "bug_regression",
+        text: clipSentence(row.summary_sanitized, 500),
+        sanitizedText: clipSentence(row.summary_sanitized, 500),
+        filePaths: filePaths.slice(0, 12),
+        symbols: parseJsonArray(row.symbols_json).slice(0, 20),
+        evidence: [
+          {
+            prNumber: row.pr_number,
+            prUrl: row.pr_url,
+            sourceType: "pr_body",
+            author: parseJsonArray(row.authors_json)[0],
+            filePath: filePaths[0],
+            note: "Regression event extracted from local PR history.",
+          },
+        ],
+        confidenceLevel: confidenceLevelFor(row.confidence),
+        repeatedEvidenceCount: 1,
+        reason: "Regression memory extracted from local PR history.",
+      });
+    }
+  }
+
+  return suggestions
+    .sort(sortSuggestionCandidates)
+    .slice(0, Math.max(1, Math.min(options.maxResults ?? 8, 20)));
 }
 
 export function countValidTeamRules(cwd: string): { count: number; lastRuleIndexTime?: string } {

@@ -22,6 +22,10 @@ export function evaluateIndexHealth(status: IndexStatus, rulesOk: boolean): Anch
     staleCodeIndex: Boolean(status.staleCodeIndex),
     lastSuccessfulRun: status.lastSuccessfulRun,
     lastFailedRun: status.lastFailedRun,
+    coverageScore: status.coverageScore,
+    coverageGrade: status.coverageGrade,
+    coverageReasons: status.coverageReasons,
+    suggestedPrompts: status.suggestedPrompts,
   };
 }
 

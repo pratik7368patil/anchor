@@ -10,6 +10,7 @@ import {
   recordIndexRun,
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
+import { printIndexOutcome } from "./engagement.js";
 import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
 
 export type IndexOptions = {
@@ -104,6 +105,7 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
     }
     console.log(`Regression events created: ${summary.regressionEventsCreated}`);
     console.log(`Database path: ${summary.databasePath}`);
+    printIndexOutcome(root, db, { history: summary, code: codeSummary });
     recordIndexRun(db, {
       command: options.all ? "index-all" : "index",
       repo,
@@ -160,6 +162,7 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
     console.log(`Test links created: ${summary.testLinksCreated}`);
     console.log(`Skipped code files: ${summary.skippedFiles}`);
     console.log(`Database path: ${summary.databasePath}`);
+    printIndexOutcome(root, db, { code: summary });
     recordIndexRun(db, {
       command: "index-code",
       repo,

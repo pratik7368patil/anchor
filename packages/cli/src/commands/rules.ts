@@ -1,14 +1,20 @@
 import {
   addTeamRule,
   checkTeamRuleEvidence,
+  defaultDatabasePath,
+  detectGitRoot,
   ensureTeamRulesFile,
   loadTeamRulesFile,
+  openAnchorDatabase,
+  suggestTeamRules,
   validateTeamRulesFile,
   type RulesAddInput,
   type RulesAddResult,
   type RulesEvidenceCheckResult,
+  type RulesSuggestOptions,
   type RulesInitResult,
   type TeamRule,
+  type TeamRuleSuggestion,
   type TeamRulesValidationResult,
 } from "@pratik7368patil/anchor-core";
 
@@ -52,6 +58,19 @@ export function runRulesAdd(
 
 export function runRulesCheckEvidence(cwd: string): RulesEvidenceCheckResult {
   return checkTeamRuleEvidence(cwd);
+}
+
+export function runRulesSuggest(
+  cwd: string,
+  options: RulesSuggestOptions = {},
+): { suggestions: TeamRuleSuggestion[] } {
+  const root = detectGitRoot(cwd) ?? cwd;
+  const db = openAnchorDatabase(root, defaultDatabasePath(root));
+  try {
+    return { suggestions: suggestTeamRules(db, root, options) };
+  } finally {
+    db.close();
+  }
 }
 
 export function printRulesInit(result: RulesInitResult): void {
@@ -115,4 +134,29 @@ export function printRulesEvidenceCheck(result: RulesEvidenceCheckResult): void 
     console.error(`- ${missing.ruleId}: PR #${missing.prNumber} is not in the local index.`);
   }
   console.error(`Path: ${result.path}`);
+}
+
+export function printRulesSuggest(
+  result: { suggestions: TeamRuleSuggestion[] },
+  options: { json?: boolean } = {},
+): void {
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(`Anchor rule suggestions (${result.suggestions.length})`);
+  if (result.suggestions.length === 0) {
+    console.log("No evidence-backed suggestions found in the local index.");
+    return;
+  }
+  for (const suggestion of result.suggestions) {
+    const evidence = suggestion.evidence[0];
+    console.log(`- ${suggestion.id} [${suggestion.category}]`);
+    console.log(`  Text: ${suggestion.sanitizedText}`);
+    console.log(`  Reason: ${suggestion.reason}`);
+    console.log(`  Evidence: PR #${evidence?.prNumber ?? "n/a"} ${evidence?.prUrl ?? ""}`);
+    console.log(`  Confidence: ${suggestion.confidenceLevel}`);
+  }
+  console.log("Run anchor rules add with a reviewed rule when the team agrees.");
 }

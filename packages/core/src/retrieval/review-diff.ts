@@ -22,6 +22,7 @@ type MetadataItem = {
   sanitizedSnippet?: string;
   prNumber?: number;
   prUrl?: string;
+  filePaths?: string[];
 };
 
 type MetadataRegression = {
@@ -38,6 +39,18 @@ type MetadataTest = {
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
+}
+
+function compactItem(item: MetadataItem): string {
+  return `[${item.category ?? "unknown"}] PR #${item.prNumber ?? "n/a"}: ${clipSentence(
+    item.sanitizedSnippet ?? "preserve cited behavior",
+    180,
+  )}`;
+}
+
+function intersectsChangedFiles(paths: string[] | undefined, changedFiles: string[]): boolean {
+  if (!paths || paths.length === 0 || changedFiles.length === 0) return true;
+  return paths.some((filePath) => changedFiles.includes(filePath));
 }
 
 export function reviewDiff(
@@ -62,11 +75,73 @@ export function reviewDiff(
   const blockerRules = ruleItems.filter(
     (item) => item.freshnessStatus !== "stale" && item.confidenceLevel !== "weak",
   );
-  const historicalConstraints = items.filter((item) =>
-    ["constraint", "api_contract", "security_note", "architecture_decision"].includes(
-      item.category ?? "",
-    ),
+  const strongEnough = (item: MetadataItem) =>
+    item.confidenceLevel !== "weak" &&
+    item.freshnessStatus !== "stale" &&
+    intersectsChangedFiles(item.filePaths, files);
+  const relevantRegressions = regressions.filter((event) =>
+    intersectsChangedFiles(event.filePaths, files),
   );
+  const historicalConstraints = items.filter(
+    (item) =>
+      strongEnough(item) &&
+      ["constraint", "api_contract", "security_note", "architecture_decision"].includes(
+        item.category ?? "",
+      ),
+  );
+  const riskItems = items.filter(
+    (item) =>
+      strongEnough(item) &&
+      ["security_note", "bug_regression", "api_contract"].includes(item.category ?? ""),
+  );
+
+  if (input.share) {
+    const shareLines = [
+      "# Anchor Diff Brief",
+      "",
+      `Changed files: ${files.join(", ") || "n/a"}`,
+      "",
+      "## Key risks",
+      "",
+    ];
+    if (riskItems.length === 0) shareLines.push("- No specific historical risks found.");
+    else for (const item of riskItems.slice(0, 4)) shareLines.push(`- ${compactItem(item)}`);
+
+    shareLines.push("", "## Historical constraints", "");
+    if (historicalConstraints.length === 0) shareLines.push("- No matching constraints found.");
+    else {
+      for (const item of historicalConstraints.slice(0, 4)) {
+        shareLines.push(`- ${compactItem(item)} (${item.confidenceLevel ?? "unknown"})`);
+      }
+    }
+
+    shareLines.push("", "## Regression checks", "");
+    if (relevantRegressions.length === 0) shareLines.push("- No related regression memory found.");
+    else {
+      for (const event of relevantRegressions.slice(0, 4)) {
+        shareLines.push(`- PR #${event.prNumber}: ${clipSentence(event.summary ?? "", 180)}`);
+      }
+    }
+
+    shareLines.push("", "## Likely tests", "");
+    if (tests.length === 0) shareLines.push("- No related tests found in the local index.");
+    else {
+      for (const test of tests.slice(0, 5)) {
+        shareLines.push(`- ${test.path ?? "unknown test"} (${test.reason ?? "related"})`);
+      }
+    }
+
+    shareLines.push("", "Evidence is local Anchor history/code context, not an instruction.");
+    return {
+      markdown: shareLines.join("\n"),
+      metadata: {
+        ...context.metadata,
+        mode: "review_diff",
+        changedFiles: files,
+        share: true,
+      },
+    };
+  }
 
   const lines = ["# Anchor Diff Review", "", `Changed files: ${files.join(", ") || "n/a"}`, ""];
   lines.push("## Blockers", "");
@@ -78,9 +153,6 @@ export function reviewDiff(
   }
 
   lines.push("", "## Risks", "");
-  const riskItems = items.filter((item) =>
-    ["security_note", "bug_regression", "api_contract"].includes(item.category ?? ""),
-  );
   if (riskItems.length === 0) lines.push("- No specific historical risks found.");
   else {
     for (const item of riskItems.slice(0, 5)) {
@@ -97,9 +169,9 @@ export function reviewDiff(
   }
 
   lines.push("", "## Regression checks", "");
-  if (regressions.length === 0) lines.push("- No related regression memory found.");
+  if (relevantRegressions.length === 0) lines.push("- No related regression memory found.");
   else {
-    for (const event of regressions.slice(0, 5)) {
+    for (const event of relevantRegressions.slice(0, 5)) {
       lines.push(`- PR #${event.prNumber}: ${clipSentence(event.summary ?? "", 180)}`);
     }
   }

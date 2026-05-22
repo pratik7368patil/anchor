@@ -22,7 +22,12 @@ export type InitResult = {
 
 function cursorMcpEntryForCurrentInstall(): Record<string, unknown> {
   const invokedPath = process.argv[1];
-  if (invokedPath && path.isAbsolute(invokedPath) && fs.existsSync(invokedPath) && !invokedPath.endsWith(".ts")) {
+  if (
+    invokedPath &&
+    path.isAbsolute(invokedPath) &&
+    fs.existsSync(invokedPath) &&
+    !invokedPath.endsWith(".ts")
+  ) {
     return anchorMcpEntry(invokedPath, ["serve"]);
   }
   return anchorMcpEntry("npx", ["-y", "@pratik7368patil/anchor@latest", "serve"]);
@@ -31,12 +36,16 @@ function cursorMcpEntryForCurrentInstall(): Record<string, unknown> {
 export function runInit(cwd: string): InitResult {
   const gitRoot = detectGitRoot(cwd);
   if (!gitRoot) {
-    throw new Error("No git repository detected. Run anchor init from inside the repository you use with Cursor.");
+    throw new Error(
+      "No git repository detected. Run anchor init from inside the repository you use with Cursor.",
+    );
   }
 
   const repo = detectGitHubRepo(gitRoot);
   if (!repo) {
-    throw new Error("No GitHub origin remote detected. Set origin to a GitHub repo, then rerun anchor init.");
+    throw new Error(
+      "No GitHub origin remote detected. Set origin to a GitHub repo, then rerun anchor init.",
+    );
   }
 
   const config = ensureCursorConfig(gitRoot, cursorMcpEntryForCurrentInstall());
@@ -64,5 +73,12 @@ export function printInitResult(result: InitResult): void {
   console.log(`MCP config ${result.mcpConfigUpdated ? "updated" : "already up to date"}.`);
   console.log(`Cursor rule ${result.ruleCreated ? "created" : "already existed"}.`);
   console.log(`Anchor index exclude ${result.gitExcludeUpdated ? "added" : "already existed"}.`);
-  console.log("No GitHub token was written to disk. Anchor can use GITHUB_TOKEN, GH_TOKEN, or gh auth token for indexing.");
+  console.log(
+    "No GitHub token was written to disk. Anchor can use GITHUB_TOKEN, GH_TOKEN, or gh auth token for indexing.",
+  );
+  console.log("");
+  console.log("Next commands:");
+  console.log("1. anchor index-code");
+  console.log("2. anchor index --limit 50");
+  console.log("3. anchor health");
 }

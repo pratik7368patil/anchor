@@ -10,6 +10,7 @@ import {
   recordIndexRun,
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
+import { printIndexOutcome } from "./engagement.js";
 import { resolveRepo, type IndexOptions } from "./index.js";
 import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
 
@@ -85,6 +86,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
     }
     console.log(`Regression events created: ${summary.regressionEventsCreated}`);
     console.log(`Database path: ${summary.databasePath}`);
+    printIndexOutcome(root, db, { history: summary, code: codeSummary });
     recordIndexRun(db, {
       command: "sync",
       repo,
