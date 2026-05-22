@@ -1,32 +1,94 @@
 import type { Octokit } from "@octokit/rest";
 import type { PullRequestRecord } from "../types.js";
+import type { GitHubRateLimitController } from "./rate-limit.js";
+import { paginateWithGitHubRateLimit, requestWithGitHubRateLimit } from "./rate-limit.js";
 
 export async function fetchPullRequestDetails(
   octokit: Octokit,
   repoFullName: string,
   pullNumber: number,
+  controller: GitHubRateLimitController = {},
 ): Promise<PullRequestRecord> {
   const [owner, repo] = repoFullName.split("/");
   if (!owner || !repo) throw new Error(`Invalid repo '${repoFullName}'. Expected owner/name.`);
 
-  const [{ data: pull }, files, reviews, reviewComments, issueComments, commits] = await Promise.all([
-    octokit.pulls.get({ owner, repo, pull_number: pullNumber }),
-    octokit.paginate(octokit.pulls.listFiles, { owner, repo, pull_number: pullNumber, per_page: 100 }),
-    octokit.paginate(octokit.pulls.listReviews, { owner, repo, pull_number: pullNumber, per_page: 100 }),
-    octokit.paginate(octokit.pulls.listReviewComments, {
-      owner,
-      repo,
-      pull_number: pullNumber,
-      per_page: 100,
-    }),
-    octokit.paginate(octokit.issues.listComments, {
-      owner,
-      repo,
-      issue_number: pullNumber,
-      per_page: 100,
-    }),
-    octokit.paginate(octokit.pulls.listCommits, { owner, repo, pull_number: pullNumber, per_page: 100 }),
-  ]);
+  const { data: pull } = await requestWithGitHubRateLimit(
+    () => octokit.pulls.get({ owner, repo, pull_number: pullNumber }),
+    {
+      controller,
+      requestName: `GET /repos/${repoFullName}/pulls/${pullNumber}`,
+    },
+  );
+  const files = await paginateWithGitHubRateLimit(
+    (page) =>
+      octokit.pulls.listFiles({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        page,
+      }),
+    {
+      controller,
+      requestName: `GET /repos/${repoFullName}/pulls/${pullNumber}/files`,
+    },
+  );
+  const reviews = await paginateWithGitHubRateLimit(
+    (page) =>
+      octokit.pulls.listReviews({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        page,
+      }),
+    {
+      controller,
+      requestName: `GET /repos/${repoFullName}/pulls/${pullNumber}/reviews`,
+    },
+  );
+  const reviewComments = await paginateWithGitHubRateLimit(
+    (page) =>
+      octokit.pulls.listReviewComments({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        page,
+      }),
+    {
+      controller,
+      requestName: `GET /repos/${repoFullName}/pulls/${pullNumber}/comments`,
+    },
+  );
+  const issueComments = await paginateWithGitHubRateLimit(
+    (page) =>
+      octokit.issues.listComments({
+        owner,
+        repo,
+        issue_number: pullNumber,
+        per_page: 100,
+        page,
+      }),
+    {
+      controller,
+      requestName: `GET /repos/${repoFullName}/issues/${pullNumber}/comments`,
+    },
+  );
+  const commits = await paginateWithGitHubRateLimit(
+    (page) =>
+      octokit.pulls.listCommits({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        page,
+      }),
+    {
+      controller,
+      requestName: `GET /repos/${repoFullName}/pulls/${pullNumber}/commits`,
+    },
+  );
 
   return {
     repo: repoFullName,

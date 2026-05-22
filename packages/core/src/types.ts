@@ -301,6 +301,15 @@ export type FetchPullRequestsProgress =
       total: number;
       prNumber: number;
       detailConcurrency: number;
+    }
+  | {
+      stage: "github_rate_limited";
+      repo: string;
+      waitSeconds: number;
+      retryAt: string;
+      reason: string;
+      request: string;
+      attempt: number;
     };
 
 export type IndexPullRequestsProgress =

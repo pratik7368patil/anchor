@@ -37,6 +37,7 @@ export * from "./engagement/coverage.js";
 export * from "./engagement/prompts.js";
 export * from "./demo/demo-data.js";
 export * from "./github/client.js";
+export * from "./github/rate-limit.js";
 export * from "./github/fetch-prs.js";
 export * from "./github/fetch-pr-details.js";
 export * from "./doctor.js";

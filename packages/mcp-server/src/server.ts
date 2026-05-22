@@ -23,7 +23,7 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
   const server = new McpServer(
     {
       name: "anchor",
-      version: "0.1.12",
+      version: "0.1.13",
     },
     {
       instructions:
