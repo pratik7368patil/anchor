@@ -9,6 +9,7 @@ export type CoverageInput = Pick<
   | "codeChunkCount"
   | "testLinkCount"
   | "regressionEventCount"
+  | "architecturePatternCount"
   | "teamRuleCount"
   | "historyCoverage"
   | "staleEvidenceCount"
@@ -80,6 +81,13 @@ export function calculateCoverage(input: CoverageInput): CoverageReport {
     reasons.push(`${input.regressionEventCount} regression events indexed.`);
   } else {
     reasons.push("No regression memory indexed yet.");
+  }
+
+  if (input.architecturePatternCount > 0) {
+    score += 10;
+    reasons.push(`${input.architecturePatternCount} architecture patterns indexed.`);
+  } else {
+    reasons.push("No architecture patterns indexed yet.");
   }
 
   if (input.teamRuleCount > 0) {

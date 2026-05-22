@@ -34,7 +34,17 @@ Target length: 2 minutes.
 
    Explain that this is compact Markdown for Slack, PR comments, or team handoff.
 
-5. Show diff review.
+5. Show architecture memory.
+   Run:
+
+   ```bash
+   anchor architecture --file src/auth/cache.ts
+   anchor architecture --check
+   ```
+
+   Explain that Anchor infers current file areas, imports, symbols, folder patterns, and nearby tests locally so agents can follow the repo's existing architecture.
+
+6. Show diff review.
    Run:
 
    ```bash
@@ -43,7 +53,7 @@ Target length: 2 minutes.
 
    Explain that Anchor does not approve or reject code; it surfaces evidence-backed risks.
 
-6. Show team adoption.
+7. Show team adoption.
    Run:
 
    ```bash
@@ -54,7 +64,7 @@ Target length: 2 minutes.
 
    Mention that the coverage score is local-only and helps teams know whether Anchor's answers are trustworthy.
 
-7. Close with setup.
+8. Close with setup.
    ```bash
    npm install -g @pratik7368patil/anchor
    anchor init
@@ -64,4 +74,4 @@ Target length: 2 minutes.
 
 ## One-Line Positioning
 
-Anchor gives Cursor local, cited repo memory from PR history, current code, tests, regressions, and team rules before it edits.
+Anchor gives Cursor local, cited repo memory from PR history, current code, architecture patterns, tests, regressions, and team rules before it edits.

@@ -32,6 +32,8 @@ anchor doctor`;
 export const workflowCommand = `anchor demo
 anchor prompts
 anchor explain src/api/routes.ts
+anchor architecture --file src/api/routes.ts
+anchor architecture --check
 anchor review --share`;
 
 export const commandGroups: CommandGroup[] = [
@@ -105,6 +107,18 @@ export const commandGroups: CommandGroup[] = [
         description: "Creates compact Markdown for Slack or PR comments.",
       },
       {
+        command: "anchor architecture",
+        description: "Summarizes deterministic architecture patterns from the local code index.",
+      },
+      {
+        command: "anchor architecture --file <file>",
+        description: "Explains placement, imports, symbols, and test patterns for one file.",
+      },
+      {
+        command: "anchor architecture --check",
+        description: "Checks the current git diff against indexed architecture patterns.",
+      },
+      {
         command: "anchor review",
         description: "Reviews the current git diff against Anchor history and known risks.",
       },
@@ -155,6 +169,11 @@ export const options: TableItem[] = [
   { name: "--since YYYY-MM-DD", description: "Index PRs updated since a date." },
   { name: "--force", description: "Rebuild the local index." },
   { name: "--strict", description: "Only return stronger, non-stale evidence." },
+  { name: "--file <path>", description: "Focus architecture or explain output on one file." },
+  { name: "--area api", description: "Filter architecture patterns by area." },
+  { name: "--check", description: "Check the current diff against architecture patterns." },
+  { name: "--diff-file path", description: "Read a saved diff instead of the current git diff." },
+  { name: "--write-doc", description: "Write ANCHOR_ARCHITECTURE.md from architecture output." },
   { name: "--json", description: "Output machine-readable JSON." },
   { name: "--share", description: "Output short Markdown for sharing." },
 ];
@@ -180,6 +199,15 @@ export const mcpTools: TableItem[] = [
     name: "anchor_review_diff",
     description: "Reviews a diff against repo history.",
   },
+  {
+    name: "anchor_get_architecture",
+    description:
+      "Returns deterministic current-code architecture patterns for a file, area, or query.",
+  },
+  {
+    name: "anchor_check_architecture",
+    description: "Checks a diff against indexed placement, import, and test patterns.",
+  },
 ];
 
 export const features = [
@@ -191,6 +219,7 @@ export const features = [
   "Prompt-injection neutralization",
   "Secret redaction",
   "Regression memory",
+  "Architecture Memory from local code",
   "Related test detection",
   "File onboarding with anchor explain",
   "Diff review with anchor review",
@@ -208,6 +237,8 @@ export const useCases = [
   "Avoid repeating regressions from old PRs.",
   "Discover likely related tests to run.",
   "Review a diff before opening a PR.",
+  "Check whether new code follows existing architecture patterns.",
+  "Generate a local architecture briefing for onboarding or refactors.",
   "Convert repeated tribal knowledge into team-approved rules.",
   "Onboard new developers faster.",
   "Demo repo memory to the team without GitHub access.",
@@ -231,6 +262,12 @@ export const docsPages: DocsPage[] = [
     path: "/docs/workflows",
     title: "Workflows",
     description: "Use Anchor before edits, file onboarding, reviews, and team sharing.",
+    group: "Guide",
+  },
+  {
+    path: "/docs/architecture",
+    title: "Architecture Memory",
+    description: "Understand file areas, import direction, symbols, and architecture checks.",
     group: "Guide",
   },
   {

@@ -3,6 +3,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { SCHEMA_SQL } from "./migrations.js";
 import type {
+  ArchitectureIndexData,
   CodeChunk,
   CodeFileRecord,
   CodeIndexSummary,
@@ -34,6 +35,7 @@ type SyncRow = {
   history_limit?: number | null;
 };
 type CodeIndexStateRow = { last_indexed_at?: string | null };
+type ArchitectureIndexStateRow = { last_indexed_at?: string | null };
 type WisdomFilePathsRow = { file_paths_json: string };
 type LastRunRow = { finished_at?: string | null; failures_json?: string | null };
 
@@ -85,13 +87,21 @@ export function checkSchema(db: AnchorDatabase): boolean {
     const regressions = db
       .prepare("SELECT name FROM sqlite_master WHERE name = ?")
       .all("regression_events");
+    const architecture = db
+      .prepare("SELECT name FROM sqlite_master WHERE name = ?")
+      .all("architecture_patterns");
+    const architectureFts = db
+      .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual') AND name = ?")
+      .all("architecture_patterns_fts");
     return (
       tables.length > 0 &&
       wisdom.length > 0 &&
       codeTables.length > 0 &&
       code.length > 0 &&
       tests.length > 0 &&
-      regressions.length > 0
+      regressions.length > 0 &&
+      architecture.length > 0 &&
+      architectureFts.length > 0
     );
   } catch {
     return false;
@@ -375,6 +385,7 @@ export function replaceCodeIndex(
   codeChunks: CodeChunk[],
   skippedFiles: number,
   cwd: string,
+  architecture: ArchitectureIndexData = { components: [], patterns: [], imports: [] },
 ): CodeIndexSummary {
   initializeSchema(db);
   const repoId = ensureRepository(db, repo);
@@ -393,6 +404,7 @@ export function replaceCodeIndex(
     db.prepare("DELETE FROM code_files WHERE repo_id = ?").run(repoId);
     db.prepare("DELETE FROM test_links WHERE repo_id = ? AND reason != 'PR co-change'").run(repoId);
     db.prepare("DELETE FROM test_files WHERE repo_id = ?").run(repoId);
+    deleteExistingArchitectureData(db, repoId);
 
     const insertFile = db.prepare(
       `INSERT INTO code_files
@@ -454,6 +466,7 @@ export function replaceCodeIndex(
     }
 
     insertTestAwareness(db, repoId, testAwareness.testFiles, testAwareness.testLinks);
+    insertArchitectureData(db, repoId, architecture);
 
     db.prepare(
       `INSERT INTO code_index_state (repo, last_indexed_at, indexed_files, code_chunks, skipped_files)
@@ -464,6 +477,22 @@ export function replaceCodeIndex(
          code_chunks = excluded.code_chunks,
          skipped_files = excluded.skipped_files`,
     ).run(repo, now, codeFiles.length, codeChunks.length, skippedFiles);
+
+    db.prepare(
+      `INSERT INTO architecture_index_state (repo, last_indexed_at, components, patterns, imports)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(repo) DO UPDATE SET
+         last_indexed_at = excluded.last_indexed_at,
+         components = excluded.components,
+         patterns = excluded.patterns,
+         imports = excluded.imports`,
+    ).run(
+      repo,
+      now,
+      architecture.components.length,
+      architecture.patterns.length,
+      architecture.imports.length,
+    );
   });
 
   transaction();
@@ -473,9 +502,99 @@ export function replaceCodeIndex(
     codeChunksCreated: codeChunks.length,
     testFilesIndexed: testAwareness.testFiles.length,
     testLinksCreated: testAwareness.testLinks.length,
+    architectureComponentsIndexed: architecture.components.length,
+    architecturePatternsIndexed: architecture.patterns.length,
+    architectureImportsIndexed: architecture.imports.length,
     skippedFiles,
     databasePath: defaultDatabasePath(cwd),
   };
+}
+
+function deleteExistingArchitectureData(db: AnchorDatabase, repoId: number): void {
+  const patternRows = db
+    .prepare("SELECT id FROM architecture_patterns WHERE repo_id = ?")
+    .all(repoId) as Array<{ id: string }>;
+  const deleteFts = db.prepare("DELETE FROM architecture_patterns_fts WHERE patternId = ?");
+  for (const row of patternRows) deleteFts.run(row.id);
+  db.prepare("DELETE FROM architecture_patterns WHERE repo_id = ?").run(repoId);
+  db.prepare("DELETE FROM architecture_components WHERE repo_id = ?").run(repoId);
+  db.prepare("DELETE FROM code_imports WHERE repo_id = ?").run(repoId);
+}
+
+function insertArchitectureData(
+  db: AnchorDatabase,
+  repoId: number,
+  architecture: ArchitectureIndexData,
+): void {
+  const insertImport = db.prepare(
+    `INSERT INTO code_imports
+     (repo_id, source_path, specifier, imported_path, imported_symbols_json, kind)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  for (const item of architecture.imports) {
+    insertImport.run(
+      repoId,
+      item.sourcePath,
+      item.specifier,
+      item.importedPath ?? null,
+      JSON.stringify(item.importedSymbols),
+      item.kind,
+    );
+  }
+
+  const insertComponent = db.prepare(
+    `INSERT INTO architecture_components
+     (repo_id, path, area, kind, language, symbols_json, imports_json, related_tests_json,
+      confidence, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  for (const component of architecture.components) {
+    insertComponent.run(
+      repoId,
+      component.path,
+      component.area,
+      component.kind,
+      component.language ?? null,
+      JSON.stringify(component.symbols),
+      JSON.stringify(component.imports),
+      JSON.stringify(component.relatedTests),
+      component.confidence,
+      component.updatedAt,
+    );
+  }
+
+  const insertPattern = db.prepare(
+    `INSERT INTO architecture_patterns
+     (id, repo_id, repo, area, name, summary_sanitized, source_files_json, symbols_json,
+      evidence_json, confidence, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const insertFts = db.prepare(
+    `INSERT INTO architecture_patterns_fts (patternId, summary, area, sourceFiles, symbols)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+  for (const pattern of architecture.patterns) {
+    insertPattern.run(
+      pattern.id,
+      repoId,
+      pattern.repo,
+      pattern.area,
+      pattern.name,
+      pattern.sanitizedSummary,
+      JSON.stringify(pattern.sourceFiles),
+      JSON.stringify(pattern.symbols),
+      JSON.stringify(pattern.evidence),
+      pattern.confidence,
+      pattern.createdAt,
+    );
+    insertFts.run(
+      pattern.id,
+      pattern.sanitizedSummary,
+      pattern.area,
+      pattern.sourceFiles.join(" "),
+      pattern.symbols.join(" "),
+    );
+  }
 }
 
 function insertPrCochangeTestLinks(db: AnchorDatabase, repoId: number, filePaths: string[]): void {
@@ -563,6 +682,7 @@ function withCoverage<
     codeChunkCount: status.codeChunkCount,
     testLinkCount: status.testLinkCount,
     regressionEventCount: status.regressionEventCount,
+    architecturePatternCount: status.architecturePatternCount,
     teamRuleCount: status.teamRuleCount,
     historyCoverage: status.historyCoverage,
     staleEvidenceCount: status.staleEvidenceCount,
@@ -589,6 +709,9 @@ export function getIndexStatus(
       testFileCount: 0,
       testLinkCount: 0,
       regressionEventCount: 0,
+      architectureComponentCount: 0,
+      architecturePatternCount: 0,
+      architectureImportCount: 0,
       historyCoverage: "unknown",
       staleEvidenceCount: 0,
       teamRuleCount: rules.count,
@@ -615,6 +738,9 @@ export function getIndexStatus(
         testFileCount: 0,
         testLinkCount: 0,
         regressionEventCount: 0,
+        architectureComponentCount: 0,
+        architecturePatternCount: 0,
+        architectureImportCount: 0,
         historyCoverage: "unknown",
         staleEvidenceCount: 0,
         teamRuleCount: rules.count,
@@ -637,6 +763,11 @@ export function getIndexStatus(
     const codeIndexRow = db
       .prepare("SELECT last_indexed_at FROM code_index_state ORDER BY last_indexed_at DESC LIMIT 1")
       .get() as CodeIndexStateRow | undefined;
+    const architectureIndexRow = db
+      .prepare(
+        "SELECT last_indexed_at FROM architecture_index_state ORDER BY last_indexed_at DESC LIMIT 1",
+      )
+      .get() as ArchitectureIndexStateRow | undefined;
     const wisdomUnitCount = count("wisdom_units");
     const codeChunkCount = count("code_chunks");
     const lastSuccessfulRun = db
@@ -664,12 +795,16 @@ export function getIndexStatus(
       testFileCount: count("test_files"),
       testLinkCount: count("test_links"),
       regressionEventCount: count("regression_events"),
+      architectureComponentCount: count("architecture_components"),
+      architecturePatternCount: count("architecture_patterns"),
+      architectureImportCount: count("code_imports"),
       historyCoverage: syncRow?.history_coverage ?? "unknown",
       historyLimit: syncRow?.history_limit ?? undefined,
       staleEvidenceCount: countStaleEvidence(db),
       teamRuleCount: rules.count,
       lastSyncTime: syncRow?.last_sync_at ?? undefined,
       lastCodeIndexTime: codeIndexRow?.last_indexed_at ?? undefined,
+      lastArchitectureIndexTime: architectureIndexRow?.last_indexed_at ?? undefined,
       lastRuleIndexTime: rules.lastRuleIndexTime,
       lastSuccessfulRun: lastSuccessfulRun?.finished_at ?? undefined,
       lastFailedRun: lastFailedRun?.finished_at ?? undefined,

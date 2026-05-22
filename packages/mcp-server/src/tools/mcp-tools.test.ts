@@ -15,6 +15,8 @@ import { handleAnchorGetContext } from "./get-context.js";
 import { handleAnchorIndexStatus } from "./index-status.js";
 import { handleAnchorReviewDiff } from "./review-diff.js";
 import { handleAnchorSearchHistory } from "./search-history.js";
+import { handleAnchorGetArchitecture } from "./get-architecture.js";
+import { handleAnchorCheckArchitecture } from "./check-architecture.js";
 
 const tempDirs: string[] = [];
 
@@ -117,6 +119,7 @@ describe("MCP tools", () => {
     expect(result.content[0]?.text).toContain("Confidence:");
     expect(result.content[0]?.text).toContain("Current code check:");
     expect(result.content[0]?.text).toContain("## Codebase Evidence");
+    expect(result.content[0]?.text).toContain("## Architecture Guidance");
     expect(result.content[0]?.text).toContain("## Relevant tests");
     expect(result.content[0]?.text).toContain("## Regression memory");
     expect(result.content[0]?.text).toContain("src/auth/cache.ts");
@@ -124,6 +127,7 @@ describe("MCP tools", () => {
     expect(result.content[0]?.text).not.toContain("FAKE_ANCHOR_REDACTION_SAMPLE");
     expect(result.structuredContent?.resultCount).toBeGreaterThan(0);
     expect(Array.isArray(result.structuredContent?.codeEvidence)).toBe(true);
+    expect(Array.isArray(result.structuredContent?.architecturePatterns)).toBe(true);
     expect(Array.isArray(result.structuredContent?.relevantTests)).toBe(true);
     expect(Array.isArray(result.structuredContent?.regressionEvents)).toBe(true);
     expect(Array.isArray(result.structuredContent?.queryTerms)).toBe(true);
@@ -176,6 +180,7 @@ describe("MCP tools", () => {
     expect(Array.isArray(status.structuredContent?.suggestedPrompts)).toBe(true);
     expect(status.structuredContent?.testFileCount).toBeGreaterThan(0);
     expect(status.structuredContent?.regressionEventCount).toBeGreaterThan(0);
+    expect(status.structuredContent?.architecturePatternCount).toBeGreaterThan(0);
   });
 
   it("supports explain file and review diff MCP tools", async () => {
@@ -197,5 +202,27 @@ describe("MCP tools", () => {
     expect(explain.structuredContent?.mode).toBe("explain_file");
     expect(review.content[0]?.text).toContain("# Anchor Diff Review");
     expect(review.structuredContent?.changedFiles).toEqual(["src/auth/cache.ts"]);
+  });
+
+  it("supports architecture MCP tools", async () => {
+    const cwd = tempDir();
+    createIndexedFixture(cwd);
+    const architecture = await handleAnchorGetArchitecture({ file: "src/auth/cache.ts" }, cwd);
+    const check = await handleAnchorCheckArchitecture(
+      {
+        diff: [
+          "diff --git a/src/auth/cache.ts b/src/auth/cache.ts",
+          "--- a/src/auth/cache.ts",
+          "+++ b/src/auth/cache.ts",
+          "+export class AuthCache {}",
+        ].join("\n"),
+      },
+      cwd,
+    );
+
+    expect(architecture.content[0]?.text).toContain("# Anchor Architecture");
+    expect(architecture.structuredContent?.mode).toBe("architecture");
+    expect(check.content[0]?.text).toContain("# Anchor Architecture Check");
+    expect(check.structuredContent?.mode).toBe("architecture_check");
   });
 });

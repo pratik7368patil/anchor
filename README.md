@@ -2,7 +2,7 @@
 
 Anchor is a local-first, Cursor-only MCP server that indexes a repository's merged GitHub pull request history and local codebase, then gives Cursor Agent concise historical and current-code context before edits.
 
-It helps Cursor notice past architecture decisions, constraints, rejected approaches, review comments, regressions, testing expectations, related tests, and file ownership signals from the repo's own history and code.
+It helps Cursor notice past architecture decisions, current architecture patterns, constraints, rejected approaches, review comments, regressions, testing expectations, related tests, and file ownership signals from the repo's own history and code.
 
 Anchor is not a SaaS, does not create a dashboard, does not send telemetry, and does not call any LLM API in the MVP.
 
@@ -133,6 +133,8 @@ PR detail fetching uses bounded parallelism. The default concurrency is 5, and `
 
 Anchor also indexes the local codebase by default after PR indexing. Code discovery uses `git ls-files --cached --others --exclude-standard`, so it includes tracked files plus untracked files that are not ignored by git. Generated/private paths such as `.anchor/`, `.cursor/`, `.codex/`, `.aws/`, `.ssh/`, `node_modules/`, `.nuxt/`, `.next/`, `dist/`, `build/`, `coverage/`, and secret-like files such as `.env*`, `.npmrc`, `.netrc`, `*.pem`, `*.key`, and `id_rsa` are always skipped.
 
+Code indexing also refreshes Architecture Memory: deterministic file areas, import edges, exported symbols, repeated folder patterns, and nearby test conventions. This gives Cursor current-code guidance before adding APIs, services, components, hooks, tests, or refactors.
+
 Use `anchor index-code` to refresh only the local codebase index without GitHub authentication. Use `--no-code` on PR indexing commands when you only want PR history.
 
 After indexing, Anchor prints outcome counts for architecture decisions, constraints, API contracts, security notes, regressions, test links, team rules, and a local coverage score. It also suggests a next Cursor prompt.
@@ -252,11 +254,30 @@ Anchor classifies tests with deterministic rules such as `*.test.*`, `*.spec.*`,
 
 Regression memory is extracted from PR titles, bodies, comments, labels, and commit messages using phrases like `regression`, `revert`, `rollback`, `hotfix`, `incident`, `root cause`, `this broke`, and `fixed by`.
 
+## Architecture Memory
+
+Anchor can summarize current repo architecture from the local code index:
+
+```bash
+anchor architecture
+anchor architecture --file src/auth/cache.ts
+anchor architecture --area api
+anchor architecture --check
+anchor architecture --diff-file change.diff --check
+anchor architecture --write-doc
+anchor architecture --json
+```
+
+Architecture Memory is deterministic and evidence-backed. It classifies files into areas like `api`, `service`, `component`, `hook`, `route`, `store`, `test`, `schema`, `type`, `config`, and `util`, extracts import edges and exported symbols, and detects repeated placement patterns. It stores sanitized architecture facts in SQLite, not raw source text.
+
+Use it when Cursor is about to add a new integration, create tests, move code between layers, or refactor a feature area. `anchor architecture --check` reads the current git diff by default and surfaces matching placement/import/test patterns. `--write-doc` is the only command that writes `ANCHOR_ARCHITECTURE.md`.
+
 `anchor_get_context` can now include:
 
 - `## Team-approved rules`
 - `## Must know`
 - `## Codebase Evidence`
+- `## Architecture Guidance`
 - `## Relevant tests`
 - `## Regression memory`
 - `## Risks`
@@ -316,6 +337,12 @@ Review diff:
 After making the diff, call `anchor_review_diff` and list evidence-backed blockers, risks, historical constraints, regression checks, and recommended tests.
 ```
 
+Architecture:
+
+```text
+Before adding this API integration, call `anchor_get_architecture` for the `api` area and summarize existing placement, import, and test patterns.
+```
+
 The main tool input is:
 
 ```json
@@ -339,6 +366,8 @@ Secondary tools:
 - `anchor_index_status` reports PR/code counts, history coverage, coverage score, stale evidence count, team rule count, and last sync/index times.
 - `anchor_explain_file`
 - `anchor_review_diff`
+- `anchor_get_architecture`
+- `anchor_check_architecture`
 
 ## Development Commands
 
@@ -351,6 +380,9 @@ pnpm --filter @pratik7368patil/anchor start -- demo
 pnpm --filter @pratik7368patil/anchor start -- prompts
 pnpm --filter @pratik7368patil/anchor start -- index --repo owner/name --limit 10
 pnpm --filter @pratik7368patil/anchor start -- explain src/auth/cache.ts
+pnpm --filter @pratik7368patil/anchor start -- architecture
+pnpm --filter @pratik7368patil/anchor start -- architecture --file src/auth/cache.ts
+pnpm --filter @pratik7368patil/anchor start -- architecture --check --diff-file change.diff
 pnpm --filter @pratik7368patil/anchor start -- review
 pnpm --filter @pratik7368patil/anchor start -- health
 pnpm --filter @pratik7368patil/anchor start -- rules suggest
@@ -371,9 +403,9 @@ NPM_TOKEN
 Release flow:
 
 ```bash
-npm --prefix packages/core version 0.1.10 --no-git-tag-version
-npm --prefix packages/mcp-server version 0.1.10 --no-git-tag-version
-npm --prefix packages/cli version 0.1.10 --no-git-tag-version
+npm --prefix packages/core version 0.1.12 --no-git-tag-version
+npm --prefix packages/mcp-server version 0.1.12 --no-git-tag-version
+npm --prefix packages/cli version 0.1.12 --no-git-tag-version
 ```
 
 Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.
@@ -417,6 +449,9 @@ Try `anchor sync`, then use `anchor_search_history` with a broader query, file p
 
 Codebase context missing:
 Run `anchor index-code` from the repository root. Confirm `anchor_index_status` reports non-zero code files and code chunks.
+
+Architecture guidance missing:
+Run `anchor index-code` from the repository root. Confirm `anchor_index_status` reports non-zero architecture patterns, then try `anchor architecture --file path/to/file.ts`.
 
 Team rules invalid:
 Run `anchor rules validate`. Each rule needs an id, category, text, and at least one PR evidence reference.

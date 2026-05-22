@@ -8,6 +8,7 @@ import { rankRegressionEvents } from "./regression-ranker.js";
 import { rankRelevantTests } from "./test-ranker.js";
 import { rankWisdomUnits } from "./ranker.js";
 import { getSemanticStatus } from "./semantic.js";
+import { rankArchitecturePatterns } from "./architecture-ranker.js";
 
 export function buildAnchorContextResult(
   db: AnchorDatabase,
@@ -20,6 +21,7 @@ export function buildAnchorContextResult(
   const rules = rankTeamRules(db, cwd, input);
   const tests = rankRelevantTests(db, input);
   const regressions = rankRegressionEvents(db, input);
+  const architecture = rankArchitecturePatterns(db, input);
   const indexStatus = getIndexStatus(cwd);
   const semanticStatus = getSemanticStatus();
   const strictWarnings =
@@ -37,12 +39,14 @@ export function buildAnchorContextResult(
     [...warnings, ...strictWarnings],
     tests,
     regressions,
+    architecture,
     {
       indexHealth: {
         historyCoverage: indexStatus.historyCoverage ?? "unknown",
         staleCodeIndex: Boolean(indexStatus.staleCodeIndex),
         lastSuccessfulRun: indexStatus.lastSuccessfulRun,
         lastFailedRun: indexStatus.lastFailedRun,
+        architecturePatternCount: indexStatus.architecturePatternCount,
       },
       semanticStatus,
     },

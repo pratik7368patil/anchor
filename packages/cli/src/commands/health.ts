@@ -23,6 +23,7 @@ export function printHealth(
   console.log(`Anchor coverage: ${result.coverageScore}% (${result.coverageGrade})`);
   console.log(`History coverage: ${result.historyCoverage}`);
   console.log(`Stale code index: ${result.staleCodeIndex ? "yes" : "no"}`);
+  console.log(`Architecture patterns: ${result.indexStatus.architecturePatternCount}`);
   console.log(`Last successful run: ${result.lastSuccessfulRun ?? "never"}`);
   console.log(`Last failed run: ${result.lastFailedRun ?? "never"}`);
   console.log(`Suggested next command: ${result.suggestedNextCommand ?? "n/a"}`);
