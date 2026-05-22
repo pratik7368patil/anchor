@@ -1,7 +1,12 @@
 import {
+  addTeamRule,
+  checkTeamRuleEvidence,
   ensureTeamRulesFile,
   loadTeamRulesFile,
   validateTeamRulesFile,
+  type RulesAddInput,
+  type RulesAddResult,
+  type RulesEvidenceCheckResult,
   type RulesInitResult,
   type TeamRule,
   type TeamRulesValidationResult,
@@ -18,6 +23,35 @@ export function runRulesValidate(cwd: string): TeamRulesValidationResult {
 export function runRulesList(cwd: string): { path: string; rules: TeamRule[]; errors: string[] } {
   const loaded = loadTeamRulesFile(cwd);
   return { path: loaded.path, rules: loaded.rules, errors: loaded.errors };
+}
+
+export function runRulesAdd(
+  cwd: string,
+  options: {
+    id: string;
+    category: RulesAddInput["category"];
+    text: string;
+    prNumber: number;
+    prUrl: string;
+    sourceType?: RulesAddInput["sourceType"];
+    file?: string[];
+    symbol?: string[];
+  },
+): RulesAddResult {
+  return addTeamRule(cwd, {
+    id: options.id,
+    category: options.category,
+    text: options.text,
+    prNumber: options.prNumber,
+    prUrl: options.prUrl,
+    sourceType: options.sourceType,
+    filePaths: options.file ?? [],
+    symbols: options.symbol ?? [],
+  });
+}
+
+export function runRulesCheckEvidence(cwd: string): RulesEvidenceCheckResult {
+  return checkTeamRuleEvidence(cwd);
 }
 
 export function printRulesInit(result: RulesInitResult): void {
@@ -59,4 +93,26 @@ export function printRulesList(result: {
       `- ${rule.id} [${rule.category}] ${rule.sanitizedText} (evidence: PR #${evidence?.prNumber ?? "n/a"})`,
     );
   }
+}
+
+export function printRulesAdd(result: RulesAddResult): void {
+  console.log("Added Anchor team rule.");
+  console.log(`Rule: ${result.rule.id}`);
+  console.log(`Path: ${result.path}`);
+}
+
+export function printRulesEvidenceCheck(result: RulesEvidenceCheckResult): void {
+  if (result.ok) {
+    console.log("Anchor team-rule evidence is present in the local index.");
+    console.log(`Evidence references checked: ${result.checked}`);
+    console.log(`Path: ${result.path}`);
+    return;
+  }
+
+  console.error("Anchor team-rule evidence check failed.");
+  for (const error of result.errors) console.error(`- ${error}`);
+  for (const missing of result.missing) {
+    console.error(`- ${missing.ruleId}: PR #${missing.prNumber} is not in the local index.`);
+  }
+  console.error(`Path: ${result.path}`);
 }

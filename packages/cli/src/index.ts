@@ -8,10 +8,17 @@ import { runIndex, runIndexCode } from "./commands/index.js";
 import { runSync } from "./commands/sync.js";
 import { runDoctorCommand } from "./commands/doctor.js";
 import { runServe } from "./commands/serve.js";
+import { printExplain, runExplain } from "./commands/explain.js";
+import { printReview, runReview } from "./commands/review.js";
+import { printHealth, runHealth } from "./commands/health.js";
 import {
+  printRulesAdd,
+  printRulesEvidenceCheck,
   printRulesInit,
   printRulesList,
   printRulesValidation,
+  runRulesAdd,
+  runRulesCheckEvidence,
   runRulesInit,
   runRulesList,
   runRulesValidate,
@@ -23,6 +30,10 @@ function parseIntegerOption(value: string): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) throw new Error(`Invalid number: ${value}`);
   return parsed;
+}
+
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }
 
 function readPackageVersion(): string {
@@ -97,6 +108,29 @@ program
   });
 
 program
+  .command("explain")
+  .description("Explain a file using the local Anchor index")
+  .argument("<file>", "File path to explain")
+  .option("--strict", "Only include non-stale strong evidence")
+  .option("--json", "Print structured metadata as JSON")
+  .option("--max-results <number>", "Maximum historical results", parseIntegerOption)
+  .action((file, options) => {
+    printExplain(runExplain(process.cwd(), file, options), options);
+  });
+
+program
+  .command("review")
+  .description("Review the current git diff against Anchor history")
+  .option("--base <ref>", "Review diff from base ref to HEAD")
+  .option("--diff-file <path>", "Read a diff from a file instead of git diff")
+  .option("--strict", "Only include non-stale strong evidence")
+  .option("--json", "Print structured metadata as JSON")
+  .option("--max-results <number>", "Maximum historical results", parseIntegerOption)
+  .action((options) => {
+    printReview(runReview(process.cwd(), options), options);
+  });
+
+program
   .command("sync")
   .description("Incrementally sync PRs updated since the last Anchor sync")
   .option("--repo <owner/name>", "GitHub repository to sync")
@@ -139,12 +173,44 @@ rules
     printRulesList(runRulesList(process.cwd()));
   });
 
+rules
+  .command("add")
+  .description("Add a team-approved rule with required PR evidence")
+  .requiredOption("--id <id>", "Stable rule id")
+  .requiredOption("--category <category>", "Wisdom category")
+  .requiredOption("--text <text>", "Rule text")
+  .requiredOption("--pr-number <number>", "Evidence PR number", parseIntegerOption)
+  .requiredOption("--pr-url <url>", "Evidence PR URL")
+  .option("--source-type <sourceType>", "Evidence source type", "pr_body")
+  .option("--file <path>", "Associated file path", collectOption, [])
+  .option("--symbol <symbol>", "Associated symbol", collectOption, [])
+  .action((options) => {
+    printRulesAdd(runRulesAdd(process.cwd(), options));
+  });
+
+rules
+  .command("check-evidence")
+  .description("Validate that team-rule PR evidence exists in the local index")
+  .action(() => {
+    const result = runRulesCheckEvidence(process.cwd());
+    printRulesEvidenceCheck(result);
+    if (!result.ok) process.exitCode = 1;
+  });
+
 program
   .command("doctor")
   .description("Check local Anchor, Cursor, GitHub, and SQLite setup")
   .action(async () => {
     const ok = await runDoctorCommand(process.cwd());
     if (!ok) process.exitCode = 1;
+  });
+
+program
+  .command("health")
+  .description("Report Anchor index quality, coverage, and freshness")
+  .option("--json", "Print structured health report as JSON")
+  .action((options) => {
+    printHealth(runHealth(process.cwd()), options);
   });
 
 program

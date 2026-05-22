@@ -2,12 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { AnchorDatabase } from "../db/database.js";
+import { defaultDatabasePath, initializeSchema, openAnchorDatabase } from "../db/database.js";
 import type {
   AnchorContextInput,
   ConfidenceLevel,
   EvidenceRef,
   RankedTeamRule,
+  SourceType,
   TeamRule,
+  WisdomCategory,
 } from "../types.js";
 import { sanitizeHistoricalText } from "../security/sanitize.js";
 import { tokenizeSearchText, uniqueStrings } from "../utils/text.js";
@@ -83,6 +86,30 @@ export type TeamRulesValidationResult = {
 export type RulesInitResult = {
   path: string;
   created: boolean;
+};
+
+export type RulesAddInput = {
+  id: string;
+  category: WisdomCategory;
+  text: string;
+  filePaths?: string[];
+  symbols?: string[];
+  prNumber: number;
+  prUrl: string;
+  sourceType?: SourceType;
+};
+
+export type RulesAddResult = {
+  path: string;
+  rule: TeamRule;
+};
+
+export type RulesEvidenceCheckResult = {
+  ok: boolean;
+  path: string;
+  checked: number;
+  missing: Array<{ ruleId: string; prNumber: number }>;
+  errors: string[];
 };
 
 function rulesPath(cwd: string): string {
@@ -190,6 +217,89 @@ export function validateTeamRulesFile(cwd: string): TeamRulesValidationResult {
   };
 }
 
+export function addTeamRule(cwd: string, input: RulesAddInput): RulesAddResult {
+  ensureTeamRulesFile(cwd);
+  const filePath = rulesPath(cwd);
+  const raw = JSON.parse(fs.readFileSync(filePath, "utf8")) as {
+    version?: number;
+    rules?: unknown[];
+  };
+  const nextRule = {
+    id: input.id,
+    category: input.category,
+    text: input.text,
+    filePaths: input.filePaths ?? [],
+    symbols: input.symbols ?? [],
+    evidence: [
+      {
+        prNumber: input.prNumber,
+        prUrl: input.prUrl,
+        sourceType: input.sourceType ?? "pr_body",
+      },
+    ],
+    confidenceLevel: "strong",
+  };
+  const next = { version: 1, rules: [...(raw.rules ?? []), nextRule] };
+  fs.writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
+
+  const validation = validateTeamRulesFile(cwd);
+  if (!validation.ok) {
+    throw new Error(`Invalid Anchor rule: ${validation.errors.join("; ")}`);
+  }
+  const rule = validation.rules.find((item) => item.id === input.id);
+  if (!rule) throw new Error(`Failed to add Anchor rule ${input.id}`);
+  return { path: filePath, rule };
+}
+
+export function checkTeamRuleEvidence(cwd: string): RulesEvidenceCheckResult {
+  const validation = validateTeamRulesFile(cwd);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      path: validation.path,
+      checked: 0,
+      missing: [],
+      errors: validation.errors,
+    };
+  }
+
+  const databasePath = defaultDatabasePath(detectGitRoot(cwd) ?? cwd);
+  if (!fs.existsSync(databasePath)) {
+    return {
+      ok: false,
+      path: validation.path,
+      checked: 0,
+      missing: [],
+      errors: [`Anchor database not found at ${databasePath}. Run anchor index first.`],
+    };
+  }
+
+  const db = openAnchorDatabase(detectGitRoot(cwd) ?? cwd, databasePath);
+  try {
+    initializeSchema(db);
+    const missing: Array<{ ruleId: string; prNumber: number }> = [];
+    let checked = 0;
+    for (const rule of validation.rules) {
+      for (const evidence of rule.evidence) {
+        checked += 1;
+        const row = db
+          .prepare("SELECT 1 FROM pull_requests WHERE number = ? LIMIT 1")
+          .get(evidence.prNumber);
+        if (!row) missing.push({ ruleId: rule.id, prNumber: evidence.prNumber });
+      }
+    }
+    return {
+      ok: missing.length === 0,
+      path: validation.path,
+      checked,
+      missing,
+      errors: [],
+    };
+  } finally {
+    db.close();
+  }
+}
+
 function pathMatch(rulePaths: string[], queryFiles: string[]): number {
   if (rulePaths.length === 0 || queryFiles.length === 0) return 0;
   let best = 0;
@@ -253,6 +363,21 @@ function confidenceReasons(rule: TeamRule): string[] {
   ];
 }
 
+function matchReasons(parts: {
+  filePathMatch: number;
+  symbolMatch: number;
+  textMatch: number;
+  confidence: number;
+}): string[] {
+  const reasons = ["team-approved rule"];
+  if (parts.filePathMatch >= 0.9) reasons.push("exact file path match");
+  else if (parts.filePathMatch >= 0.45) reasons.push("related file path match");
+  if (parts.symbolMatch >= 0.9) reasons.push("exact symbol match");
+  else if (parts.symbolMatch >= 0.45) reasons.push("symbol-associated rule");
+  if (parts.textMatch >= 0.35) reasons.push("text matched task or diff terms");
+  return reasons.slice(0, 5);
+}
+
 function passesStrictMode(rule: RankedTeamRule, input: AnchorContextInput): boolean {
   if (!input.strict) return true;
   if (rule.freshnessStatus === "stale") return false;
@@ -270,18 +395,26 @@ export function rankTeamRules(
   return loaded.rules
     .map((rule) => {
       const freshness = evaluateFreshness(rule, codeSnapshot);
+      const parts = {
+        filePathMatch: pathMatch(rule.filePaths, input.files ?? []),
+        symbolMatch: symbolMatch(rule, input.symbols ?? []),
+        textMatch: textMatch(rule, input),
+        confidence: confidenceScore(rule.confidenceLevel),
+      };
       const score =
         1 +
-        0.35 * pathMatch(rule.filePaths, input.files ?? []) +
-        0.25 * symbolMatch(rule, input.symbols ?? []) +
-        0.25 * textMatch(rule, input) +
-        0.15 * confidenceScore(rule.confidenceLevel);
+        0.35 * parts.filePathMatch +
+        0.25 * parts.symbolMatch +
+        0.25 * parts.textMatch +
+        0.15 * parts.confidence;
       return {
         ...rule,
         score: Number(score.toFixed(4)),
         freshnessStatus: freshness.status,
         freshnessReason: freshness.reason,
         confidenceReasons: confidenceReasons(rule),
+        matchReasons: matchReasons(parts),
+        rankSignals: parts,
       };
     })
     .filter((rule) => passesStrictMode(rule, input))

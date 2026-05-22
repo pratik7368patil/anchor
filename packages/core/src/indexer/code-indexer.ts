@@ -59,6 +59,8 @@ export function emptyCodeIndexSummary(cwd: string): CodeIndexSummary {
   return {
     indexedFiles: 0,
     codeChunksCreated: 0,
+    testFilesIndexed: 0,
+    testLinksCreated: 0,
     skippedFiles: 0,
     databasePath: defaultDatabasePath(cwd),
   };

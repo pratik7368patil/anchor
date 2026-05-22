@@ -1,32 +1,27 @@
 import fs from "node:fs";
 import { z } from "zod";
 import {
-  buildAnchorContextResult,
   defaultDatabasePath,
+  explainFile,
   initializeSchema,
   openAnchorDatabase,
-  truncateText,
 } from "@pratik7368patil/anchor-core";
 
-export const AnchorGetContextSchema = z.object({
-  task: z.string().min(1).max(2000),
-  files: z.array(z.string().min(1)).max(50).optional(),
+export const AnchorExplainFileSchema = z.object({
+  file: z.string().min(1).max(500),
   symbols: z.array(z.string().min(1)).max(100).optional(),
-  diff: z.string().optional(),
-  currentCode: z.string().optional(),
-  maxResults: z.number().int().min(1).max(12).default(8).optional(),
   strict: z.boolean().optional(),
-  minConfidence: z.enum(["strong", "moderate", "weak"]).optional(),
+  maxResults: z.number().int().min(1).max(12).default(8).optional(),
 });
 
-export async function handleAnchorGetContext(input: unknown, cwd: string) {
-  const parsed = AnchorGetContextSchema.safeParse(input);
+export async function handleAnchorExplainFile(input: unknown, cwd: string) {
+  const parsed = AnchorExplainFileSchema.safeParse(input);
   if (!parsed.success) {
     return {
       content: [
         {
           type: "text" as const,
-          text: `Invalid anchor_get_context input: ${parsed.error.message}`,
+          text: `Invalid anchor_explain_file input: ${parsed.error.message}`,
         },
       ],
       isError: true,
@@ -49,13 +44,10 @@ export async function handleAnchorGetContext(input: unknown, cwd: string) {
   const db = openAnchorDatabase(cwd, databasePath);
   try {
     initializeSchema(db);
-    const query = {
+    const formatted = explainFile(db, cwd, {
       ...parsed.data,
-      diff: truncateText(parsed.data.diff, 12000),
-      currentCode: truncateText(parsed.data.currentCode, 12000),
       maxResults: parsed.data.maxResults ?? 8,
-    };
-    const formatted = buildAnchorContextResult(db, cwd, query);
+    });
     return {
       content: [{ type: "text" as const, text: formatted.markdown }],
       structuredContent: formatted.metadata,

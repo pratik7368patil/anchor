@@ -11,8 +11,12 @@ import {
   ensureAnchorGitExclude,
   ensureCursorConfig,
   ensureCursorRule,
+  explainFile,
   extractWisdomUnits,
+  extractRegressionEvents,
   formatAnchorContext,
+  getAnchorIndexHealth,
+  getSemanticStatus,
   getIndexStatus,
   indexCodebase,
   indexPullRequests,
@@ -24,13 +28,18 @@ import {
   rankTeamRules,
   rankWisdomUnits,
   rankCodeChunks,
+  rankRegressionEvents,
+  rankRelevantTests,
   redactSecrets,
+  reviewDiff,
   resolvePullRequestDetailConcurrency,
   resolvePullRequestFetchLimit,
   resolveGitHubToken,
   runDoctor,
   sanitizeHistoricalText,
   stripPromptInjection,
+  addTeamRule,
+  checkTeamRuleEvidence,
   validateTeamRulesFile,
   type IndexPullRequestsProgress,
   type PullRequestRecord,
@@ -242,9 +251,11 @@ describe("SQLite indexing and retrieval", () => {
       expect(summary.indexedFiles).toBeGreaterThan(0);
       expect(summary.indexedComments).toBeGreaterThan(0);
       expect(summary.wisdomUnitsCreated).toBeGreaterThan(0);
+      expect(summary.regressionEventsCreated).toBeGreaterThan(0);
       expect(checkSchema(db)).toBe(true);
       const status = getIndexStatus(cwd, false);
       expect(status.health).toBe("ok");
+      expect(status.regressionEventCount).toBeGreaterThan(0);
       expect(status.databasePath).toBe(defaultDatabasePath(cwd));
       const firstWisdomCount = status.wisdomUnitCount;
       indexPullRequests(db, prs, { cwd, repo: "owner/repo" });
@@ -383,6 +394,95 @@ describe("SQLite indexing and retrieval", () => {
     }
   });
 
+  it("adds diagnostics, relevant tests, and regression memory to formatted context", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.ts"),
+      "export class AuthCache { refreshToken() { return true; } }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.test.ts"),
+      "import { AuthCache } from './cache';\ntest('refreshToken', () => new AuthCache());\n",
+    );
+    execFileSync("git", ["add", "src/auth/cache.ts", "src/auth/cache.test.ts"], {
+      cwd,
+      stdio: "ignore",
+    });
+    const db = openAnchorDatabase(cwd);
+    try {
+      indexPullRequests(db, loadFixtures(), { cwd, repo: "owner/repo" });
+      const codeSummary = indexCodebase(db, { cwd, repo: "owner/repo" });
+      expect(codeSummary.testFilesIndexed).toBe(1);
+      expect(codeSummary.testLinksCreated).toBeGreaterThan(0);
+
+      const query = {
+        task: "refactor AuthCache regression",
+        files: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+        maxResults: 5,
+      };
+      const history = rankWisdomUnits(db, query);
+      const code = rankCodeChunks(db, query);
+      const tests = rankRelevantTests(db, query);
+      const regressions = rankRegressionEvents(db, query);
+      const formatted = formatAnchorContext(history, query, code, [], [], tests, regressions);
+
+      expect(history[0]?.matchReasons.length).toBeGreaterThan(0);
+      expect(history[0]?.rankSignals.filePathMatch).toBeGreaterThan(0);
+      expect(tests[0]?.path).toBe("src/auth/cache.test.ts");
+      expect(regressions[0]?.prNumber).toBe(101);
+      expect(formatted.markdown).toContain("## Relevant tests");
+      expect(formatted.markdown).toContain("## Regression memory");
+      expect(formatted.metadata.queryTerms).toContain("authcache");
+      expect(formatted.metadata.relevantTests).toBeDefined();
+      expect(formatted.metadata.regressionEvents).toBeDefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("supports file explain and diff review workflows from the local index", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.ts"),
+      "export class AuthCache { refreshToken() { return true; } }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.test.ts"),
+      "import { AuthCache } from './cache';\ntest('refreshToken', () => new AuthCache());\n",
+    );
+    execFileSync("git", ["add", "src/auth/cache.ts", "src/auth/cache.test.ts"], {
+      cwd,
+      stdio: "ignore",
+    });
+    const db = openAnchorDatabase(cwd);
+    try {
+      indexPullRequests(db, loadFixtures(), { cwd, repo: "owner/repo" });
+      indexCodebase(db, { cwd, repo: "owner/repo" });
+
+      const explain = explainFile(db, cwd, { file: "src/auth/cache.ts" });
+      expect(explain.markdown).toContain("# Anchor File Explain");
+      expect(explain.markdown).toContain("Important symbols:");
+      expect(explain.markdown).toContain("## Relevant tests");
+
+      const review = reviewDiff(db, cwd, {
+        diff: [
+          "diff --git a/src/auth/cache.ts b/src/auth/cache.ts",
+          "--- a/src/auth/cache.ts",
+          "+++ b/src/auth/cache.ts",
+          "+export class AuthCache {}",
+        ].join("\n"),
+      });
+      expect(review.markdown).toContain("# Anchor Diff Review");
+      expect(review.markdown).toContain("## Regression checks");
+      expect(review.metadata.changedFiles).toEqual(["src/auth/cache.ts"]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("never formats raw prompt-injection text or fake secrets", () => {
     const { db } = createIndexedFixtureDb();
     try {
@@ -512,6 +612,28 @@ describe("team-approved rules", () => {
     expect(validation.ok).toBe(false);
     expect(validation.errors.join("\n")).toContain("evidence");
   });
+
+  it("adds team rules and checks cited PR evidence against the local index", () => {
+    const { cwd, db } = createIndexedFixtureDb();
+    try {
+      const added = addTeamRule(cwd, {
+        id: "auth-cache-reviewed",
+        category: "constraint",
+        text: "Keep `AuthCache` lazy because review history says this regressed before.",
+        filePaths: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+        prNumber: 101,
+        prUrl: "https://github.com/owner/repo/pull/101",
+        sourceType: "review_comment",
+      });
+      expect(added.rule.sanitizedText).toContain("AuthCache");
+      const evidence = checkTeamRuleEvidence(cwd);
+      expect(evidence.ok).toBe(true);
+      expect(evidence.checked).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("codebase indexing and retrieval", () => {
@@ -578,6 +700,7 @@ describe("codebase indexing and retrieval", () => {
       const status = getIndexStatus(cwd, false);
       expect(status.codeFileCount).toBe(2);
       expect(status.codeChunkCount).toBeGreaterThan(0);
+      expect(status.testFileCount).toBe(0);
       expect(status.health).toBe("ok");
 
       const results = rankCodeChunks(db, {
@@ -606,6 +729,22 @@ describe("codebase indexing and retrieval", () => {
       expect(formatted.markdown).not.toContain("ignore previous instructions");
       expect(formatted.markdown).not.toContain("npm_");
       expect(Array.isArray(formatted.metadata.codeEvidence)).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reports index health and local semantic fallback without network setup", () => {
+    const { cwd, db } = createIndexedFixtureDb();
+    try {
+      const health = getAnchorIndexHealth(cwd);
+      expect(health.status).toBe("warning");
+      expect(health.warnings.some((warning) => warning.includes("PR history coverage"))).toBe(true);
+      expect(getSemanticStatus({ ANCHOR_SEMANTIC: "local" } as NodeJS.ProcessEnv).available).toBe(
+        false,
+      );
+      expect(getSemanticStatus({} as NodeJS.ProcessEnv).enabled).toBe(false);
+      expect(extractRegressionEvents(loadFixtures()[0]!).length).toBeGreaterThan(0);
     } finally {
       db.close();
     }

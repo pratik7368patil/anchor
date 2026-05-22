@@ -114,6 +114,17 @@ function recencyScore(chunk: CodeChunk): number {
   return 0.25;
 }
 
+function matchReasons(parts: RankedCodeChunk["scoreParts"]): string[] {
+  const reasons: string[] = [];
+  if (parts.filePathMatch >= 0.9) reasons.push("exact file path match");
+  else if (parts.filePathMatch >= 0.45) reasons.push("related file path match");
+  if (parts.symbolMatch >= 0.9) reasons.push("exact symbol match");
+  else if (parts.symbolMatch >= 0.45) reasons.push("symbol mentioned in current code");
+  if (parts.textMatch >= 0.45) reasons.push("text matched task or diff terms");
+  if (parts.recency >= 0.75) reasons.push("recent code file");
+  return reasons.slice(0, 5);
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -202,6 +213,8 @@ export function rankCodeChunks(db: AnchorDatabase, input: AnchorContextInput): R
         symbols: uniqueStrings(chunk.symbols),
         score: Number(score.toFixed(4)),
         scoreParts: parts,
+        matchReasons: matchReasons(parts),
+        rankSignals: parts,
       };
     })
     .sort((a, b) => b.score - a.score || b.startLine - a.startLine);

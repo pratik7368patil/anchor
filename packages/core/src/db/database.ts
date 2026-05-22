@@ -6,14 +6,19 @@ import type {
   CodeChunk,
   CodeFileRecord,
   CodeIndexSummary,
+  IndexRunRecord,
   IndexStatus,
   PullRequestRecord,
+  RegressionEvent,
   SourceType,
+  TestFileRecord,
+  TestLink,
   WisdomUnit,
 } from "../types.js";
 import { redactedHistoricalText, sanitizeHistoricalText } from "../security/sanitize.js";
 import { resolveGitHubToken } from "../utils/github-token.js";
 import { countValidTeamRules } from "../rules/team-rules.js";
+import { inferTestAwareness, isTestFilePath } from "../indexer/test-awareness.js";
 
 export type AnchorDatabase = Database.Database;
 
@@ -28,6 +33,7 @@ type SyncRow = {
 };
 type CodeIndexStateRow = { last_indexed_at?: string | null };
 type WisdomFilePathsRow = { file_paths_json: string };
+type LastRunRow = { finished_at?: string | null; failures_json?: string | null };
 
 export function defaultDatabasePath(cwd: string): string {
   return path.join(cwd, ".anchor", "index.sqlite");
@@ -73,7 +79,18 @@ export function checkSchema(db: AnchorDatabase): boolean {
       .all("code_chunks_fts");
     const wisdom = db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all("wisdom_units");
     const code = db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all("code_chunks");
-    return tables.length > 0 && wisdom.length > 0 && codeTables.length > 0 && code.length > 0;
+    const tests = db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all("test_files");
+    const regressions = db
+      .prepare("SELECT name FROM sqlite_master WHERE name = ?")
+      .all("regression_events");
+    return (
+      tables.length > 0 &&
+      wisdom.length > 0 &&
+      codeTables.length > 0 &&
+      code.length > 0 &&
+      tests.length > 0 &&
+      regressions.length > 0
+    );
   } catch {
     return false;
   }
@@ -139,6 +156,7 @@ function deleteExistingPrData(db: AnchorDatabase, prId: number): void {
   }>;
   const deleteFts = db.prepare("DELETE FROM wisdom_units_fts WHERE unitId = ?");
   for (const row of unitRows) deleteFts.run(row.id);
+  db.prepare("DELETE FROM regression_events WHERE pr_id = ?").run(prId);
   db.prepare("DELETE FROM wisdom_units WHERE pr_id = ?").run(prId);
   db.prepare("DELETE FROM pr_comments WHERE pr_id = ?").run(prId);
   db.prepare("DELETE FROM pr_files WHERE pr_id = ?").run(prId);
@@ -148,7 +166,8 @@ export function upsertPullRequest(
   db: AnchorDatabase,
   pr: PullRequestRecord,
   wisdomUnits: WisdomUnit[],
-): { files: number; comments: number; wisdom: number } {
+  regressionEvents: RegressionEvent[] = [],
+): { files: number; comments: number; wisdom: number; regressions: number } {
   const repoId = ensureRepository(db, pr.repo);
   const author = pr.user?.login ?? "unknown";
   const labels = (pr.labels ?? [])
@@ -206,6 +225,7 @@ export function upsertPullRequest(
         file.patch ? sanitizeHistoricalText(file.patch) : null,
       );
     }
+    insertPrCochangeTestLinks(db, repoId, pr.files.map((file) => file.filename));
 
     const insertComment = db.prepare(
       `INSERT INTO pr_comments
@@ -300,13 +320,46 @@ export function upsertPullRequest(
         unit.category,
       );
     }
+
+    const insertRegression = db.prepare(
+      `INSERT INTO regression_events
+       (id, repo_id, pr_id, repo, pr_number, pr_url, summary_sanitized, file_paths_json,
+        symbols_json, test_paths_json, authors_json, labels_json, signals_json, created_at,
+        merged_at, confidence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const event of regressionEvents) {
+      insertRegression.run(
+        event.id,
+        repoId,
+        prRow.id,
+        event.repo,
+        event.prNumber,
+        event.prUrl,
+        event.summary,
+        JSON.stringify(event.filePaths),
+        JSON.stringify(event.symbols),
+        JSON.stringify(event.testPaths),
+        JSON.stringify(event.authors),
+        JSON.stringify(event.labels),
+        JSON.stringify(event.signals),
+        event.createdAt,
+        event.mergedAt ?? null,
+        event.confidence,
+      );
+    }
   });
 
   transaction();
 
   const comments =
     (pr.reviews?.length ?? 0) + (pr.reviewComments?.length ?? 0) + (pr.issueComments?.length ?? 0);
-  return { files: pr.files.length, comments, wisdom: wisdomUnits.length };
+  return {
+    files: pr.files.length,
+    comments,
+    wisdom: wisdomUnits.length,
+    regressions: regressionEvents.length,
+  };
 }
 
 export function replaceCodeIndex(
@@ -320,6 +373,7 @@ export function replaceCodeIndex(
   initializeSchema(db);
   const repoId = ensureRepository(db, repo);
   const now = new Date().toISOString();
+  const testAwareness = inferTestAwareness(repo, codeFiles, codeChunks);
 
   const transaction = db.transaction(() => {
     const existingChunks = db
@@ -331,6 +385,8 @@ export function replaceCodeIndex(
     for (const row of existingChunks) deleteFts.run(row.id);
     db.prepare("DELETE FROM code_chunks WHERE repo_id = ?").run(repoId);
     db.prepare("DELETE FROM code_files WHERE repo_id = ?").run(repoId);
+    db.prepare("DELETE FROM test_links WHERE repo_id = ? AND reason != 'PR co-change'").run(repoId);
+    db.prepare("DELETE FROM test_files WHERE repo_id = ?").run(repoId);
 
     const insertFile = db.prepare(
       `INSERT INTO code_files
@@ -391,6 +447,8 @@ export function replaceCodeIndex(
       );
     }
 
+    insertTestAwareness(db, repoId, testAwareness.testFiles, testAwareness.testLinks);
+
     db.prepare(
       `INSERT INTO code_index_state (repo, last_indexed_at, indexed_files, code_chunks, skipped_files)
        VALUES (?, ?, ?, ?, ?)
@@ -407,9 +465,84 @@ export function replaceCodeIndex(
   return {
     indexedFiles: codeFiles.length,
     codeChunksCreated: codeChunks.length,
+    testFilesIndexed: testAwareness.testFiles.length,
+    testLinksCreated: testAwareness.testLinks.length,
     skippedFiles,
     databasePath: defaultDatabasePath(cwd),
   };
+}
+
+function insertPrCochangeTestLinks(
+  db: AnchorDatabase,
+  repoId: number,
+  filePaths: string[],
+): void {
+  const testPaths = filePaths.filter(isTestFilePath);
+  const sourcePaths = filePaths.filter((filePath) => !isTestFilePath(filePath));
+  if (testPaths.length === 0 || sourcePaths.length === 0) return;
+  const insert = db.prepare(
+    `INSERT INTO test_links (repo_id, source_path, test_path, reason, strength)
+     VALUES (?, ?, ?, 'PR co-change', 0.75)
+     ON CONFLICT(repo_id, source_path, test_path, reason) DO UPDATE SET strength = excluded.strength`,
+  );
+  for (const sourcePath of sourcePaths) {
+    for (const testPath of testPaths) insert.run(repoId, sourcePath, testPath);
+  }
+}
+
+function insertTestAwareness(
+  db: AnchorDatabase,
+  repoId: number,
+  testFiles: TestFileRecord[],
+  testLinks: TestLink[],
+): void {
+  const insertTestFile = db.prepare(
+    `INSERT INTO test_files
+     (repo_id, path, language, size_bytes, content_hash, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+  for (const file of testFiles) {
+    insertTestFile.run(
+      repoId,
+      file.path,
+      file.language ?? null,
+      file.sizeBytes,
+      file.contentHash,
+      file.updatedAt,
+    );
+  }
+
+  const insertTestLink = db.prepare(
+    `INSERT INTO test_links (repo_id, source_path, test_path, reason, strength)
+     VALUES (?, ?, ?, ?, ?)`,
+  );
+  for (const link of testLinks) {
+    insertTestLink.run(repoId, link.sourcePath, link.testPath, link.reason, link.strength);
+  }
+}
+
+export function recordIndexRun(db: AnchorDatabase, run: IndexRunRecord): void {
+  initializeSchema(db);
+  db.prepare(
+    `INSERT INTO index_runs
+     (command, repo, started_at, finished_at, history_coverage, history_limit, prs_fetched,
+      prs_skipped, comments_indexed, code_files_indexed, test_files_indexed, failures_json, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    run.command,
+    run.repo ?? null,
+    run.startedAt,
+    run.finishedAt ?? new Date().toISOString(),
+    run.historyCoverage ?? null,
+    run.historyLimit ?? null,
+    run.prsFetched ?? null,
+    run.prsSkipped ?? null,
+    run.commentsIndexed ?? null,
+    run.codeFilesIndexed ?? null,
+    run.testFilesIndexed ?? null,
+    JSON.stringify(run.failures ?? []),
+    run.status,
+  );
 }
 
 export function getIndexStatus(
@@ -427,6 +560,9 @@ export function getIndexStatus(
       wisdomUnitCount: 0,
       codeFileCount: 0,
       codeChunkCount: 0,
+      testFileCount: 0,
+      testLinkCount: 0,
+      regressionEventCount: 0,
       historyCoverage: "unknown",
       staleEvidenceCount: 0,
       teamRuleCount: rules.count,
@@ -449,6 +585,9 @@ export function getIndexStatus(
         wisdomUnitCount: 0,
         codeFileCount: 0,
         codeChunkCount: 0,
+        testFileCount: 0,
+        testLinkCount: 0,
+        regressionEventCount: 0,
         historyCoverage: "unknown",
         staleEvidenceCount: 0,
         teamRuleCount: rules.count,
@@ -472,6 +611,17 @@ export function getIndexStatus(
       .get() as CodeIndexStateRow | undefined;
     const wisdomUnitCount = count("wisdom_units");
     const codeChunkCount = count("code_chunks");
+    const lastSuccessfulRun = db
+      .prepare(
+        "SELECT finished_at, failures_json FROM index_runs WHERE status = 'success' ORDER BY finished_at DESC LIMIT 1",
+      )
+      .get() as LastRunRow | undefined;
+    const lastFailedRun = db
+      .prepare(
+        "SELECT finished_at, failures_json FROM index_runs WHERE status = 'failed' ORDER BY finished_at DESC LIMIT 1",
+      )
+      .get() as LastRunRow | undefined;
+    const staleCodeIndex = isCodeIndexStale(codeIndexRow?.last_indexed_at ?? undefined);
     const rules = countValidTeamRules(cwd);
     return {
       repo: repoRow?.full_name,
@@ -482,6 +632,9 @@ export function getIndexStatus(
       wisdomUnitCount,
       codeFileCount: count("code_files"),
       codeChunkCount,
+      testFileCount: count("test_files"),
+      testLinkCount: count("test_links"),
+      regressionEventCount: count("regression_events"),
       historyCoverage: syncRow?.history_coverage ?? "unknown",
       historyLimit: syncRow?.history_limit ?? undefined,
       staleEvidenceCount: countStaleEvidence(db),
@@ -489,12 +642,42 @@ export function getIndexStatus(
       lastSyncTime: syncRow?.last_sync_at ?? undefined,
       lastCodeIndexTime: codeIndexRow?.last_indexed_at ?? undefined,
       lastRuleIndexTime: rules.lastRuleIndexTime,
+      lastSuccessfulRun: lastSuccessfulRun?.finished_at ?? undefined,
+      lastFailedRun: lastFailedRun?.finished_at ?? undefined,
+      staleCodeIndex,
+      suggestedNextCommand: suggestedNextCommand({
+        prCount: count("pull_requests"),
+        wisdomUnitCount,
+        codeChunkCount,
+        staleCodeIndex,
+        historyCoverage: syncRow?.history_coverage ?? "unknown",
+      }),
       githubTokenConfigured,
       health: wisdomUnitCount > 0 || codeChunkCount > 0 ? "ok" : "empty_index",
     };
   } finally {
     db.close();
   }
+}
+
+function isCodeIndexStale(lastIndexedAt?: string | null): boolean {
+  if (!lastIndexedAt) return true;
+  const timestamp = Date.parse(lastIndexedAt);
+  if (Number.isNaN(timestamp)) return true;
+  return Date.now() - timestamp > 1000 * 60 * 60 * 24 * 7;
+}
+
+function suggestedNextCommand(input: {
+  prCount: number;
+  wisdomUnitCount: number;
+  codeChunkCount: number;
+  staleCodeIndex: boolean;
+  historyCoverage: "limited" | "all" | "unknown";
+}): string | undefined {
+  if (input.prCount === 0 && input.wisdomUnitCount === 0) return "anchor index";
+  if (input.codeChunkCount === 0 || input.staleCodeIndex) return "anchor index-code";
+  if (input.historyCoverage !== "all") return "anchor index-all";
+  return undefined;
 }
 
 function countStaleEvidence(db: AnchorDatabase): number {
