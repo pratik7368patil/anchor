@@ -34,6 +34,33 @@ function createIndexedFixture(cwd: string): void {
     path.join(cwd, "src/auth/cache.ts"),
     "export class AuthCache { refreshToken() { return true; } }\n",
   );
+  fs.writeFileSync(
+    path.join(cwd, "anchor.rules.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        rules: [
+          {
+            id: "auth-cache-lazy",
+            category: "constraint",
+            text: "Team rule: keep `AuthCache` lazy because cold starts regressed before.",
+            filePaths: ["src/auth/cache.ts"],
+            symbols: ["AuthCache"],
+            evidence: [
+              {
+                prNumber: 101,
+                prUrl: "https://github.com/owner/repo/pull/101",
+                sourceType: "review_comment",
+                note: "Reviewer called out the lazy constraint.",
+              },
+            ],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
   execFileSync("git", ["add", "src/auth/cache.ts"], { cwd, stdio: "ignore" });
   const db = openAnchorDatabase(cwd);
   try {
@@ -76,13 +103,45 @@ describe("MCP tools", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]?.text).toContain("# Anchor Context");
+    expect(result.content[0]?.text).toContain("## Team-approved rules");
     expect(result.content[0]?.text).toContain("Evidence: PR #");
+    expect(result.content[0]?.text).toContain("Confidence:");
+    expect(result.content[0]?.text).toContain("Current code check:");
     expect(result.content[0]?.text).toContain("## Codebase Evidence");
     expect(result.content[0]?.text).toContain("src/auth/cache.ts");
     expect(result.content[0]?.text).not.toContain("ignore previous instructions");
     expect(result.content[0]?.text).not.toContain("FAKE_ANCHOR_REDACTION_SAMPLE");
     expect(result.structuredContent?.resultCount).toBeGreaterThan(0);
     expect(Array.isArray(result.structuredContent?.codeEvidence)).toBe(true);
+    expect(Array.isArray(result.structuredContent?.teamRules)).toBe(true);
+  });
+
+  it("filters stale and weak evidence in strict mode", async () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    fs.mkdirSync(path.join(cwd, "src"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "src/other.ts"), "export const other = true;\n");
+    execFileSync("git", ["add", "src/other.ts"], { cwd, stdio: "ignore" });
+    const db = openAnchorDatabase(cwd);
+    try {
+      indexPullRequests(db, loadFixtures(), { cwd, repo: "owner/repo" });
+      indexCodebase(db, { cwd, repo: "owner/repo" });
+    } finally {
+      db.close();
+    }
+
+    const result = await handleAnchorGetContext(
+      {
+        task: "refactor AuthCache",
+        files: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+        strict: true,
+      },
+      cwd,
+    );
+
+    expect(result.content[0]?.text).toContain("No reliable historical evidence found.");
+    expect(result.structuredContent?.resultCount).toBe(0);
   });
 
   it("supports search history and index status", async () => {
@@ -96,5 +155,7 @@ describe("MCP tools", () => {
     expect(search.content[0]?.text).toContain("# Anchor Search History");
     expect(status.content[0]?.text).toContain("# Anchor Index Status");
     expect(status.structuredContent?.wisdomUnitCount).toBeGreaterThan(0);
+    expect(status.structuredContent?.teamRuleCount).toBe(1);
+    expect(status.structuredContent?.historyCoverage).toBeDefined();
   });
 });

@@ -3,9 +3,11 @@ import { z } from "zod";
 import {
   defaultDatabasePath,
   formatAnchorContext,
+  getIndexStatus,
   initializeSchema,
   openAnchorDatabase,
   rankCodeChunks,
+  rankTeamRules,
   rankWisdomUnits,
   truncateText,
 } from "@pratik7368patil/anchor-core";
@@ -17,6 +19,8 @@ export const AnchorGetContextSchema = z.object({
   diff: z.string().optional(),
   currentCode: z.string().optional(),
   maxResults: z.number().int().min(1).max(12).default(8).optional(),
+  strict: z.boolean().optional(),
+  minConfidence: z.enum(["strong", "moderate", "weak"]).optional(),
 });
 
 export async function handleAnchorGetContext(input: unknown, cwd: string) {
@@ -57,7 +61,15 @@ export async function handleAnchorGetContext(input: unknown, cwd: string) {
     };
     const units = rankWisdomUnits(db, query);
     const codeChunks = rankCodeChunks(db, query);
-    const formatted = formatAnchorContext(units, query, codeChunks);
+    const teamRules = rankTeamRules(db, cwd, query);
+    const status = getIndexStatus(cwd);
+    const warnings =
+      query.strict && status.historyCoverage !== "all"
+        ? [
+            `Strict mode is using ${status.historyCoverage ?? "unknown"} history coverage; run anchor index-all for full-history evidence.`,
+          ]
+        : [];
+    const formatted = formatAnchorContext(units, query, codeChunks, teamRules, warnings);
     return {
       content: [{ type: "text" as const, text: formatted.markdown }],
       structuredContent: formatted.metadata,

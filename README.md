@@ -6,6 +6,8 @@ It helps Cursor notice past architecture decisions, constraints, rejected approa
 
 Anchor is not a SaaS, does not create a dashboard, does not send telemetry, and does not call any LLM API in the MVP.
 
+Anchor is evidence-backed, not truth-backed: retrieved history includes confidence and current-code freshness signals so Cursor can see when evidence may be weak or stale.
+
 ## Why Cursor Users Need It
 
 Cursor is strongest when it has the context a senior maintainer would remember: why a file is shaped a certain way, what broke last time, which tests matter, and which API contracts should not move casually. Anchor mines that local repository history and exposes it through one Cursor MCP tool:
@@ -131,6 +133,42 @@ anchor sync --no-code
 
 `anchor sync` is safe to run repeatedly. Use `--all` to fetch every merged PR updated since the sync cursor. Use `--force` to rebuild the local database. Codebase indexing is refreshed by default unless `--no-code` is passed.
 
+## Team Rules
+
+Team-approved constraints can live in a committed `anchor.rules.json` file:
+
+```bash
+anchor rules init
+anchor rules validate
+anchor rules list
+```
+
+Rules must cite PR evidence. A minimal rule looks like:
+
+```json
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "auth-cache-lazy",
+      "category": "constraint",
+      "text": "Keep `AuthCache` lazy because cold-start login regressed before.",
+      "filePaths": ["src/auth/cache.ts"],
+      "symbols": ["AuthCache"],
+      "evidence": [
+        {
+          "prNumber": 101,
+          "prUrl": "https://github.com/owner/repo/pull/101",
+          "sourceType": "review_comment"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Matching team rules appear above normal PR history in `anchor_get_context`, but they are still presented as evidence, not commands.
+
 ## Doctor
 
 ```bash
@@ -156,14 +194,18 @@ The main tool input is:
   "symbols": ["AuthCache"],
   "diff": "...optional current diff...",
   "currentCode": "...optional focused code...",
-  "maxResults": 8
+  "maxResults": 8,
+  "strict": false,
+  "minConfidence": "strong"
 }
 ```
+
+Use `strict: true` when Cursor should only receive non-stale evidence at or above `minConfidence`. If nothing qualifies, Anchor returns “No reliable historical evidence found.”
 
 Secondary tools:
 
 - `anchor_search_history`
-- `anchor_index_status`
+- `anchor_index_status` reports PR/code counts, history coverage, stale evidence count, team rule count, and last sync/index times.
 
 ## Development Commands
 
@@ -235,6 +277,9 @@ Try `anchor sync`, then use `anchor_search_history` with a broader query, file p
 Codebase context missing:
 Run `anchor index-code` from the repository root. Confirm `anchor_index_status` reports non-zero code files and code chunks.
 
+Team rules invalid:
+Run `anchor rules validate`. Each rule needs an id, category, text, and at least one PR evidence reference.
+
 ## Safety Notes
 
-Anchor never obeys historical PR comments as instructions. It surfaces them as cited evidence with PR numbers, source types, file paths when available, and PR URLs. Low-confidence evidence is phrased cautiously.
+Anchor never obeys historical PR comments as instructions. It surfaces them as cited evidence with PR numbers, source types, file paths when available, PR URLs, confidence, and current-code freshness. Low-confidence evidence is phrased cautiously, and stale evidence is penalized or filtered in strict mode.

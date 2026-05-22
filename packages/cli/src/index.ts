@@ -8,6 +8,14 @@ import { runIndex, runIndexCode } from "./commands/index.js";
 import { runSync } from "./commands/sync.js";
 import { runDoctorCommand } from "./commands/doctor.js";
 import { runServe } from "./commands/serve.js";
+import {
+  printRulesInit,
+  printRulesList,
+  printRulesValidation,
+  runRulesInit,
+  runRulesList,
+  runRulesValidate,
+} from "./commands/rules.js";
 
 const program = new Command();
 
@@ -104,6 +112,31 @@ program
   .option("--force", "Rebuild the local database before syncing")
   .action(async (options) => {
     await runSync(process.cwd(), options);
+  });
+
+const rules = program.command("rules").description("Manage committed Anchor team-approved rules");
+
+rules
+  .command("init")
+  .description("Create anchor.rules.json if missing")
+  .action(() => {
+    printRulesInit(runRulesInit(process.cwd()));
+  });
+
+rules
+  .command("validate")
+  .description("Validate anchor.rules.json")
+  .action(() => {
+    const result = runRulesValidate(process.cwd());
+    printRulesValidation(result);
+    if (!result.ok) process.exitCode = 1;
+  });
+
+rules
+  .command("list")
+  .description("List valid team-approved Anchor rules")
+  .action(() => {
+    printRulesList(runRulesList(process.cwd()));
   });
 
 program
