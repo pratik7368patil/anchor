@@ -2,6 +2,7 @@ node_modules/
 dist/
 .anchor/
 .env
+.netlify/
 *.log
 coverage/
 .DS_Store
