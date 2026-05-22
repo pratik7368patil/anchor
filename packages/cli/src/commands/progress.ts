@@ -100,5 +100,10 @@ export function printCodeIndexProgress(progress: CodeIndexProgress): void {
         `[anchor] indexed code file ${progress.current}/${progress.total}: ${progress.filePath} (${progress.chunks} chunks)`,
       );
       return;
+    case "indexed_architecture":
+      console.error(
+        `[anchor] indexed architecture memory: ${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports.`,
+      );
+      return;
   }
 }

@@ -17,6 +17,7 @@ const legacyDocsHashes: Record<string, string> = {
   "#docs": "/docs",
   "#quickstart": "/docs/quickstart",
   "#workflows": "/docs/workflows",
+  "#architecture": "/docs/architecture",
   "#commands": "/docs/cli",
   "#options": "/docs/options",
   "#mcp": "/docs/mcp",
@@ -165,6 +166,10 @@ function renderHome(): string {
               <span class="mark">test</span>
               <div><strong>Which tests reviewers expect</strong><span>Anchor can surface sibling tests, related files, and review expectations.</span></div>
             </div>
+            <div class="memory-row">
+              <span class="mark">arch</span>
+              <div><strong>Which architecture pattern to follow</strong><span>Architecture Memory summarizes current file areas, imports, symbols, and nearby tests from local code.</span></div>
+            </div>
           </div>
         </section>
 
@@ -270,6 +275,8 @@ function renderDocsPageContent(path: string): string {
       return renderQuickstartPage();
     case "/docs/workflows":
       return renderWorkflowsPage();
+    case "/docs/architecture":
+      return renderArchitecturePage();
     case "/docs/rules":
       return renderRulesPage();
     case "/docs/cli":
@@ -367,11 +374,59 @@ function renderWorkflowsPage(): string {
           <p>Run <code>anchor review</code> before opening a PR to catch known regressions and missing checks.</p>
         </div>
         <div>
+          <strong>Check architecture</strong>
+          <p>Run <code>anchor architecture --check</code> before large changes to compare the diff against local placement, import, and test patterns.</p>
+        </div>
+        <div>
           <strong>Share context</strong>
           <p>Add <code>--share</code> when the output should fit in Slack or a PR comment.</p>
         </div>
       </div>
       ${renderCodeBlock("Common workflow commands", "workflow-code", workflowCommand, true)}
+    </article>
+  `;
+}
+
+function renderArchitecturePage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Guide</span>
+      <h2>Architecture Memory</h2>
+      <p class="section-intro">Architecture Memory helps Cursor follow the repo's current shape before it writes code. It is deterministic, local-only, and built from the sanitized local code index.</p>
+      <div class="workflow-grid">
+        <div>
+          <strong>File areas</strong>
+          <p>Anchor classifies files as <code>api</code>, <code>service</code>, <code>component</code>, <code>hook</code>, <code>route</code>, <code>store</code>, <code>test</code>, <code>schema</code>, <code>type</code>, <code>config</code>, <code>util</code>, or <code>unknown</code>.</p>
+        </div>
+        <div>
+          <strong>Import direction</strong>
+          <p>It extracts local import edges so new code can follow existing layer direction instead of guessing where dependencies should point.</p>
+        </div>
+        <div>
+          <strong>Pattern evidence</strong>
+          <p>It ranks repeated folder placement, exported symbols, nearby tests, and matching files. Recommendations cite indexed files, with PR and rule evidence available through <code>anchor_get_context</code>.</p>
+        </div>
+        <div>
+          <strong>Diff checks</strong>
+          <p><code>anchor architecture --check</code> reads the current git diff, or <code>--diff-file</code>, and returns architecture risks plus recommended checks.</p>
+        </div>
+      </div>
+      ${renderCodeBlock(
+        "Architecture commands",
+        "architecture-code",
+        `anchor index-code
+anchor architecture
+anchor architecture --file src/auth/cache.ts
+anchor architecture --area api
+anchor architecture --check
+anchor architecture --diff-file change.diff --check
+anchor architecture --write-doc`,
+        true,
+      )}
+      <div class="doc-callout">
+        <span aria-hidden="true">${renderDocIcon("/docs/architecture")}</span>
+        <p><code>--write-doc</code> is the only architecture command that writes a file. It creates <code>ANCHOR_ARCHITECTURE.md</code> from local evidence when you explicitly request it.</p>
+      </div>
     </article>
   `;
 }
@@ -517,6 +572,10 @@ function renderProductMockup(): string {
               <span>changed_files / tests/api/*.spec.ts</span>
             </div>
             <div class="pr-row">
+              <strong>Architecture Memory</strong>
+              <span>local imports / symbols / file areas</span>
+            </div>
+            <div class="pr-row">
               <strong>anchor.rules.json</strong>
               <span>team-approved rule / cited evidence</span>
             </div>
@@ -591,6 +650,7 @@ function renderDocIcon(path: string): string {
     "/docs": `<circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7.2v.1"></path>`,
     "/docs/quickstart": `<path d="m8 5 10 7-10 7V5Z"></path>`,
     "/docs/workflows": `<path d="M4 7h6v6H4z"></path><path d="M14 11h6v6h-6z"></path><path d="M10 10h4"></path>`,
+    "/docs/architecture": `<path d="M4 18h16"></path><path d="M7 18V9l5-4 5 4v9"></path><path d="M10 18v-6h4v6"></path>`,
     "/docs/rules": `<path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 6.5 2.1 2.1"></path><path d="m17.1 15.4 2.1 2.1"></path><circle cx="12" cy="12" r="4"></circle>`,
     "/docs/cli": `<path d="M5 7h14"></path><path d="M7 12h4"></path><path d="M7 17h10"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect>`,
     "/docs/options": `<path d="M6 8h12"></path><path d="M6 16h12"></path><circle cx="9" cy="8" r="2"></circle><circle cx="15" cy="16" r="2"></circle>`,

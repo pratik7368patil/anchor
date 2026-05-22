@@ -2,6 +2,7 @@ import type {
   AnchorContextInput,
   IndexStatus,
   RankedCodeChunk,
+  RankedArchitecturePattern,
   RankedRegressionEvent,
   RankedTeamRule,
   RankedTestFile,
@@ -74,6 +75,7 @@ export function formatAnchorContext(
   warnings: string[] = [],
   relevantTests: RankedTestFile[] = [],
   regressionEvents: RankedRegressionEvent[] = [],
+  architecturePatterns: RankedArchitecturePattern[] = [],
   extraMetadata: Record<string, unknown> = {},
 ): FormattedResult {
   const lines = ["# Anchor Context", ""];
@@ -135,6 +137,21 @@ export function formatAnchorContext(
       lines.push(`${index + 1}. ${chunk.filePath}:${chunk.startLine}-${chunk.endLine}${symbols}`);
       lines.push(`   Why it matters: Current code near this match may affect the requested edit.`);
       lines.push(`   Snippet: ${clipSentence(chunk.sanitizedText, 260)}`);
+      lines.push("");
+    });
+  }
+
+  lines.push("## Architecture Guidance", "");
+  if (architecturePatterns.length === 0) {
+    lines.push("No directly relevant architecture patterns found in the local index.", "");
+  } else {
+    architecturePatterns.forEach((pattern, index) => {
+      lines.push(`${index + 1}. [${pattern.area}] ${clipSentence(pattern.sanitizedSummary, 240)}`);
+      lines.push(`   Evidence: ${pattern.sourceFiles.slice(0, 5).join(", ") || "indexed code"}`);
+      lines.push(`   Confidence: ${pattern.confidence.toFixed(2)}`);
+      lines.push(
+        `   Why it matters: Follow this current-code pattern unless stronger PR or team-rule evidence says otherwise.`,
+      );
       lines.push("");
     });
   }
@@ -236,6 +253,19 @@ export function formatAnchorContext(
         matchReasons: chunk.matchReasons,
         rankSignals: chunk.rankSignals,
       })),
+      architecturePatterns: architecturePatterns.map((pattern) => ({
+        id: pattern.id,
+        score: pattern.score,
+        area: pattern.area,
+        name: pattern.name,
+        sanitizedSummary: clipSentence(pattern.sanitizedSummary, 280),
+        sourceFiles: pattern.sourceFiles,
+        symbols: pattern.symbols,
+        confidence: pattern.confidence,
+        evidence: pattern.evidence,
+        matchReasons: pattern.matchReasons,
+        rankSignals: pattern.rankSignals,
+      })),
       relevantTests: relevantTests.map((test) => ({
         path: test.path,
         sourcePath: test.sourcePath,
@@ -314,6 +344,9 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Test files: ${status.testFileCount}`,
     `- Test links: ${status.testLinkCount}`,
     `- Regression events: ${status.regressionEventCount}`,
+    `- Architecture components: ${status.architectureComponentCount}`,
+    `- Architecture patterns: ${status.architecturePatternCount}`,
+    `- Architecture imports: ${status.architectureImportCount}`,
     `- Anchor coverage: ${status.coverageScore}% (${status.coverageGrade})`,
     `- History coverage: ${status.historyCoverage ?? "unknown"}`,
     `- History limit: ${status.historyLimit ?? "n/a"}`,
@@ -321,6 +354,7 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Team rules: ${status.teamRuleCount}`,
     `- Last sync: ${status.lastSyncTime ?? "never"}`,
     `- Last code index: ${status.lastCodeIndexTime ?? "never"}`,
+    `- Last architecture index: ${status.lastArchitectureIndexTime ?? "never"}`,
     `- Last rule index: ${status.lastRuleIndexTime ?? "never"}`,
     `- Last successful index run: ${status.lastSuccessfulRun ?? "never"}`,
     `- Last failed index run: ${status.lastFailedRun ?? "never"}`,

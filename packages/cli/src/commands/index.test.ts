@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { getIndexStatus } from "@pratik7368patil/anchor-core";
+import { runArchitecture } from "./architecture.js";
 import { runDemo } from "./demo.js";
 import { runExplain } from "./explain.js";
 import { runHealth } from "./health.js";
@@ -83,11 +84,57 @@ describe("index-code command", () => {
     const status = getIndexStatus(cwd, false);
     expect(status.codeFileCount).toBe(1);
     expect(status.codeChunkCount).toBeGreaterThan(0);
+    expect(status.architectureComponentCount).toBe(1);
+    expect(status.architecturePatternCount).toBeGreaterThan(0);
     expect(runHealth(cwd).indexStatus.codeFileCount).toBe(1);
     expect(runExplain(cwd, "src/index.ts").markdown).toContain("# Anchor File Explain");
     expect(runExplain(cwd, "src/index.ts", { share: true }).markdown).toContain(
       "# Anchor File Brief",
     );
+  });
+});
+
+describe("architecture command", () => {
+  it("summarizes architecture, checks diffs, and writes docs on request", async () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    execFileSync("git", ["remote", "add", "origin", "git@github.com:owner/repo.git"], {
+      cwd,
+      stdio: "ignore",
+    });
+    writeFileEnsuringDir(
+      path.join(cwd, "src/services/api.ts"),
+      "export function requestApi() { return true; }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/services/api.test.ts"),
+      "import { requestApi } from './api';\ntest('requestApi', () => requestApi());\n",
+    );
+    execFileSync("git", ["add", "src"], { cwd, stdio: "ignore" });
+    await runIndexCode(cwd, { token: undefined });
+
+    const summary = runArchitecture(cwd, {});
+    expect(summary.markdown).toContain("# Anchor Architecture");
+    const file = runArchitecture(cwd, { file: "src/services/api.ts" });
+    expect(file.markdown).toContain("src/services/api.ts");
+    const area = runArchitecture(cwd, { area: "service" });
+    expect(area.markdown).toContain("service");
+
+    const diffPath = path.join(cwd, "change.diff");
+    fs.writeFileSync(
+      diffPath,
+      [
+        "diff --git a/src/services/api.ts b/src/services/api.ts",
+        "--- a/src/services/api.ts",
+        "+++ b/src/services/api.ts",
+        "+export function requestApi() { return false; }",
+      ].join("\n"),
+    );
+    const check = runArchitecture(cwd, { check: true, diffFile: diffPath });
+    expect(check.markdown).toContain("# Anchor Architecture Check");
+
+    runArchitecture(cwd, { writeDoc: true });
+    expect(fs.existsSync(path.join(cwd, "ANCHOR_ARCHITECTURE.md"))).toBe(true);
   });
 });
 

@@ -24,6 +24,20 @@ export type FreshnessStatus = "current" | "possibly_stale" | "stale";
 
 export type CoverageGrade = "empty" | "poor" | "fair" | "good" | "excellent";
 
+export type ArchitectureArea =
+  | "api"
+  | "service"
+  | "component"
+  | "hook"
+  | "route"
+  | "store"
+  | "test"
+  | "schema"
+  | "type"
+  | "config"
+  | "util"
+  | "unknown";
+
 export type EvidenceRef = {
   prNumber: number;
   prUrl: string;
@@ -70,6 +84,54 @@ export type CodeChunk = {
   symbols: string[];
   contentHash: string;
   updatedAt: string;
+};
+
+export type CodeImport = {
+  repo: string;
+  sourcePath: string;
+  specifier: string;
+  importedPath?: string;
+  importedSymbols: string[];
+  kind: "static" | "dynamic" | "require";
+};
+
+export type ArchitectureComponent = {
+  repo: string;
+  path: string;
+  area: ArchitectureArea;
+  kind: string;
+  language?: string;
+  symbols: string[];
+  imports: string[];
+  relatedTests: string[];
+  confidence: number;
+  updatedAt: string;
+};
+
+export type ArchitecturePattern = {
+  id: string;
+  repo: string;
+  area: ArchitectureArea;
+  name: string;
+  summary: string;
+  sanitizedSummary: string;
+  sourceFiles: string[];
+  symbols: string[];
+  evidence: EvidenceRef[];
+  confidence: number;
+  createdAt: string;
+};
+
+export type RankedArchitecturePattern = ArchitecturePattern & {
+  score: number;
+  matchReasons: string[];
+  rankSignals: Record<string, number>;
+};
+
+export type ArchitectureIndexData = {
+  components: ArchitectureComponent[];
+  patterns: ArchitecturePattern[];
+  imports: CodeImport[];
 };
 
 export type RankedCodeChunk = CodeChunk & {
@@ -283,6 +345,13 @@ export type CodeIndexProgress =
       total: number;
       filePath: string;
       chunks: number;
+    }
+  | {
+      stage: "indexed_architecture";
+      repo: string;
+      components: number;
+      patterns: number;
+      imports: number;
     };
 
 export type IndexSummary = {
@@ -300,6 +369,9 @@ export type CodeIndexSummary = {
   codeChunksCreated: number;
   testFilesIndexed: number;
   testLinksCreated: number;
+  architectureComponentsIndexed: number;
+  architecturePatternsIndexed: number;
+  architectureImportsIndexed: number;
   skippedFiles: number;
   databasePath: string;
 };
@@ -411,12 +483,16 @@ export type IndexStatus = {
   testFileCount: number;
   testLinkCount: number;
   regressionEventCount: number;
+  architectureComponentCount: number;
+  architecturePatternCount: number;
+  architectureImportCount: number;
   historyCoverage?: "limited" | "all" | "unknown";
   historyLimit?: number;
   staleEvidenceCount: number;
   teamRuleCount: number;
   lastSyncTime?: string;
   lastCodeIndexTime?: string;
+  lastArchitectureIndexTime?: string;
   lastRuleIndexTime?: string;
   lastSuccessfulRun?: string;
   lastFailedRun?: string;

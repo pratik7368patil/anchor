@@ -10,6 +10,7 @@ import { runDoctorCommand } from "./commands/doctor.js";
 import { runServe } from "./commands/serve.js";
 import { printExplain, runExplain } from "./commands/explain.js";
 import { printReview, runReview } from "./commands/review.js";
+import { printArchitecture, runArchitecture } from "./commands/architecture.js";
 import { printHealth, runHealth } from "./commands/health.js";
 import { printDemo, runDemo } from "./commands/demo.js";
 import { printPrompts, runPrompts } from "./commands/prompts.js";
@@ -43,6 +44,25 @@ function collectOption(value: string, previous: string[]): string[] {
 function parseConfidenceOption(value: string): "strong" | "moderate" | "weak" {
   if (value === "strong" || value === "moderate" || value === "weak") return value;
   throw new Error("Invalid confidence level. Use strong, moderate, or weak.");
+}
+
+function parseArchitectureAreaOption(value: string) {
+  const areas = [
+    "api",
+    "service",
+    "component",
+    "hook",
+    "route",
+    "store",
+    "test",
+    "schema",
+    "type",
+    "config",
+    "util",
+    "unknown",
+  ];
+  if (areas.includes(value)) return value;
+  throw new Error(`Invalid architecture area: ${value}`);
 }
 
 function readPackageVersion(): string {
@@ -157,6 +177,20 @@ program
   .option("--max-results <number>", "Maximum historical results", parseIntegerOption)
   .action((options) => {
     printReview(runReview(process.cwd(), options), options);
+  });
+
+program
+  .command("architecture")
+  .description("Summarize or check local architecture patterns from the Anchor index")
+  .option("--file <path>", "Explain architecture patterns for one file")
+  .option("--area <area>", "Filter architecture patterns by area", parseArchitectureAreaOption)
+  .option("--check", "Check the current git diff against architecture patterns")
+  .option("--diff-file <path>", "Read a diff from a file for --check")
+  .option("--write-doc", "Write ANCHOR_ARCHITECTURE.md from the architecture summary")
+  .option("--json", "Print structured metadata as JSON")
+  .option("--max-results <number>", "Maximum architecture patterns", parseIntegerOption)
+  .action((options) => {
+    printArchitecture(runArchitecture(process.cwd(), options), options);
   });
 
 program

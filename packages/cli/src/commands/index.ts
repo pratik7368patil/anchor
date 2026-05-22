@@ -101,6 +101,9 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
       console.log(`Code chunks created: ${codeSummary.codeChunksCreated}`);
       console.log(`Test files indexed: ${codeSummary.testFilesIndexed}`);
       console.log(`Test links created: ${codeSummary.testLinksCreated}`);
+      console.log(`Architecture components indexed: ${codeSummary.architectureComponentsIndexed}`);
+      console.log(`Architecture patterns indexed: ${codeSummary.architecturePatternsIndexed}`);
+      console.log(`Architecture imports indexed: ${codeSummary.architectureImportsIndexed}`);
       console.log(`Skipped code files: ${codeSummary.skippedFiles}`);
     }
     console.log(`Regression events created: ${summary.regressionEventsCreated}`);
@@ -160,6 +163,9 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
     console.log(`Code chunks created: ${summary.codeChunksCreated}`);
     console.log(`Test files indexed: ${summary.testFilesIndexed}`);
     console.log(`Test links created: ${summary.testLinksCreated}`);
+    console.log(`Architecture components indexed: ${summary.architectureComponentsIndexed}`);
+    console.log(`Architecture patterns indexed: ${summary.architecturePatternsIndexed}`);
+    console.log(`Architecture imports indexed: ${summary.architectureImportsIndexed}`);
     console.log(`Skipped code files: ${summary.skippedFiles}`);
     console.log(`Database path: ${summary.databasePath}`);
     printIndexOutcome(root, db, { code: summary });

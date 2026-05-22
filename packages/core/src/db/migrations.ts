@@ -117,6 +117,61 @@ CREATE TABLE IF NOT EXISTS code_index_state (
   skipped_files INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS code_imports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  source_path TEXT NOT NULL,
+  specifier TEXT NOT NULL,
+  imported_path TEXT,
+  imported_symbols_json TEXT NOT NULL,
+  kind TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS architecture_components (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  area TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  language TEXT,
+  symbols_json TEXT NOT NULL,
+  imports_json TEXT NOT NULL,
+  related_tests_json TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(repo_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS architecture_patterns (
+  id TEXT PRIMARY KEY,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  repo TEXT NOT NULL,
+  area TEXT NOT NULL,
+  name TEXT NOT NULL,
+  summary_sanitized TEXT NOT NULL,
+  source_files_json TEXT NOT NULL,
+  symbols_json TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS architecture_patterns_fts USING fts5(
+  patternId UNINDEXED,
+  summary,
+  area,
+  sourceFiles,
+  symbols
+);
+
+CREATE TABLE IF NOT EXISTS architecture_index_state (
+  repo TEXT PRIMARY KEY,
+  last_indexed_at TEXT NOT NULL,
+  components INTEGER NOT NULL,
+  patterns INTEGER NOT NULL,
+  imports INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS test_files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
@@ -191,6 +246,11 @@ CREATE INDEX IF NOT EXISTS idx_wisdom_units_category ON wisdom_units(category);
 CREATE INDEX IF NOT EXISTS idx_wisdom_units_pr ON wisdom_units(pr_id);
 CREATE INDEX IF NOT EXISTS idx_code_files_path ON code_files(path);
 CREATE INDEX IF NOT EXISTS idx_code_chunks_file_path ON code_chunks(file_path);
+CREATE INDEX IF NOT EXISTS idx_code_imports_source ON code_imports(source_path);
+CREATE INDEX IF NOT EXISTS idx_code_imports_imported ON code_imports(imported_path);
+CREATE INDEX IF NOT EXISTS idx_architecture_components_path ON architecture_components(path);
+CREATE INDEX IF NOT EXISTS idx_architecture_components_area ON architecture_components(area);
+CREATE INDEX IF NOT EXISTS idx_architecture_patterns_area ON architecture_patterns(area);
 CREATE INDEX IF NOT EXISTS idx_test_files_path ON test_files(path);
 CREATE INDEX IF NOT EXISTS idx_test_links_source ON test_links(source_path);
 CREATE INDEX IF NOT EXISTS idx_test_links_test ON test_links(test_path);

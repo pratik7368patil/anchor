@@ -20,6 +20,10 @@ anchor index-all --concurrency 6
 anchor index-code
 anchor explain src/auth/cache.ts
 anchor explain src/auth/cache.ts --share
+anchor architecture
+anchor architecture --file src/auth/cache.ts
+anchor architecture --area api
+anchor architecture --check
 anchor review
 anchor review --share
 anchor health
@@ -31,11 +35,13 @@ anchor rules check-evidence
 anchor doctor
 ```
 
-Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, and `anchor_review_diff`.
+Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, and `anchor_check_architecture`.
 
 Use `anchor_get_context` with `strict: true` when Cursor should only receive non-stale, high-confidence evidence.
 
-Anchor indexes PR history, local code chunks, likely related tests, regression memory, and team-approved rules. `anchor health` and `anchor_index_status` include a local coverage score. All data stays in `.anchor/index.sqlite` on your machine.
+Anchor indexes PR history, local code chunks, likely related tests, regression memory, architecture patterns, and team-approved rules. `anchor health` and `anchor_index_status` include a local coverage score. All data stays in `.anchor/index.sqlite` on your machine.
+
+Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor sync`, and `anchor index-code`. It gives Cursor deterministic current-code guidance about file areas, import direction, symbols, repeated folder patterns, and nearby test conventions before adding APIs, services, components, hooks, tests, or refactors.
 
 `anchor demo` runs offline with bundled fixtures and sample code. `--share` on `explain` and `review` produces compact Markdown for Slack or PR comments.
 

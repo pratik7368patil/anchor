@@ -26,6 +26,7 @@ export function printIndexOutcome(
   console.log(`Security notes: ${categories.security_note ?? 0}`);
   console.log(`Regressions: ${status.regressionEventCount}`);
   console.log(`Tests linked: ${status.testLinkCount}`);
+  console.log(`Architecture patterns: ${status.architecturePatternCount}`);
   console.log(`Team rules: ${status.teamRuleCount}`);
   console.log(`Anchor coverage: ${status.coverageScore}% (${status.coverageGrade})`);
   if (summaries.history || summaries.code) {
