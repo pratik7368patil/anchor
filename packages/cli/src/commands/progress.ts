@@ -54,6 +54,11 @@ export function printFetchProgress(progress: FetchPullRequestsProgress): void {
         );
       }
       return;
+    case "github_rate_limited":
+      console.error(
+        `[anchor] GitHub rate limit hit while ${progress.request}. Waiting ${progress.waitSeconds}s until ${progress.retryAt}. ${progress.reason}.`,
+      );
+      return;
   }
 }
 

@@ -403,9 +403,9 @@ NPM_TOKEN
 Release flow:
 
 ```bash
-npm --prefix packages/core version 0.1.12 --no-git-tag-version
-npm --prefix packages/mcp-server version 0.1.12 --no-git-tag-version
-npm --prefix packages/cli version 0.1.12 --no-git-tag-version
+npm --prefix packages/core version 0.1.13 --no-git-tag-version
+npm --prefix packages/mcp-server version 0.1.13 --no-git-tag-version
+npm --prefix packages/cli version 0.1.13 --no-git-tag-version
 ```
 
 Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.
@@ -418,7 +418,14 @@ Missing token:
 Run `gh auth login`, or export `GITHUB_TOKEN`/`GH_TOKEN` with a read-only token, then rerun `anchor doctor`.
 
 GitHub rate limit:
-Wait for the limit to reset or use a token with sufficient read quota. Anchor indexes locally, so you do not need to refetch unchanged history often.
+Full-history indexing can require thousands of GitHub API calls because each PR has details, files, reviews, review comments, issue comments, and commits. Anchor detects GitHub `403`/`429` rate-limit responses and waits for `retry-after` or `x-ratelimit-reset` before retrying. Keep the terminal open when this happens. To reduce pressure, use a smaller run first:
+
+```bash
+anchor index --limit 200 --concurrency 2
+anchor sync --concurrency 2
+```
+
+Use `anchor index-all --concurrency 1` when you want the safest full-history run. Anchor indexes locally, so you do not need to refetch unchanged history often.
 
 Malformed `.cursor/mcp.json`:
 Fix the JSON syntax, then rerun `anchor init`. Anchor merges safely but will not guess through invalid JSON.

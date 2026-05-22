@@ -1,6 +1,8 @@
 import type { FetchPullRequestsProgress, PullRequestRecord } from "../types.js";
 import { createGitHubClient } from "./client.js";
 import { fetchPullRequestDetails } from "./fetch-pr-details.js";
+import type { GitHubRateLimitController } from "./rate-limit.js";
+import { requestWithGitHubRateLimit } from "./rate-limit.js";
 
 export type FetchPullRequestsOptions = {
   token: string;
@@ -31,6 +33,7 @@ async function fetchPullRequestDetailsConcurrently(options: {
   repo: string;
   pullNumbers: number[];
   detailConcurrency: number;
+  controller: GitHubRateLimitController;
   onProgress?: (progress: FetchPullRequestsProgress) => void;
 }): Promise<PullRequestRecord[]> {
   const results: Array<PullRequestRecord | undefined> = new Array(options.pullNumbers.length);
@@ -53,7 +56,12 @@ async function fetchPullRequestDetailsConcurrently(options: {
         prNumber: pullNumber,
         detailConcurrency: options.detailConcurrency,
       });
-      results[index] = await fetchPullRequestDetails(options.octokit, options.repo, pullNumber);
+      results[index] = await fetchPullRequestDetails(
+        options.octokit,
+        options.repo,
+        pullNumber,
+        options.controller,
+      );
       completed += 1;
       options.onProgress?.({
         stage: "fetched_pull_request_details",
@@ -84,10 +92,19 @@ export async function fetchMergedPullRequests(
   const octokit = createGitHubClient(options.token);
   const limit = resolvePullRequestFetchLimit(options);
   const detailConcurrency = resolvePullRequestDetailConcurrency(options);
+  const rateLimitController: GitHubRateLimitController = {
+    onRateLimit: (progress) =>
+      options.onProgress?.({
+        stage: "github_rate_limited",
+        repo: options.repo,
+        ...progress,
+      }),
+  };
   const sinceTime = options.since ? Date.parse(options.since) : undefined;
   const pullNumbers: number[] = [];
   let scannedPullRequests = 0;
   let reachedSinceBoundary = false;
+  let page = 1;
 
   options.onProgress?.({
     stage: "discovering_pull_requests",
@@ -97,14 +114,23 @@ export async function fetchMergedPullRequests(
     since: options.since,
   });
 
-  for await (const response of octokit.paginate.iterator(octokit.pulls.list, {
-    owner,
-    repo,
-    state: "closed",
-    sort: "updated",
-    direction: "desc",
-    per_page: 100,
-  })) {
+  while (true) {
+    const response = await requestWithGitHubRateLimit(
+      () =>
+        octokit.pulls.list({
+          owner,
+          repo,
+          state: "closed",
+          sort: "updated",
+          direction: "desc",
+          per_page: 100,
+          page,
+        }),
+      {
+        controller: rateLimitController,
+        requestName: `GET /repos/${options.repo}/pulls page ${page}`,
+      },
+    );
     scannedPullRequests += response.data.length;
     for (const pull of response.data) {
       if (sinceTime && Date.parse(pull.updated_at) < sinceTime) {
@@ -123,7 +149,15 @@ export async function fetchMergedPullRequests(
       scannedPullRequests,
       matchedMergedPullRequests: pullNumbers.length,
     });
-    if (reachedSinceBoundary || (limit !== undefined && pullNumbers.length >= limit)) break;
+    const hasNextPage = String(response.headers.link ?? "").includes('rel="next"');
+    if (
+      reachedSinceBoundary ||
+      (limit !== undefined && pullNumbers.length >= limit) ||
+      !hasNextPage
+    ) {
+      break;
+    }
+    page += 1;
   }
 
   options.onProgress?.({
@@ -140,6 +174,7 @@ export async function fetchMergedPullRequests(
     repo: options.repo,
     pullNumbers,
     detailConcurrency,
+    controller: rateLimitController,
     onProgress: options.onProgress,
   });
 }

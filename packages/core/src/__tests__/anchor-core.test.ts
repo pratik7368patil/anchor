@@ -35,6 +35,8 @@ import {
   resolvePullRequestDetailConcurrency,
   resolvePullRequestFetchLimit,
   resolveGitHubToken,
+  getGitHubRateLimitDelayMs,
+  isGitHubRateLimitError,
   runDoctor,
   sanitizeHistoricalText,
   stripPromptInjection,
@@ -146,6 +148,52 @@ describe("GitHub PR fetch limits", () => {
     expect(resolvePullRequestDetailConcurrency({ detailConcurrency: 20 })).toBe(10);
     expect(resolvePullRequestDetailConcurrency({ detailConcurrency: 0 })).toBe(1);
     expect(resolvePullRequestDetailConcurrency({ detailConcurrency: Number.NaN })).toBe(5);
+  });
+});
+
+describe("GitHub rate limit handling", () => {
+  it("detects primary and secondary GitHub rate limit errors", () => {
+    expect(
+      isGitHubRateLimitError({
+        status: 403,
+        message: "API rate limit exceeded",
+        response: { headers: { "x-ratelimit-remaining": "0" } },
+      }),
+    ).toBe(true);
+    expect(
+      isGitHubRateLimitError({
+        status: 429,
+        message: "secondary rate limit",
+        response: { headers: { "retry-after": "30" } },
+      }),
+    ).toBe(true);
+    expect(isGitHubRateLimitError({ status: 404, message: "not found" })).toBe(false);
+  });
+
+  it("uses retry-after, x-ratelimit-reset, then exponential backoff for delays", () => {
+    expect(
+      getGitHubRateLimitDelayMs(
+        {
+          status: 403,
+          response: { headers: { "retry-after": "12" } },
+        },
+        1,
+        1_000,
+      ).delayMs,
+    ).toBe(12_000);
+
+    const reset = getGitHubRateLimitDelayMs(
+      {
+        status: 403,
+        response: { headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "20" } },
+      },
+      1,
+      10_000,
+    );
+    expect(reset.delayMs).toBe(12_000);
+    expect(reset.reason).toContain("primary rate limit resets");
+
+    expect(getGitHubRateLimitDelayMs({ status: 403 }, 3, 1_000).delayMs).toBe(240_000);
   });
 });
 
