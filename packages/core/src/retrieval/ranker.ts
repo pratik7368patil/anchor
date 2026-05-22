@@ -1,14 +1,24 @@
 import path from "node:path";
 import type {
   AnchorContextInput,
+  ConfidenceLevel,
   RankedWisdomUnit,
   SearchHistoryInput,
   WisdomCategory,
   WisdomUnit,
 } from "../types.js";
 import type { AnchorDatabase } from "../db/database.js";
-import { canonicalizeText, tokenizeSearchText, uniqueStrings } from "../utils/text.js";
+import { tokenizeSearchText, uniqueStrings } from "../utils/text.js";
 import { buildFtsQuery, clampMaxResults } from "./query-builder.js";
+import {
+  claimKeyFor,
+  confidenceAtLeast,
+  confidenceLevelFor,
+  confidenceReasonsFor,
+  evaluateFreshness,
+  evidenceForWisdom,
+  loadCurrentCodeSnapshot,
+} from "./evidence.js";
 
 type WisdomUnitRow = {
   id: string;
@@ -28,10 +38,18 @@ type WisdomUnitRow = {
   bm25?: number;
 };
 
+type ClaimRepetitionRow = {
+  category: WisdomCategory;
+  sanitized_text: string;
+  pr_number: number;
+};
+
 function parseJsonArray(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
   } catch {
     return [];
   }
@@ -87,7 +105,8 @@ function filePathMatch(unitPaths: string[], queryFiles: string[]): number {
       if (q === u) best = Math.max(best, 1);
       else if (queryBase === unitBase) best = Math.max(best, 0.68);
       else if (queryDir === unitDir) best = Math.max(best, 0.62);
-      else if (unitDir.startsWith(queryDir) || queryDir.startsWith(unitDir)) best = Math.max(best, 0.38);
+      else if (unitDir.startsWith(queryDir) || queryDir.startsWith(unitDir))
+        best = Math.max(best, 0.38);
       else if (queryBase && unitBase && queryBase.split(".")[0] === unitBase.split(".")[0]) {
         best = Math.max(best, 0.48);
       }
@@ -105,8 +124,11 @@ function symbolMatch(unit: WisdomUnit, querySymbols: string[]): number {
     const lower = symbol.toLowerCase();
     if (unitSymbols.includes(lower)) best = Math.max(best, 1);
     else if (text.includes(`\`${lower}\``)) best = Math.max(best, 1);
-    else if (new RegExp(`\\b${escapeRegExp(lower)}\\b`, "i").test(text)) best = Math.max(best, 0.66);
-    else if (unitSymbols.some((candidate) => candidate.includes(lower) || lower.includes(candidate))) {
+    else if (new RegExp(`\\b${escapeRegExp(lower)}\\b`, "i").test(text))
+      best = Math.max(best, 0.66);
+    else if (
+      unitSymbols.some((candidate) => candidate.includes(lower) || lower.includes(candidate))
+    ) {
       best = Math.max(best, 0.35);
     }
   }
@@ -116,9 +138,13 @@ function symbolMatch(unit: WisdomUnit, querySymbols: string[]): number {
 function textMatch(unit: WisdomUnit & { bm25?: number }, inputText: string): number {
   const queryTokens = tokenizeSearchText(inputText, 32);
   if (queryTokens.length === 0) return unit.bm25 === undefined ? 0 : 0.45;
-  const haystack = `${unit.sanitizedText} ${unit.filePaths.join(" ")} ${unit.symbols.join(" ")}`.toLowerCase();
-  const overlap = queryTokens.filter((token) => haystack.includes(token.toLowerCase())).length / queryTokens.length;
-  const bm25Signal = unit.bm25 === undefined ? 0 : Math.max(0.25, Math.min(1, 1 / (1 + Math.abs(unit.bm25))));
+  const haystack =
+    `${unit.sanitizedText} ${unit.filePaths.join(" ")} ${unit.symbols.join(" ")}`.toLowerCase();
+  const overlap =
+    queryTokens.filter((token) => haystack.includes(token.toLowerCase())).length /
+    queryTokens.length;
+  const bm25Signal =
+    unit.bm25 === undefined ? 0 : Math.max(0.25, Math.min(1, 1 / (1 + Math.abs(unit.bm25))));
   return Math.max(overlap, bm25Signal);
 }
 
@@ -140,15 +166,25 @@ function recencyScore(unit: WisdomUnit): number {
   return 0.25;
 }
 
+function freshnessMultiplier(status: RankedWisdomUnit["freshnessStatus"]): number {
+  if (status === "current") return 1;
+  if (status === "possibly_stale") return 0.85;
+  return 0.55;
+}
+
 function scoreUnit(
   unit: WisdomUnit & { bm25?: number },
   input: AnchorContextInput | SearchHistoryInput,
   duplicateCount: number,
+  repeatedEvidenceCount: number,
+  freshness: ReturnType<typeof evaluateFreshness>,
 ): RankedWisdomUnit {
   const queryFiles = input.files ?? [];
   const querySymbols = "symbols" in input ? (input.symbols ?? []) : [];
-  const inputText = "task" in input ? `${input.task} ${input.diff ?? ""} ${input.currentCode ?? ""}` : input.query;
-  const repetition = Math.min(1, duplicateCount / 3);
+  const inputText =
+    "task" in input ? `${input.task} ${input.diff ?? ""} ${input.currentCode ?? ""}` : input.query;
+  const repetition = Math.min(1, Math.max(duplicateCount, repeatedEvidenceCount) / 3);
+  const claimKey = claimKeyFor(unit.category, unit.sanitizedText);
   const parts = {
     filePathMatch: filePathMatch(unit.filePaths, queryFiles),
     symbolMatch: symbolMatch(unit, querySymbols),
@@ -159,18 +195,26 @@ function scoreUnit(
   };
 
   const score =
-    0.35 * parts.filePathMatch +
-    0.2 * parts.symbolMatch +
-    0.2 * parts.textMatch +
-    0.1 * parts.reviewerOrAuthorSignal +
-    0.1 * parts.recencyOrRepetition +
-    0.05 * parts.categoryPriority;
+    (0.35 * parts.filePathMatch +
+      0.2 * parts.symbolMatch +
+      0.2 * parts.textMatch +
+      0.1 * parts.reviewerOrAuthorSignal +
+      0.1 * parts.recencyOrRepetition +
+      0.05 * parts.categoryPriority) *
+    freshnessMultiplier(freshness.status);
 
   return {
     ...unit,
     score: Number(score.toFixed(4)),
     scoreParts: parts,
     duplicateCount,
+    claimKey,
+    repeatedEvidenceCount,
+    confidenceLevel: confidenceLevelFor(unit.confidence),
+    confidenceReasons: confidenceReasonsFor(unit, repeatedEvidenceCount),
+    freshnessStatus: freshness.status,
+    freshnessReason: freshness.reason,
+    evidence: evidenceForWisdom(unit),
   };
 }
 
@@ -214,27 +258,64 @@ function loadCandidates(
   return rows.map(rowToWisdomUnit);
 }
 
+function loadClaimRepetitionCounts(db: AnchorDatabase): Map<string, number> {
+  const rows = db
+    .prepare("SELECT category, sanitized_text, pr_number FROM wisdom_units")
+    .all() as ClaimRepetitionRow[];
+  const grouped = new Map<string, Set<number>>();
+  for (const row of rows) {
+    const key = claimKeyFor(row.category, row.sanitized_text);
+    const prs = grouped.get(key) ?? new Set<number>();
+    prs.add(row.pr_number);
+    grouped.set(key, prs);
+  }
+  return new Map([...grouped.entries()].map(([key, prs]) => [key, prs.size]));
+}
+
+function minConfidence(input: AnchorContextInput | SearchHistoryInput): ConfidenceLevel {
+  if ("minConfidence" in input && input.minConfidence) return input.minConfidence;
+  return "strong";
+}
+
+function passesStrictMode(
+  unit: RankedWisdomUnit,
+  input: AnchorContextInput | SearchHistoryInput,
+): boolean {
+  if (!("strict" in input) || !input.strict) return true;
+  if (unit.freshnessStatus === "stale") return false;
+  return confidenceAtLeast(unit.confidenceLevel, minConfidence(input));
+}
+
 export function rankWisdomUnits(
   db: AnchorDatabase,
   input: AnchorContextInput | SearchHistoryInput,
 ): RankedWisdomUnit[] {
   const candidates = loadCandidates(db, input);
+  const codeSnapshot = loadCurrentCodeSnapshot(db);
+  const repetitionCounts = loadClaimRepetitionCounts(db);
   const duplicates = new Map<string, number>();
   for (const unit of candidates) {
-    const key = `${unit.category}:${canonicalizeText(unit.sanitizedText).slice(0, 180)}`;
+    const key = claimKeyFor(unit.category, unit.sanitizedText);
     duplicates.set(key, (duplicates.get(key) ?? 0) + 1);
   }
 
   const ranked = candidates
     .map((unit) => {
-      const key = `${unit.category}:${canonicalizeText(unit.sanitizedText).slice(0, 180)}`;
-      return scoreUnit(unit, input, duplicates.get(key) ?? 1);
+      const key = claimKeyFor(unit.category, unit.sanitizedText);
+      return scoreUnit(
+        unit,
+        input,
+        duplicates.get(key) ?? 1,
+        repetitionCounts.get(key) ?? 1,
+        evaluateFreshness(unit, codeSnapshot),
+      );
     })
+    .filter((unit) => passesStrictMode(unit, input))
     .sort((a, b) => b.score - a.score || b.confidence - a.confidence);
 
   const grouped = new Map<string, RankedWisdomUnit>();
   for (const unit of ranked) {
-    const key = `${unit.category}:${canonicalizeText(unit.sanitizedText).slice(0, 180)}`;
+    const key = unit.claimKey;
     const existing = grouped.get(key);
     if (!existing || unit.score > existing.score) {
       grouped.set(key, {
@@ -243,10 +324,16 @@ export function rankWisdomUnits(
         symbols: uniqueStrings([...(existing?.symbols ?? []), ...unit.symbols]),
         authors: uniqueStrings([...(existing?.authors ?? []), ...unit.authors]),
         duplicateCount: Math.max(unit.duplicateCount, existing?.duplicateCount ?? 1),
+        repeatedEvidenceCount: Math.max(
+          unit.repeatedEvidenceCount,
+          existing?.repeatedEvidenceCount ?? 1,
+        ),
       });
     }
   }
 
   const limit = clampMaxResults(input.maxResults, "task" in input ? 8 : 10);
-  return [...grouped.values()].sort((a, b) => b.score - a.score || b.confidence - a.confidence).slice(0, limit);
+  return [...grouped.values()]
+    .sort((a, b) => b.score - a.score || b.confidence - a.confidence)
+    .slice(0, limit);
 }

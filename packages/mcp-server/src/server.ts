@@ -1,17 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  AnchorGetContextSchema,
-  handleAnchorGetContext,
-} from "./tools/get-context.js";
-import {
-  AnchorSearchHistorySchema,
-  handleAnchorSearchHistory,
-} from "./tools/search-history.js";
-import {
-  AnchorIndexStatusSchema,
-  handleAnchorIndexStatus,
-} from "./tools/index-status.js";
+import { AnchorGetContextSchema, handleAnchorGetContext } from "./tools/get-context.js";
+import { AnchorSearchHistorySchema, handleAnchorSearchHistory } from "./tools/search-history.js";
+import { AnchorIndexStatusSchema, handleAnchorIndexStatus } from "./tools/index-status.js";
 
 export type AnchorServerOptions = {
   cwd?: string;
@@ -35,7 +26,7 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
     {
       title: "Get Anchor Context",
       description:
-        "Return concise, ranked, sanitized PR-history context before non-trivial Cursor code edits.",
+        "Return concise, ranked, sanitized PR-history, team-rule, and codebase context before non-trivial Cursor code edits. Use strict mode for non-stale high-confidence evidence only.",
       inputSchema: AnchorGetContextSchema,
       annotations: {
         readOnlyHint: true,
@@ -63,7 +54,8 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
     "anchor_index_status",
     {
       title: "Anchor Index Status",
-      description: "Return local Anchor index counts and health.",
+      description:
+        "Return local Anchor index counts, history coverage, team-rule count, stale evidence count, and health.",
       inputSchema: AnchorIndexStatusSchema,
       annotations: {
         readOnlyHint: true,

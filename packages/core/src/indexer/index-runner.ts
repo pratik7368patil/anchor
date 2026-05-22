@@ -1,5 +1,10 @@
 import type { AnchorDatabase } from "../db/database.js";
-import { defaultDatabasePath, initializeSchema, upsertPullRequest, updateSyncState } from "../db/database.js";
+import {
+  defaultDatabasePath,
+  initializeSchema,
+  upsertPullRequest,
+  updateSyncState,
+} from "../db/database.js";
 import type { IndexPullRequestsProgress, IndexSummary, PullRequestRecord } from "../types.js";
 import { extractWisdomUnits } from "./wisdom-extractor.js";
 import { normalizePullRequest } from "./normalize-pr.js";
@@ -11,6 +16,9 @@ export function indexPullRequests(
     cwd: string;
     repo: string;
     updateSyncStateAfter?: boolean;
+    historyCoverage?: "limited" | "all" | "unknown";
+    historyLimit?: number;
+    historySince?: string;
     onProgress?: (progress: IndexPullRequestsProgress) => void;
   },
 ): IndexSummary {
@@ -51,7 +59,11 @@ export function indexPullRequests(
   }
 
   if (options.updateSyncStateAfter !== false) {
-    updateSyncState(db, options.repo, lastPr);
+    updateSyncState(db, options.repo, lastPr, {
+      historyCoverage: options.historyCoverage,
+      historyLimit: options.historyLimit,
+      historySince: options.historySince,
+    });
   }
 
   return {

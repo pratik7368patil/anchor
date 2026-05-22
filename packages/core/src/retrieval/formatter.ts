@@ -2,6 +2,7 @@ import type {
   AnchorContextInput,
   IndexStatus,
   RankedCodeChunk,
+  RankedTeamRule,
   RankedWisdomUnit,
   WisdomCategory,
 } from "../types.js";
@@ -18,8 +19,17 @@ function evidenceLine(unit: RankedWisdomUnit): string {
   return `PR #${unit.prNumber}${author}, ${unit.sourceType}${file}`;
 }
 
+function confidenceLine(unit: RankedWisdomUnit | RankedTeamRule): string {
+  const reasons = unit.confidenceReasons.length ? ` (${unit.confidenceReasons.join(", ")})` : "";
+  return `${unit.confidenceLevel}${reasons}`;
+}
+
+function currentCodeCheckLine(unit: RankedWisdomUnit | RankedTeamRule): string {
+  return `${unit.freshnessStatus.replace(/_/g, " ")} - ${unit.freshnessReason}`;
+}
+
 function whyItMatters(unit: RankedWisdomUnit, input: AnchorContextInput): string {
-  const prefix = unit.confidence < 0.7 ? "Historical evidence suggests " : "";
+  const prefix = unit.confidenceLevel === "weak" ? "Historical evidence suggests " : "";
   const target = input.files?.[0] ? ` when editing ${input.files[0]}` : " for this change";
   const categoryReasons: Record<WisdomCategory, string> = {
     security_note: `${prefix}there is a security-sensitive constraint to preserve${target}.`,
@@ -57,18 +67,51 @@ export function formatAnchorContext(
   units: RankedWisdomUnit[],
   input: AnchorContextInput,
   codeChunks: RankedCodeChunk[] = [],
+  teamRules: RankedTeamRule[] = [],
+  warnings: string[] = [],
 ): FormattedResult {
-  const lines = ["# Anchor Context", "", "## Must know", ""];
+  const lines = ["# Anchor Context", ""];
+
+  if (warnings.length > 0) {
+    lines.push("## Warnings", "");
+    for (const warning of warnings) lines.push(`- ${warning}`);
+    lines.push("");
+  }
+
+  if (teamRules.length > 0) {
+    lines.push("## Team-approved rules", "");
+    teamRules.forEach((rule, index) => {
+      const evidence = rule.evidence[0];
+      const evidenceText = evidence
+        ? `PR #${evidence.prNumber}, ${evidence.sourceType}${evidence.filePath ? `, ${evidence.filePath}` : ""}`
+        : "No evidence";
+      lines.push(`${index + 1}. [${rule.category}] ${clipSentence(rule.sanitizedText)}`);
+      lines.push(`   Evidence: ${evidenceText}`);
+      lines.push(`   Confidence: ${confidenceLine(rule)}`);
+      lines.push(`   Current code check: ${currentCodeCheckLine(rule)}`);
+      if (evidence?.prUrl) lines.push(`   Link: ${evidence.prUrl}`);
+      lines.push("");
+    });
+  }
+
+  lines.push("## Must know", "");
   if (units.length === 0) {
-    lines.push("No directly relevant indexed PR history found.", "");
+    lines.push(
+      input.strict
+        ? "No reliable historical evidence found."
+        : "No directly relevant indexed PR history found.",
+      "",
+    );
   } else {
     units.forEach((unit, index) => {
       const statement =
-        unit.confidence < 0.7
+        unit.confidenceLevel === "weak"
           ? `Historical evidence suggests ${clipSentence(unit.sanitizedText)}`
           : clipSentence(unit.sanitizedText);
       lines.push(`${index + 1}. [${unit.category}] ${statement}`);
       lines.push(`   Evidence: ${evidenceLine(unit)}`);
+      lines.push(`   Confidence: ${confidenceLine(unit)}`);
+      lines.push(`   Current code check: ${currentCodeCheckLine(unit)}`);
       lines.push(`   Why it matters: ${whyItMatters(unit, input)}`);
       lines.push(`   Link: ${unit.prUrl}`);
       lines.push("");
@@ -111,6 +154,13 @@ export function formatAnchorContext(
         id: unit.id,
         score: unit.score,
         confidence: unit.confidence,
+        confidenceLevel: unit.confidenceLevel,
+        confidenceReasons: unit.confidenceReasons,
+        freshnessStatus: unit.freshnessStatus,
+        freshnessReason: unit.freshnessReason,
+        evidence: unit.evidence,
+        claimKey: unit.claimKey,
+        repeatedEvidenceCount: unit.repeatedEvidenceCount,
         category: unit.category,
         prNumber: unit.prNumber,
         prUrl: unit.prUrl,
@@ -118,6 +168,18 @@ export function formatAnchorContext(
         filePaths: unit.filePaths,
         symbols: unit.symbols,
         duplicateCount: unit.duplicateCount,
+      })),
+      teamRules: teamRules.map((rule) => ({
+        id: rule.id,
+        score: rule.score,
+        confidenceLevel: rule.confidenceLevel,
+        confidenceReasons: rule.confidenceReasons,
+        freshnessStatus: rule.freshnessStatus,
+        freshnessReason: rule.freshnessReason,
+        category: rule.category,
+        filePaths: rule.filePaths,
+        symbols: rule.symbols,
+        evidence: rule.evidence,
       })),
       codeEvidence: codeChunks.map((chunk) => ({
         id: chunk.id,
@@ -179,8 +241,13 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Wisdom units: ${status.wisdomUnitCount}`,
     `- Code files: ${status.codeFileCount}`,
     `- Code chunks: ${status.codeChunkCount}`,
+    `- History coverage: ${status.historyCoverage ?? "unknown"}`,
+    `- History limit: ${status.historyLimit ?? "n/a"}`,
+    `- Stale evidence: ${status.staleEvidenceCount}`,
+    `- Team rules: ${status.teamRuleCount}`,
     `- Last sync: ${status.lastSyncTime ?? "never"}`,
     `- Last code index: ${status.lastCodeIndexTime ?? "never"}`,
+    `- Last rule index: ${status.lastRuleIndexTime ?? "never"}`,
     `- GitHub token configured: ${status.githubTokenConfigured ? "yes" : "no"}`,
     `- Health: ${status.health}`,
   ];

@@ -13,6 +13,7 @@ import type {
 } from "../types.js";
 import { redactedHistoricalText, sanitizeHistoricalText } from "../security/sanitize.js";
 import { resolveGitHubToken } from "../utils/github-token.js";
+import { countValidTeamRules } from "../rules/team-rules.js";
 
 export type AnchorDatabase = Database.Database;
 
@@ -20,8 +21,13 @@ type CountRow = { count: number };
 type RepoRow = { id: number; full_name: string };
 type PrRow = { id: number };
 type CodeFileRow = { id: number; path: string };
-type SyncRow = { last_sync_at?: string | null };
+type SyncRow = {
+  last_sync_at?: string | null;
+  history_coverage?: "limited" | "all" | "unknown" | null;
+  history_limit?: number | null;
+};
 type CodeIndexStateRow = { last_indexed_at?: string | null };
+type WisdomFilePathsRow = { file_paths_json: string };
 
 export function defaultDatabasePath(cwd: string): string {
   return path.join(cwd, ".anchor", "index.sqlite");
@@ -40,6 +46,21 @@ export function openAnchorDatabase(
 
 export function initializeSchema(db: AnchorDatabase): void {
   db.exec(SCHEMA_SQL);
+  ensureColumn(db, "sync_state", "history_coverage", "TEXT");
+  ensureColumn(db, "sync_state", "history_limit", "INTEGER");
+  ensureColumn(db, "sync_state", "history_since", "TEXT");
+}
+
+function ensureColumn(
+  db: AnchorDatabase,
+  tableName: string,
+  columnName: string,
+  definition: string,
+): void {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === columnName)) {
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
 }
 
 export function checkSchema(db: AnchorDatabase): boolean {
@@ -79,16 +100,37 @@ export function getLastSyncTime(db: AnchorDatabase, repo: string): string | unde
   return row?.last_sync_at ?? undefined;
 }
 
-export function updateSyncState(db: AnchorDatabase, repo: string, lastIndexedPr?: number): void {
+export function updateSyncState(
+  db: AnchorDatabase,
+  repo: string,
+  lastIndexedPr?: number,
+  metadata: {
+    historyCoverage?: "limited" | "all" | "unknown";
+    historyLimit?: number;
+    historySince?: string;
+  } = {},
+): void {
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO sync_state (repo, last_sync_at, last_indexed_pr, updated_at)
-     VALUES (?, ?, ?, ?)
+    `INSERT INTO sync_state
+     (repo, last_sync_at, last_indexed_pr, history_coverage, history_limit, history_since, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(repo) DO UPDATE SET
        last_sync_at = excluded.last_sync_at,
        last_indexed_pr = excluded.last_indexed_pr,
+       history_coverage = excluded.history_coverage,
+       history_limit = excluded.history_limit,
+       history_since = excluded.history_since,
        updated_at = excluded.updated_at`,
-  ).run(repo, now, lastIndexedPr ?? null, now);
+  ).run(
+    repo,
+    now,
+    lastIndexedPr ?? null,
+    metadata.historyCoverage ?? "unknown",
+    metadata.historyLimit ?? null,
+    metadata.historySince ?? null,
+    now,
+  );
 }
 
 function deleteExistingPrData(db: AnchorDatabase, prId: number): void {
@@ -376,6 +418,7 @@ export function getIndexStatus(
   databasePath = defaultDatabasePath(cwd),
 ): IndexStatus {
   if (!fs.existsSync(databasePath)) {
+    const rules = countValidTeamRules(cwd);
     return {
       databasePath,
       prCount: 0,
@@ -384,6 +427,10 @@ export function getIndexStatus(
       wisdomUnitCount: 0,
       codeFileCount: 0,
       codeChunkCount: 0,
+      historyCoverage: "unknown",
+      staleEvidenceCount: 0,
+      teamRuleCount: rules.count,
+      lastRuleIndexTime: rules.lastRuleIndexTime,
       githubTokenConfigured,
       health: "missing_database",
     };
@@ -393,6 +440,7 @@ export function getIndexStatus(
   try {
     initializeSchema(db);
     if (!checkSchema(db)) {
+      const rules = countValidTeamRules(cwd);
       return {
         databasePath,
         prCount: 0,
@@ -401,6 +449,10 @@ export function getIndexStatus(
         wisdomUnitCount: 0,
         codeFileCount: 0,
         codeChunkCount: 0,
+        historyCoverage: "unknown",
+        staleEvidenceCount: 0,
+        teamRuleCount: rules.count,
+        lastRuleIndexTime: rules.lastRuleIndexTime,
         githubTokenConfigured,
         health: "schema_invalid",
       };
@@ -411,13 +463,16 @@ export function getIndexStatus(
       | { full_name?: string }
       | undefined;
     const syncRow = db
-      .prepare("SELECT last_sync_at FROM sync_state ORDER BY updated_at DESC LIMIT 1")
+      .prepare(
+        "SELECT last_sync_at, history_coverage, history_limit FROM sync_state ORDER BY updated_at DESC LIMIT 1",
+      )
       .get() as SyncRow | undefined;
     const codeIndexRow = db
       .prepare("SELECT last_indexed_at FROM code_index_state ORDER BY last_indexed_at DESC LIMIT 1")
       .get() as CodeIndexStateRow | undefined;
     const wisdomUnitCount = count("wisdom_units");
     const codeChunkCount = count("code_chunks");
+    const rules = countValidTeamRules(cwd);
     return {
       repo: repoRow?.full_name,
       databasePath,
@@ -427,12 +482,41 @@ export function getIndexStatus(
       wisdomUnitCount,
       codeFileCount: count("code_files"),
       codeChunkCount,
+      historyCoverage: syncRow?.history_coverage ?? "unknown",
+      historyLimit: syncRow?.history_limit ?? undefined,
+      staleEvidenceCount: countStaleEvidence(db),
+      teamRuleCount: rules.count,
       lastSyncTime: syncRow?.last_sync_at ?? undefined,
       lastCodeIndexTime: codeIndexRow?.last_indexed_at ?? undefined,
+      lastRuleIndexTime: rules.lastRuleIndexTime,
       githubTokenConfigured,
       health: wisdomUnitCount > 0 || codeChunkCount > 0 ? "ok" : "empty_index",
     };
   } finally {
     db.close();
   }
+}
+
+function countStaleEvidence(db: AnchorDatabase): number {
+  const codeFiles = new Set(
+    (db.prepare("SELECT path FROM code_files").all() as Array<{ path: string }>).map(
+      (row) => row.path,
+    ),
+  );
+  if (codeFiles.size === 0) return 0;
+  const rows = db.prepare("SELECT file_paths_json FROM wisdom_units").all() as WisdomFilePathsRow[];
+  let stale = 0;
+  for (const row of rows) {
+    let paths: string[] = [];
+    try {
+      const parsed = JSON.parse(row.file_paths_json) as unknown;
+      paths = Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string")
+        : [];
+    } catch {
+      paths = [];
+    }
+    if (paths.length > 0 && !paths.some((filePath) => codeFiles.has(filePath))) stale += 1;
+  }
+  return stale;
 }

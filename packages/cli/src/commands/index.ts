@@ -73,6 +73,9 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
     const summary = indexPullRequests(db, pullRequests, {
       cwd: root,
       repo,
+      historyCoverage: options.all ? "all" : "limited",
+      historyLimit: options.all ? undefined : (options.limit ?? 200),
+      historySince: options.since,
       onProgress: printIndexProgress,
     });
     const codeSummary =

@@ -120,6 +120,9 @@ CREATE TABLE IF NOT EXISTS sync_state (
   repo TEXT PRIMARY KEY,
   last_sync_at TEXT,
   last_indexed_pr INTEGER,
+  history_coverage TEXT,
+  history_limit INTEGER,
+  history_since TEXT,
   updated_at TEXT NOT NULL
 );
 

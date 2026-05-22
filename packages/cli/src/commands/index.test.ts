@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { getIndexStatus } from "@pratik7368patil/anchor-core";
 import { runIndexCode } from "./index.js";
+import { runRulesInit, runRulesList, runRulesValidate } from "./rules.js";
 
 const tempDirs: string[] = [];
 
@@ -44,5 +45,45 @@ describe("index-code command", () => {
     const status = getIndexStatus(cwd, false);
     expect(status.codeFileCount).toBe(1);
     expect(status.codeChunkCount).toBeGreaterThan(0);
+  });
+});
+
+describe("rules commands", () => {
+  it("initializes, validates, and lists committed team rules", () => {
+    const cwd = tempDir();
+    const init = runRulesInit(cwd);
+    expect(fs.existsSync(init.path)).toBe(true);
+    expect(init.created).toBe(true);
+    expect(runRulesValidate(cwd).ok).toBe(true);
+
+    fs.writeFileSync(
+      path.join(cwd, "anchor.rules.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          rules: [
+            {
+              id: "api-contract",
+              category: "api_contract",
+              text: "Keep `createMembership` backward compatible.",
+              symbols: ["createMembership"],
+              evidence: [
+                {
+                  prNumber: 10,
+                  prUrl: "https://github.com/owner/repo/pull/10",
+                  sourceType: "pr_body",
+                },
+              ],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const listed = runRulesList(cwd);
+    expect(listed.rules).toHaveLength(1);
+    expect(listed.rules[0]?.id).toBe("api-contract");
   });
 });

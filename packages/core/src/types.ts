@@ -18,6 +18,19 @@ export type WisdomCategory =
   | "style_convention"
   | "unknown";
 
+export type ConfidenceLevel = "strong" | "moderate" | "weak";
+
+export type FreshnessStatus = "current" | "possibly_stale" | "stale";
+
+export type EvidenceRef = {
+  prNumber: number;
+  prUrl: string;
+  sourceType: SourceType;
+  author?: string;
+  filePath?: string;
+  note?: string;
+};
+
 export type WisdomUnit = {
   id: string;
   repo: string;
@@ -65,6 +78,24 @@ export type RankedCodeChunk = CodeChunk & {
     textMatch: number;
     recency: number;
   };
+};
+
+export type TeamRule = {
+  id: string;
+  category: WisdomCategory;
+  text: string;
+  sanitizedText: string;
+  filePaths: string[];
+  symbols: string[];
+  evidence: EvidenceRef[];
+  confidenceLevel: ConfidenceLevel;
+};
+
+export type RankedTeamRule = TeamRule & {
+  score: number;
+  freshnessStatus: FreshnessStatus;
+  freshnessReason: string;
+  confidenceReasons: string[];
 };
 
 export type PullRequestFile = {
@@ -218,6 +249,8 @@ export type AnchorContextInput = {
   diff?: string;
   currentCode?: string;
   maxResults?: number;
+  strict?: boolean;
+  minConfidence?: ConfidenceLevel;
 };
 
 export type SearchHistoryInput = {
@@ -238,6 +271,13 @@ export type RankedWisdomUnit = WisdomUnit & {
     categoryPriority: number;
   };
   duplicateCount: number;
+  claimKey: string;
+  repeatedEvidenceCount: number;
+  confidenceLevel: ConfidenceLevel;
+  confidenceReasons: string[];
+  freshnessStatus: FreshnessStatus;
+  freshnessReason: string;
+  evidence: EvidenceRef;
 };
 
 export type IndexStatus = {
@@ -249,8 +289,13 @@ export type IndexStatus = {
   wisdomUnitCount: number;
   codeFileCount: number;
   codeChunkCount: number;
+  historyCoverage?: "limited" | "all" | "unknown";
+  historyLimit?: number;
+  staleEvidenceCount: number;
+  teamRuleCount: number;
   lastSyncTime?: string;
   lastCodeIndexTime?: string;
+  lastRuleIndexTime?: string;
   githubTokenConfigured: boolean;
   health: "ok" | "missing_database" | "schema_invalid" | "empty_index";
 };
