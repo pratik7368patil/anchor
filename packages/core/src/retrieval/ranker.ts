@@ -172,6 +172,20 @@ function freshnessMultiplier(status: RankedWisdomUnit["freshnessStatus"]): numbe
   return 0.55;
 }
 
+function matchReasons(parts: RankedWisdomUnit["scoreParts"], unit: WisdomUnit): string[] {
+  const reasons: string[] = [];
+  if (parts.filePathMatch >= 0.9) reasons.push("exact file path match");
+  else if (parts.filePathMatch >= 0.45) reasons.push("related file path match");
+  if (parts.symbolMatch >= 0.9) reasons.push("exact symbol match");
+  else if (parts.symbolMatch >= 0.45) reasons.push("symbol mentioned in evidence");
+  if (parts.textMatch >= 0.45) reasons.push("text matched task or diff terms");
+  if (parts.reviewerOrAuthorSignal >= 0.85) reasons.push("reviewer evidence");
+  if (unit.category === "security_note" || unit.category === "bug_regression") {
+    reasons.push(`${unit.category.replace(/_/g, " ")} priority`);
+  }
+  return reasons.slice(0, 5);
+}
+
 function scoreUnit(
   unit: WisdomUnit & { bm25?: number },
   input: AnchorContextInput | SearchHistoryInput,
@@ -215,6 +229,8 @@ function scoreUnit(
     freshnessStatus: freshness.status,
     freshnessReason: freshness.reason,
     evidence: evidenceForWisdom(unit),
+    matchReasons: matchReasons(parts, unit),
+    rankSignals: parts,
   };
 }
 

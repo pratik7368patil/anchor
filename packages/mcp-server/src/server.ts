@@ -3,6 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { AnchorGetContextSchema, handleAnchorGetContext } from "./tools/get-context.js";
 import { AnchorSearchHistorySchema, handleAnchorSearchHistory } from "./tools/search-history.js";
 import { AnchorIndexStatusSchema, handleAnchorIndexStatus } from "./tools/index-status.js";
+import { AnchorExplainFileSchema, handleAnchorExplainFile } from "./tools/explain-file.js";
+import { AnchorReviewDiffSchema, handleAnchorReviewDiff } from "./tools/review-diff.js";
 
 export type AnchorServerOptions = {
   cwd?: string;
@@ -63,6 +65,36 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
       },
     },
     async (input) => handleAnchorIndexStatus(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_explain_file",
+    {
+      title: "Explain Anchor File",
+      description:
+        "Explain one file using local code evidence, PR history, team rules, regressions, and related tests before a larger Cursor edit.",
+      inputSchema: AnchorExplainFileSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorExplainFile(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_review_diff",
+    {
+      title: "Review Anchor Diff",
+      description:
+        "Review a diff against local Anchor history, team rules, regression memory, and likely tests. It surfaces evidence-backed risks only.",
+      inputSchema: AnchorReviewDiffSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorReviewDiff(input, cwd),
   );
 
   return server;

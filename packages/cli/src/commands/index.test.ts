@@ -4,8 +4,17 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { getIndexStatus } from "@pratik7368patil/anchor-core";
+import { runExplain } from "./explain.js";
+import { runHealth } from "./health.js";
 import { runIndexCode } from "./index.js";
-import { runRulesInit, runRulesList, runRulesValidate } from "./rules.js";
+import { runReview } from "./review.js";
+import {
+  runRulesAdd,
+  runRulesCheckEvidence,
+  runRulesInit,
+  runRulesList,
+  runRulesValidate,
+} from "./rules.js";
 
 const tempDirs: string[] = [];
 
@@ -45,6 +54,8 @@ describe("index-code command", () => {
     const status = getIndexStatus(cwd, false);
     expect(status.codeFileCount).toBe(1);
     expect(status.codeChunkCount).toBeGreaterThan(0);
+    expect(runHealth(cwd).indexStatus.codeFileCount).toBe(1);
+    expect(runExplain(cwd, "src/index.ts").markdown).toContain("# Anchor File Explain");
   });
 });
 
@@ -85,5 +96,54 @@ describe("rules commands", () => {
     const listed = runRulesList(cwd);
     expect(listed.rules).toHaveLength(1);
     expect(listed.rules[0]?.id).toBe("api-contract");
+  });
+
+  it("adds a rule and reports missing local PR evidence", () => {
+    const cwd = tempDir();
+    runRulesInit(cwd);
+    const added = runRulesAdd(cwd, {
+      id: "api-contract",
+      category: "api_contract",
+      text: "Keep `createMembership` backward compatible.",
+      symbols: ["createMembership"],
+      prNumber: 10,
+      prUrl: "https://github.com/owner/repo/pull/10",
+      sourceType: "pr_body",
+    });
+    expect(added.rule.id).toBe("api-contract");
+    const evidence = runRulesCheckEvidence(cwd);
+    expect(evidence.ok).toBe(false);
+    expect(evidence.errors.join("\n")).toContain("Anchor database not found");
+  });
+});
+
+describe("review command", () => {
+  it("reads a diff file and returns an evidence review shape", async () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    execFileSync("git", ["remote", "add", "origin", "git@github.com:owner/repo.git"], {
+      cwd,
+      stdio: "ignore",
+    });
+    writeFileEnsuringDir(
+      path.join(cwd, "src/index.ts"),
+      "export function localContext() { return 'code'; }\n",
+    );
+    execFileSync("git", ["add", "src/index.ts"], { cwd, stdio: "ignore" });
+    await runIndexCode(cwd, { token: undefined });
+    const diffPath = path.join(cwd, "change.diff");
+    fs.writeFileSync(
+      diffPath,
+      [
+        "diff --git a/src/index.ts b/src/index.ts",
+        "--- a/src/index.ts",
+        "+++ b/src/index.ts",
+        "+export function localContext() { return 'new'; }",
+      ].join("\n"),
+    );
+
+    const review = runReview(cwd, { diffFile: diffPath });
+    expect(review.markdown).toContain("# Anchor Diff Review");
+    expect(review.metadata.changedFiles).toEqual(["src/index.ts"]);
   });
 });

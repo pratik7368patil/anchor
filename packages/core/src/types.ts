@@ -78,6 +78,8 @@ export type RankedCodeChunk = CodeChunk & {
     textMatch: number;
     recency: number;
   };
+  matchReasons: string[];
+  rankSignals: Record<string, number>;
 };
 
 export type TeamRule = {
@@ -96,6 +98,8 @@ export type RankedTeamRule = TeamRule & {
   freshnessStatus: FreshnessStatus;
   freshnessReason: string;
   confidenceReasons: string[];
+  matchReasons: string[];
+  rankSignals: Record<string, number>;
 };
 
 export type PullRequestFile = {
@@ -139,6 +143,54 @@ export type PullRequestRecord = {
   reviewComments?: PullRequestComment[];
   issueComments?: PullRequestComment[];
   commits?: PullRequestCommit[];
+};
+
+export type TestFileRecord = {
+  repo: string;
+  path: string;
+  language?: string;
+  sizeBytes: number;
+  contentHash: string;
+  updatedAt: string;
+};
+
+export type TestLink = {
+  repo: string;
+  sourcePath: string;
+  testPath: string;
+  reason: string;
+  strength: number;
+};
+
+export type RankedTestFile = TestFileRecord & {
+  sourcePath?: string;
+  reason: string;
+  strength: number;
+  score: number;
+  matchedSymbols: string[];
+};
+
+export type RegressionEvent = {
+  id: string;
+  repo: string;
+  prNumber: number;
+  prUrl: string;
+  summary: string;
+  filePaths: string[];
+  symbols: string[];
+  testPaths: string[];
+  authors: string[];
+  labels: string[];
+  signals: string[];
+  createdAt: string;
+  mergedAt?: string;
+  confidence: number;
+};
+
+export type RankedRegressionEvent = RegressionEvent & {
+  score: number;
+  matchReasons: string[];
+  rankSignals: Record<string, number>;
 };
 
 export type FetchPullRequestsProgress =
@@ -231,6 +283,7 @@ export type IndexSummary = {
   indexedFiles: number;
   indexedComments: number;
   wisdomUnitsCreated: number;
+  regressionEventsCreated: number;
   skippedItems: number;
   databasePath: string;
 };
@@ -238,6 +291,8 @@ export type IndexSummary = {
 export type CodeIndexSummary = {
   indexedFiles: number;
   codeChunksCreated: number;
+  testFilesIndexed: number;
+  testLinksCreated: number;
   skippedFiles: number;
   databasePath: string;
 };
@@ -257,6 +312,7 @@ export type SearchHistoryInput = {
   query: string;
   files?: string[];
   categories?: WisdomCategory[];
+  regressionsOnly?: boolean;
   maxResults?: number;
 };
 
@@ -278,6 +334,56 @@ export type RankedWisdomUnit = WisdomUnit & {
   freshnessStatus: FreshnessStatus;
   freshnessReason: string;
   evidence: EvidenceRef;
+  matchReasons: string[];
+  rankSignals: Record<string, number>;
+};
+
+export type AnchorExplainFileInput = {
+  file: string;
+  symbols?: string[];
+  strict?: boolean;
+  maxResults?: number;
+};
+
+export type AnchorReviewDiffInput = {
+  diff: string;
+  files?: string[];
+  strict?: boolean;
+  maxResults?: number;
+};
+
+export type IndexRunRecord = {
+  id?: number;
+  command: string;
+  repo?: string;
+  startedAt: string;
+  finishedAt?: string;
+  historyCoverage?: "limited" | "all" | "unknown";
+  historyLimit?: number;
+  prsFetched?: number;
+  prsSkipped?: number;
+  commentsIndexed?: number;
+  codeFilesIndexed?: number;
+  testFilesIndexed?: number;
+  failures?: string[];
+  status: "success" | "failed";
+};
+
+export type AnchorIndexHealth = {
+  status: "ok" | "warning" | "error";
+  warnings: string[];
+  suggestedNextCommand?: string;
+  historyCoverage: "limited" | "all" | "unknown";
+  staleCodeIndex: boolean;
+  lastSuccessfulRun?: string;
+  lastFailedRun?: string;
+};
+
+export type SemanticStatus = {
+  enabled: boolean;
+  mode: "disabled" | "local";
+  available: boolean;
+  reason: string;
 };
 
 export type IndexStatus = {
@@ -289,6 +395,9 @@ export type IndexStatus = {
   wisdomUnitCount: number;
   codeFileCount: number;
   codeChunkCount: number;
+  testFileCount: number;
+  testLinkCount: number;
+  regressionEventCount: number;
   historyCoverage?: "limited" | "all" | "unknown";
   historyLimit?: number;
   staleEvidenceCount: number;
@@ -296,6 +405,10 @@ export type IndexStatus = {
   lastSyncTime?: string;
   lastCodeIndexTime?: string;
   lastRuleIndexTime?: string;
+  lastSuccessfulRun?: string;
+  lastFailedRun?: string;
+  staleCodeIndex?: boolean;
+  suggestedNextCommand?: string;
   githubTokenConfigured: boolean;
   health: "ok" | "missing_database" | "schema_invalid" | "empty_index";
 };

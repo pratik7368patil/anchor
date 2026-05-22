@@ -5,6 +5,7 @@ import {
   formatSearchHistory,
   initializeSchema,
   openAnchorDatabase,
+  rankRegressionEvents,
   rankWisdomUnits,
 } from "@pratik7368patil/anchor-core";
 
@@ -25,6 +26,7 @@ export const AnchorSearchHistorySchema = z.object({
   query: z.string().min(1).max(2000),
   files: z.array(z.string().min(1)).max(50).optional(),
   categories: z.array(WisdomCategorySchema).max(10).optional(),
+  regressionsOnly: z.boolean().optional(),
   maxResults: z.number().int().min(1).max(12).default(10).optional(),
 });
 
@@ -58,11 +60,19 @@ export async function handleAnchorSearchHistory(input: unknown, cwd: string) {
   const db = openAnchorDatabase(cwd, databasePath);
   try {
     initializeSchema(db);
-    const units = rankWisdomUnits(db, { ...parsed.data, maxResults: parsed.data.maxResults ?? 10 });
+    const query = {
+      ...parsed.data,
+      categories: parsed.data.regressionsOnly
+        ? ["bug_regression" as const]
+        : parsed.data.categories,
+      maxResults: parsed.data.maxResults ?? 10,
+    };
+    const units = rankWisdomUnits(db, query);
+    const regressions = parsed.data.regressionsOnly ? rankRegressionEvents(db, query) : [];
     const formatted = formatSearchHistory(units);
     return {
       content: [{ type: "text" as const, text: formatted.markdown }],
-      structuredContent: formatted.metadata,
+      structuredContent: { ...formatted.metadata, regressionEvents: regressions },
     };
   } finally {
     db.close();

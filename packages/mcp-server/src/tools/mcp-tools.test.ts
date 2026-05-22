@@ -10,8 +10,10 @@ import {
   type PullRequestRecord,
 } from "@pratik7368patil/anchor-core";
 import { createAnchorMcpServer } from "../server.js";
+import { handleAnchorExplainFile } from "./explain-file.js";
 import { handleAnchorGetContext } from "./get-context.js";
 import { handleAnchorIndexStatus } from "./index-status.js";
+import { handleAnchorReviewDiff } from "./review-diff.js";
 import { handleAnchorSearchHistory } from "./search-history.js";
 
 const tempDirs: string[] = [];
@@ -33,6 +35,10 @@ function createIndexedFixture(cwd: string): void {
   fs.writeFileSync(
     path.join(cwd, "src/auth/cache.ts"),
     "export class AuthCache { refreshToken() { return true; } }\n",
+  );
+  fs.writeFileSync(
+    path.join(cwd, "src/auth/cache.test.ts"),
+    "import { AuthCache } from './cache';\ntest('refreshToken', () => new AuthCache());\n",
   );
   fs.writeFileSync(
     path.join(cwd, "anchor.rules.json"),
@@ -61,7 +67,10 @@ function createIndexedFixture(cwd: string): void {
       2,
     ),
   );
-  execFileSync("git", ["add", "src/auth/cache.ts"], { cwd, stdio: "ignore" });
+  execFileSync("git", ["add", "src/auth/cache.ts", "src/auth/cache.test.ts"], {
+    cwd,
+    stdio: "ignore",
+  });
   const db = openAnchorDatabase(cwd);
   try {
     indexPullRequests(db, loadFixtures(), { cwd, repo: "owner/repo" });
@@ -108,11 +117,16 @@ describe("MCP tools", () => {
     expect(result.content[0]?.text).toContain("Confidence:");
     expect(result.content[0]?.text).toContain("Current code check:");
     expect(result.content[0]?.text).toContain("## Codebase Evidence");
+    expect(result.content[0]?.text).toContain("## Relevant tests");
+    expect(result.content[0]?.text).toContain("## Regression memory");
     expect(result.content[0]?.text).toContain("src/auth/cache.ts");
     expect(result.content[0]?.text).not.toContain("ignore previous instructions");
     expect(result.content[0]?.text).not.toContain("FAKE_ANCHOR_REDACTION_SAMPLE");
     expect(result.structuredContent?.resultCount).toBeGreaterThan(0);
     expect(Array.isArray(result.structuredContent?.codeEvidence)).toBe(true);
+    expect(Array.isArray(result.structuredContent?.relevantTests)).toBe(true);
+    expect(Array.isArray(result.structuredContent?.regressionEvents)).toBe(true);
+    expect(Array.isArray(result.structuredContent?.queryTerms)).toBe(true);
     expect(Array.isArray(result.structuredContent?.teamRules)).toBe(true);
   });
 
@@ -157,5 +171,28 @@ describe("MCP tools", () => {
     expect(status.structuredContent?.wisdomUnitCount).toBeGreaterThan(0);
     expect(status.structuredContent?.teamRuleCount).toBe(1);
     expect(status.structuredContent?.historyCoverage).toBeDefined();
+    expect(status.structuredContent?.testFileCount).toBeGreaterThan(0);
+    expect(status.structuredContent?.regressionEventCount).toBeGreaterThan(0);
+  });
+
+  it("supports explain file and review diff MCP tools", async () => {
+    const cwd = tempDir();
+    createIndexedFixture(cwd);
+    const explain = await handleAnchorExplainFile({ file: "src/auth/cache.ts" }, cwd);
+    const review = await handleAnchorReviewDiff(
+      {
+        diff: [
+          "diff --git a/src/auth/cache.ts b/src/auth/cache.ts",
+          "--- a/src/auth/cache.ts",
+          "+++ b/src/auth/cache.ts",
+          "+export class AuthCache {}",
+        ].join("\n"),
+      },
+      cwd,
+    );
+    expect(explain.content[0]?.text).toContain("# Anchor File Explain");
+    expect(explain.structuredContent?.mode).toBe("explain_file");
+    expect(review.content[0]?.text).toContain("# Anchor Diff Review");
+    expect(review.structuredContent?.changedFiles).toEqual(["src/auth/cache.ts"]);
   });
 });

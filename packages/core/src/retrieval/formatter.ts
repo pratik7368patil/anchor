@@ -2,11 +2,14 @@ import type {
   AnchorContextInput,
   IndexStatus,
   RankedCodeChunk,
+  RankedRegressionEvent,
   RankedTeamRule,
+  RankedTestFile,
   RankedWisdomUnit,
   WisdomCategory,
 } from "../types.js";
 import { clipSentence } from "../utils/text.js";
+import { buildQueryTerms } from "./query-builder.js";
 
 export type FormattedResult = {
   markdown: string;
@@ -69,6 +72,9 @@ export function formatAnchorContext(
   codeChunks: RankedCodeChunk[] = [],
   teamRules: RankedTeamRule[] = [],
   warnings: string[] = [],
+  relevantTests: RankedTestFile[] = [],
+  regressionEvents: RankedRegressionEvent[] = [],
+  extraMetadata: Record<string, unknown> = {},
 ): FormattedResult {
   const lines = ["# Anchor Context", ""];
 
@@ -133,6 +139,37 @@ export function formatAnchorContext(
     });
   }
 
+  lines.push("## Relevant tests", "");
+  if (relevantTests.length === 0) {
+    lines.push("No directly related tests found in the local index.", "");
+  } else {
+    relevantTests.forEach((test, index) => {
+      const symbolText = test.matchedSymbols.length
+        ? `; symbols: ${test.matchedSymbols.slice(0, 6).join(", ")}`
+        : "";
+      lines.push(`${index + 1}. ${test.path}${symbolText}`);
+      lines.push(`   Why it matters: ${test.reason} (${test.strength.toFixed(2)} link strength).`);
+      if (test.sourcePath) lines.push(`   Source: ${test.sourcePath}`);
+      lines.push("");
+    });
+  }
+
+  lines.push("## Regression memory", "");
+  if (regressionEvents.length === 0) {
+    lines.push("No related regression events found in the local index.", "");
+  } else {
+    regressionEvents.forEach((event, index) => {
+      lines.push(`${index + 1}. ${clipSentence(event.summary, 220)}`);
+      lines.push(`   Evidence: PR #${event.prNumber}, signals: ${event.signals.join(", ")}`);
+      lines.push(`   Files: ${event.filePaths.slice(0, 5).join(", ") || "n/a"}`);
+      if (event.testPaths.length > 0) {
+        lines.push(`   Tests: ${event.testPaths.slice(0, 5).join(", ")}`);
+      }
+      lines.push(`   Link: ${event.prUrl}`);
+      lines.push("");
+    });
+  }
+
   lines.push("## Risks", "");
   const risks = riskLines(units);
   if (risks.length === 0) {
@@ -168,6 +205,8 @@ export function formatAnchorContext(
         filePaths: unit.filePaths,
         symbols: unit.symbols,
         duplicateCount: unit.duplicateCount,
+        matchReasons: unit.matchReasons,
+        rankSignals: unit.rankSignals,
       })),
       teamRules: teamRules.map((rule) => ({
         id: rule.id,
@@ -180,6 +219,8 @@ export function formatAnchorContext(
         filePaths: rule.filePaths,
         symbols: rule.symbols,
         evidence: rule.evidence,
+        matchReasons: rule.matchReasons,
+        rankSignals: rule.rankSignals,
       })),
       codeEvidence: codeChunks.map((chunk) => ({
         id: chunk.id,
@@ -189,7 +230,31 @@ export function formatAnchorContext(
         startLine: chunk.startLine,
         endLine: chunk.endLine,
         symbols: chunk.symbols,
+        matchReasons: chunk.matchReasons,
+        rankSignals: chunk.rankSignals,
       })),
+      relevantTests: relevantTests.map((test) => ({
+        path: test.path,
+        sourcePath: test.sourcePath,
+        reason: test.reason,
+        strength: test.strength,
+        score: test.score,
+        matchedSymbols: test.matchedSymbols,
+      })),
+      regressionEvents: regressionEvents.map((event) => ({
+        id: event.id,
+        score: event.score,
+        prNumber: event.prNumber,
+        prUrl: event.prUrl,
+        filePaths: event.filePaths,
+        symbols: event.symbols,
+        testPaths: event.testPaths,
+        summary: clipSentence(event.summary, 260),
+        matchReasons: event.matchReasons,
+        rankSignals: event.rankSignals,
+      })),
+      queryTerms: buildQueryTerms(input),
+      ...extraMetadata,
     },
   };
 }
@@ -224,6 +289,8 @@ export function formatSearchHistory(units: RankedWisdomUnit[]): FormattedResult 
         sanitizedSnippet: clipSentence(unit.sanitizedText, 260),
         matchedFiles: unit.filePaths,
         matchedSymbols: unit.symbols,
+        matchReasons: unit.matchReasons,
+        rankSignals: unit.rankSignals,
       })),
     },
   };
@@ -241,6 +308,9 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Wisdom units: ${status.wisdomUnitCount}`,
     `- Code files: ${status.codeFileCount}`,
     `- Code chunks: ${status.codeChunkCount}`,
+    `- Test files: ${status.testFileCount}`,
+    `- Test links: ${status.testLinkCount}`,
+    `- Regression events: ${status.regressionEventCount}`,
     `- History coverage: ${status.historyCoverage ?? "unknown"}`,
     `- History limit: ${status.historyLimit ?? "n/a"}`,
     `- Stale evidence: ${status.staleEvidenceCount}`,
@@ -248,6 +318,10 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Last sync: ${status.lastSyncTime ?? "never"}`,
     `- Last code index: ${status.lastCodeIndexTime ?? "never"}`,
     `- Last rule index: ${status.lastRuleIndexTime ?? "never"}`,
+    `- Last successful index run: ${status.lastSuccessfulRun ?? "never"}`,
+    `- Last failed index run: ${status.lastFailedRun ?? "never"}`,
+    `- Stale code index: ${status.staleCodeIndex ? "yes" : "no"}`,
+    `- Suggested next command: ${status.suggestedNextCommand ?? "n/a"}`,
     `- GitHub token configured: ${status.githubTokenConfigured ? "yes" : "no"}`,
     `- Health: ${status.health}`,
   ];

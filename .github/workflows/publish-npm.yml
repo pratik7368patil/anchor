@@ -44,7 +44,11 @@ jobs:
         run: pnpm build
 
       - name: Verify npm authentication
-        run: npm whoami
+        run: |
+          if ! npm whoami; then
+            echo "::error::NPM_TOKEN is missing, expired, revoked, or does not have publish access. Create a valid npm automation/access token and update the repository secret named NPM_TOKEN."
+            exit 1
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

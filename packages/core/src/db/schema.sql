@@ -116,6 +116,63 @@ CREATE TABLE IF NOT EXISTS code_index_state (
   skipped_files INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS test_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  path TEXT NOT NULL,
+  language TEXT,
+  size_bytes INTEGER NOT NULL,
+  content_hash TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(repo_id, path)
+);
+
+CREATE TABLE IF NOT EXISTS test_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  source_path TEXT NOT NULL,
+  test_path TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  strength REAL NOT NULL,
+  UNIQUE(repo_id, source_path, test_path, reason)
+);
+
+CREATE TABLE IF NOT EXISTS regression_events (
+  id TEXT PRIMARY KEY,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  pr_id INTEGER REFERENCES pull_requests(id) ON DELETE CASCADE,
+  repo TEXT NOT NULL,
+  pr_number INTEGER NOT NULL,
+  pr_url TEXT NOT NULL,
+  summary_sanitized TEXT NOT NULL,
+  file_paths_json TEXT NOT NULL,
+  symbols_json TEXT NOT NULL,
+  test_paths_json TEXT NOT NULL,
+  authors_json TEXT NOT NULL,
+  labels_json TEXT NOT NULL,
+  signals_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  merged_at TEXT,
+  confidence REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS index_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  command TEXT NOT NULL,
+  repo TEXT,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  history_coverage TEXT,
+  history_limit INTEGER,
+  prs_fetched INTEGER,
+  prs_skipped INTEGER,
+  comments_indexed INTEGER,
+  code_files_indexed INTEGER,
+  test_files_indexed INTEGER,
+  failures_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sync_state (
   repo TEXT PRIMARY KEY,
   last_sync_at TEXT,
@@ -133,3 +190,8 @@ CREATE INDEX IF NOT EXISTS idx_wisdom_units_category ON wisdom_units(category);
 CREATE INDEX IF NOT EXISTS idx_wisdom_units_pr ON wisdom_units(pr_id);
 CREATE INDEX IF NOT EXISTS idx_code_files_path ON code_files(path);
 CREATE INDEX IF NOT EXISTS idx_code_chunks_file_path ON code_chunks(file_path);
+CREATE INDEX IF NOT EXISTS idx_test_files_path ON test_files(path);
+CREATE INDEX IF NOT EXISTS idx_test_links_source ON test_links(source_path);
+CREATE INDEX IF NOT EXISTS idx_test_links_test ON test_links(test_path);
+CREATE INDEX IF NOT EXISTS idx_regression_events_pr ON regression_events(pr_id);
+CREATE INDEX IF NOT EXISTS idx_index_runs_started ON index_runs(started_at);

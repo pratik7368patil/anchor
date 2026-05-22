@@ -1,8 +1,8 @@
 # Anchor
 
-Anchor is a local-first, Cursor-only MCP server that indexes a repository's merged GitHub pull request history and gives Cursor Agent concise historical context before code edits.
+Anchor is a local-first, Cursor-only MCP server that indexes a repository's merged GitHub pull request history and local codebase, then gives Cursor Agent concise historical and current-code context before edits.
 
-It helps Cursor notice past architecture decisions, constraints, rejected approaches, review comments, regressions, and testing expectations that live in the repo's own PR history.
+It helps Cursor notice past architecture decisions, constraints, rejected approaches, review comments, regressions, testing expectations, related tests, and file ownership signals from the repo's own history and code.
 
 Anchor is not a SaaS, does not create a dashboard, does not send telemetry, and does not call any LLM API in the MVP.
 
@@ -10,7 +10,7 @@ Anchor is evidence-backed, not truth-backed: retrieved history includes confiden
 
 ## Why Cursor Users Need It
 
-Cursor is strongest when it has the context a senior maintainer would remember: why a file is shaped a certain way, what broke last time, which tests matter, and which API contracts should not move casually. Anchor mines that local repository history and exposes it through one Cursor MCP tool:
+Cursor is strongest when it has the context a senior maintainer would remember: why a file is shaped a certain way, what broke last time, which tests matter, and which API contracts should not move casually. Anchor mines local repository history plus the current code index and exposes it through one primary Cursor MCP tool:
 
 ```text
 anchor_get_context
@@ -169,6 +169,70 @@ Rules must cite PR evidence. A minimal rule looks like:
 
 Matching team rules appear above normal PR history in `anchor_get_context`, but they are still presented as evidence, not commands.
 
+Create and verify rules from the CLI:
+
+```bash
+anchor rules add \
+  --id auth-cache-lazy \
+  --category constraint \
+  --text "Keep AuthCache lazy because cold-start login regressed before." \
+  --pr-number 101 \
+  --pr-url https://github.com/owner/repo/pull/101 \
+  --source-type review_comment \
+  --file src/auth/cache.ts \
+  --symbol AuthCache
+
+anchor rules check-evidence
+```
+
+`check-evidence` confirms that cited PRs exist in the local Anchor index.
+
+## Explain And Review
+
+Use Anchor directly from a terminal:
+
+```bash
+anchor explain src/auth/cache.ts
+anchor review
+anchor review --base main
+anchor review --diff-file change.diff --strict
+anchor health
+```
+
+`anchor explain <file>` summarizes what the file appears to own, matching PR decisions, team rules, known regressions, related tests, and important symbols using the local index only.
+
+`anchor review` reads the current `git diff` by default and groups evidence-backed findings into blockers, risks, historical constraints, regression checks, and recommended tests. It never approves or rejects code automatically.
+
+`anchor health` focuses on index quality: partial PR history, stale code index, invalid team rules, last failed index run, and the next suggested command.
+
+## Test-Aware And Regression Context
+
+Anchor classifies tests with deterministic rules such as `*.test.*`, `*.spec.*`, `__tests__`, `test/`, `tests/`, and `spec/`. It links source files to likely tests by basename, directory, imports, and indexed history.
+
+Regression memory is extracted from PR titles, bodies, comments, labels, and commit messages using phrases like `regression`, `revert`, `rollback`, `hotfix`, `incident`, `root cause`, `this broke`, and `fixed by`.
+
+`anchor_get_context` can now include:
+
+- `## Team-approved rules`
+- `## Must know`
+- `## Codebase Evidence`
+- `## Relevant tests`
+- `## Regression memory`
+- `## Risks`
+- `## Recommended checks`
+
+Structured MCP metadata includes `matchReasons`, `rankSignals`, `queryTerms`, `relevantTests`, `regressionEvents`, and `indexHealth`.
+
+## Optional Local Semantic Search
+
+SQLite FTS remains the default retrieval engine. Optional semantic mode is local-only and disabled unless requested:
+
+```bash
+ANCHOR_SEMANTIC=local anchor serve
+```
+
+If no local embedding provider is available, Anchor falls back to SQLite FTS without failing or making network calls.
+
 ## Doctor
 
 ```bash
@@ -206,6 +270,8 @@ Secondary tools:
 
 - `anchor_search_history`
 - `anchor_index_status` reports PR/code counts, history coverage, stale evidence count, team rule count, and last sync/index times.
+- `anchor_explain_file`
+- `anchor_review_diff`
 
 ## Development Commands
 
@@ -215,6 +281,9 @@ pnpm build
 pnpm test
 pnpm --filter @pratik7368patil/anchor start -- init
 pnpm --filter @pratik7368patil/anchor start -- index --repo owner/name --limit 10
+pnpm --filter @pratik7368patil/anchor start -- explain src/auth/cache.ts
+pnpm --filter @pratik7368patil/anchor start -- review
+pnpm --filter @pratik7368patil/anchor start -- health
 pnpm --filter @pratik7368patil/anchor start -- doctor
 pnpm --filter @pratik7368patil/anchor start -- serve
 ```
@@ -232,12 +301,14 @@ NPM_TOKEN
 Release flow:
 
 ```bash
-npm --prefix packages/core version 0.1.7 --no-git-tag-version
-npm --prefix packages/mcp-server version 0.1.7 --no-git-tag-version
-npm --prefix packages/cli version 0.1.7 --no-git-tag-version
+npm --prefix packages/core version 0.1.9 --no-git-tag-version
+npm --prefix packages/mcp-server version 0.1.9 --no-git-tag-version
+npm --prefix packages/cli version 0.1.9 --no-git-tag-version
 ```
 
 Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.
+
+If the workflow fails at `npm whoami` with `E401 Unauthorized`, update the GitHub repository secret named `NPM_TOKEN` with a valid npm automation/access token that can publish the `@pratik7368patil` packages. Version bumps alone cannot fix an invalid npm token.
 
 ## Troubleshooting
 
@@ -279,6 +350,12 @@ Run `anchor index-code` from the repository root. Confirm `anchor_index_status` 
 
 Team rules invalid:
 Run `anchor rules validate`. Each rule needs an id, category, text, and at least one PR evidence reference.
+
+Index health warning:
+Run `anchor health` for the reason and suggested next command. Common fixes are `anchor index-code`, `anchor sync`, or `anchor index-all`.
+
+No related tests:
+Run `anchor index-code` and confirm test files are not ignored by git. Anchor only links tests it can see in tracked or non-ignored files.
 
 ## Safety Notes
 

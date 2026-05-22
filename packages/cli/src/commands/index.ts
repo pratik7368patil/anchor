@@ -7,6 +7,7 @@ import {
   indexCodebase,
   indexPullRequests,
   openAnchorDatabase,
+  recordIndexRun,
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
 import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
@@ -59,6 +60,7 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
   console.error(`Database path: ${databasePath}`);
 
   const db = openAnchorDatabase(root, databasePath);
+  const startedAt = new Date().toISOString();
   try {
     const pullRequests = await fetchMergedPullRequests({
       token: auth.token,
@@ -96,9 +98,38 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
     if (codeSummary) {
       console.log(`Indexed code files: ${codeSummary.indexedFiles}`);
       console.log(`Code chunks created: ${codeSummary.codeChunksCreated}`);
+      console.log(`Test files indexed: ${codeSummary.testFilesIndexed}`);
+      console.log(`Test links created: ${codeSummary.testLinksCreated}`);
       console.log(`Skipped code files: ${codeSummary.skippedFiles}`);
     }
+    console.log(`Regression events created: ${summary.regressionEventsCreated}`);
     console.log(`Database path: ${summary.databasePath}`);
+    recordIndexRun(db, {
+      command: options.all ? "index-all" : "index",
+      repo,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      historyCoverage: options.all ? "all" : "limited",
+      historyLimit: options.all ? undefined : (options.limit ?? 200),
+      prsFetched: summary.indexedPrs,
+      prsSkipped: summary.skippedItems,
+      commentsIndexed: summary.indexedComments,
+      codeFilesIndexed: codeSummary?.indexedFiles,
+      testFilesIndexed: codeSummary?.testFilesIndexed,
+      status: "success",
+    });
+  } catch (error) {
+    recordIndexRun(db, {
+      command: options.all ? "index-all" : "index",
+      repo,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      historyCoverage: options.all ? "all" : "limited",
+      historyLimit: options.all ? undefined : (options.limit ?? 200),
+      failures: [error instanceof Error ? error.message : String(error)],
+      status: "failed",
+    });
+    throw error;
   } finally {
     db.close();
   }
@@ -114,6 +145,7 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
   console.error(`Database path: ${databasePath}`);
 
   const db = openAnchorDatabase(root, databasePath);
+  const startedAt = new Date().toISOString();
   try {
     const summary = indexCodebase(db, {
       cwd: root,
@@ -124,8 +156,29 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
     console.log(`Repository: ${repo}`);
     console.log(`Indexed code files: ${summary.indexedFiles}`);
     console.log(`Code chunks created: ${summary.codeChunksCreated}`);
+    console.log(`Test files indexed: ${summary.testFilesIndexed}`);
+    console.log(`Test links created: ${summary.testLinksCreated}`);
     console.log(`Skipped code files: ${summary.skippedFiles}`);
     console.log(`Database path: ${summary.databasePath}`);
+    recordIndexRun(db, {
+      command: "index-code",
+      repo,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      codeFilesIndexed: summary.indexedFiles,
+      testFilesIndexed: summary.testFilesIndexed,
+      status: "success",
+    });
+  } catch (error) {
+    recordIndexRun(db, {
+      command: "index-code",
+      repo,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      failures: [error instanceof Error ? error.message : String(error)],
+      status: "failed",
+    });
+    throw error;
   } finally {
     db.close();
   }

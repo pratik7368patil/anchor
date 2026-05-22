@@ -8,6 +8,7 @@ import {
 import type { IndexPullRequestsProgress, IndexSummary, PullRequestRecord } from "../types.js";
 import { extractWisdomUnits } from "./wisdom-extractor.js";
 import { normalizePullRequest } from "./normalize-pr.js";
+import { extractRegressionEvents } from "./regression-extractor.js";
 
 export function indexPullRequests(
   db: AnchorDatabase,
@@ -26,6 +27,7 @@ export function indexPullRequests(
   let indexedFiles = 0;
   let indexedComments = 0;
   let wisdomUnitsCreated = 0;
+  let regressionEventsCreated = 0;
   let skippedItems = 0;
   let lastPr: number | undefined;
 
@@ -43,10 +45,12 @@ export function indexPullRequests(
       continue;
     }
     const wisdomUnits = extractWisdomUnits(pr);
-    const result = upsertPullRequest(db, pr, wisdomUnits);
+    const regressionEvents = extractRegressionEvents(pr);
+    const result = upsertPullRequest(db, pr, wisdomUnits, regressionEvents);
     indexedFiles += result.files;
     indexedComments += result.comments;
     wisdomUnitsCreated += result.wisdom;
+    regressionEventsCreated += result.regressions;
     lastPr = pr.number;
     options.onProgress?.({
       stage: "indexed_pull_request",
@@ -71,6 +75,7 @@ export function indexPullRequests(
     indexedFiles,
     indexedComments,
     wisdomUnitsCreated,
+    regressionEventsCreated,
     skippedItems,
     databasePath: defaultDatabasePath(options.cwd),
   };

@@ -7,6 +7,7 @@ import {
   indexPullRequests,
   initializeSchema,
   openAnchorDatabase,
+  recordIndexRun,
   resolveGitHubToken,
 } from "@pratik7368patil/anchor-core";
 import { resolveRepo, type IndexOptions } from "./index.js";
@@ -37,6 +38,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
   console.error(`Database path: ${databasePath}`);
 
   const db = openAnchorDatabase(root, databasePath);
+  const startedAt = new Date().toISOString();
   try {
     initializeSchema(db);
     const since = options.force ? options.since : (options.since ?? getLastSyncTime(db, repo));
@@ -77,9 +79,38 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
     if (codeSummary) {
       console.log(`Indexed code files: ${codeSummary.indexedFiles}`);
       console.log(`Code chunks created: ${codeSummary.codeChunksCreated}`);
+      console.log(`Test files indexed: ${codeSummary.testFilesIndexed}`);
+      console.log(`Test links created: ${codeSummary.testLinksCreated}`);
       console.log(`Skipped code files: ${codeSummary.skippedFiles}`);
     }
+    console.log(`Regression events created: ${summary.regressionEventsCreated}`);
     console.log(`Database path: ${summary.databasePath}`);
+    recordIndexRun(db, {
+      command: "sync",
+      repo,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      historyCoverage: options.all ? "all" : "limited",
+      historyLimit: options.all ? undefined : (options.limit ?? 200),
+      prsFetched: summary.indexedPrs,
+      prsSkipped: summary.skippedItems,
+      commentsIndexed: summary.indexedComments,
+      codeFilesIndexed: codeSummary?.indexedFiles,
+      testFilesIndexed: codeSummary?.testFilesIndexed,
+      status: "success",
+    });
+  } catch (error) {
+    recordIndexRun(db, {
+      command: "sync",
+      repo,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      historyCoverage: options.all ? "all" : "limited",
+      historyLimit: options.all ? undefined : (options.limit ?? 200),
+      failures: [error instanceof Error ? error.message : String(error)],
+      status: "failed",
+    });
+    throw error;
   } finally {
     db.close();
   }
