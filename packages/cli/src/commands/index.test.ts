@@ -4,15 +4,18 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { getIndexStatus } from "@pratik7368patil/anchor-core";
+import { runDemo } from "./demo.js";
 import { runExplain } from "./explain.js";
 import { runHealth } from "./health.js";
 import { runIndexCode } from "./index.js";
+import { runPrompts } from "./prompts.js";
 import { runReview } from "./review.js";
 import {
   runRulesAdd,
   runRulesCheckEvidence,
   runRulesInit,
   runRulesList,
+  runRulesSuggest,
   runRulesValidate,
 } from "./rules.js";
 
@@ -33,6 +36,32 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe("demo and prompts commands", () => {
+  it("runs the offline demo without GitHub authentication and cleans temporary workspaces", () => {
+    const demo = runDemo({ json: true });
+    expect(demo.context.markdown).toContain("# Anchor Context");
+    expect(demo.explain.markdown).toContain("# Anchor File Brief");
+    expect(demo.review.markdown).toContain("# Anchor Diff Brief");
+    expect(demo.indexStatus.coverageScore).toBeGreaterThan(0);
+    expect(demo.prompts.length).toBeGreaterThanOrEqual(4);
+    expect(fs.existsSync(demo.path)).toBe(false);
+  });
+
+  it("keeps a requested demo workspace path", () => {
+    const cwd = tempDir();
+    const demoPath = path.join(cwd, "demo");
+    const demo = runDemo({ path: demoPath });
+    expect(demo.kept).toBe(true);
+    expect(fs.existsSync(path.join(demoPath, ".anchor", "index.sqlite"))).toBe(true);
+  });
+
+  it("prints reusable Cursor prompts", () => {
+    const prompts = runPrompts();
+    expect(prompts.map((prompt) => prompt.id)).toContain("before_edit");
+    expect(prompts.map((prompt) => prompt.id)).toContain("review_diff");
+  });
 });
 
 describe("index-code command", () => {
@@ -56,6 +85,9 @@ describe("index-code command", () => {
     expect(status.codeChunkCount).toBeGreaterThan(0);
     expect(runHealth(cwd).indexStatus.codeFileCount).toBe(1);
     expect(runExplain(cwd, "src/index.ts").markdown).toContain("# Anchor File Explain");
+    expect(runExplain(cwd, "src/index.ts", { share: true }).markdown).toContain(
+      "# Anchor File Brief",
+    );
   });
 });
 
@@ -115,6 +147,15 @@ describe("rules commands", () => {
     expect(evidence.ok).toBe(false);
     expect(evidence.errors.join("\n")).toContain("Anchor database not found");
   });
+
+  it("suggests draft rules from local evidence without writing the rules file", () => {
+    const cwd = tempDir();
+    runDemo({ path: cwd });
+    const result = runRulesSuggest(cwd, { minConfidence: "moderate" });
+    expect(result.suggestions.length).toBeGreaterThan(0);
+    expect(result.suggestions[0]?.evidence[0]?.prNumber).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(cwd, "anchor.rules.json"))).toBe(false);
+  });
 });
 
 describe("review command", () => {
@@ -145,5 +186,9 @@ describe("review command", () => {
     const review = runReview(cwd, { diffFile: diffPath });
     expect(review.markdown).toContain("# Anchor Diff Review");
     expect(review.metadata.changedFiles).toEqual(["src/index.ts"]);
+
+    const shared = runReview(cwd, { diffFile: diffPath, share: true });
+    expect(shared.markdown).toContain("# Anchor Diff Brief");
+    expect(shared.markdown).toContain("## Likely tests");
   });
 });

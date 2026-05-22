@@ -11,16 +11,20 @@ import { runServe } from "./commands/serve.js";
 import { printExplain, runExplain } from "./commands/explain.js";
 import { printReview, runReview } from "./commands/review.js";
 import { printHealth, runHealth } from "./commands/health.js";
+import { printDemo, runDemo } from "./commands/demo.js";
+import { printPrompts, runPrompts } from "./commands/prompts.js";
 import {
   printRulesAdd,
   printRulesEvidenceCheck,
   printRulesInit,
   printRulesList,
+  printRulesSuggest,
   printRulesValidation,
   runRulesAdd,
   runRulesCheckEvidence,
   runRulesInit,
   runRulesList,
+  runRulesSuggest,
   runRulesValidate,
 } from "./commands/rules.js";
 
@@ -34,6 +38,11 @@ function parseIntegerOption(value: string): number {
 
 function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function parseConfidenceOption(value: string): "strong" | "moderate" | "weak" {
+  if (value === "strong" || value === "moderate" || value === "weak") return value;
+  throw new Error("Invalid confidence level. Use strong, moderate, or weak.");
 }
 
 function readPackageVersion(): string {
@@ -62,6 +71,24 @@ program
   .action(() => {
     const result = runInit(process.cwd());
     printInitResult(result);
+  });
+
+program
+  .command("demo")
+  .description("Run a deterministic offline Anchor demo with bundled PR and code fixtures")
+  .option("--json", "Print demo output as JSON")
+  .option("--keep", "Keep the generated temporary demo workspace")
+  .option("--path <dir>", "Use and keep a specific demo workspace path")
+  .action((options) => {
+    printDemo(runDemo(options), options);
+  });
+
+program
+  .command("prompts")
+  .description("Print Cursor-ready prompts for common Anchor workflows")
+  .option("--json", "Print prompts as JSON")
+  .action((options) => {
+    printPrompts(runPrompts(), options);
   });
 
 program
@@ -112,6 +139,7 @@ program
   .description("Explain a file using the local Anchor index")
   .argument("<file>", "File path to explain")
   .option("--strict", "Only include non-stale strong evidence")
+  .option("--share", "Print compact Markdown for Slack or PR comments")
   .option("--json", "Print structured metadata as JSON")
   .option("--max-results <number>", "Maximum historical results", parseIntegerOption)
   .action((file, options) => {
@@ -124,6 +152,7 @@ program
   .option("--base <ref>", "Review diff from base ref to HEAD")
   .option("--diff-file <path>", "Read a diff from a file instead of git diff")
   .option("--strict", "Only include non-stale strong evidence")
+  .option("--share", "Print compact Markdown for Slack or PR comments")
   .option("--json", "Print structured metadata as JSON")
   .option("--max-results <number>", "Maximum historical results", parseIntegerOption)
   .action((options) => {
@@ -195,6 +224,27 @@ rules
     const result = runRulesCheckEvidence(process.cwd());
     printRulesEvidenceCheck(result);
     if (!result.ok) process.exitCode = 1;
+  });
+
+rules
+  .command("suggest")
+  .description("Suggest draft team-approved rules from local Anchor evidence")
+  .option("--json", "Print suggestions as JSON")
+  .option("--category <category>", "Only suggest one wisdom category")
+  .option(
+    "--min-confidence <level>",
+    "Minimum evidence confidence: strong, moderate, or weak",
+    parseConfidenceOption,
+    "moderate",
+  )
+  .action((options) => {
+    printRulesSuggest(
+      runRulesSuggest(process.cwd(), {
+        category: options.category,
+        minConfidence: options.minConfidence,
+      }),
+      options,
+    );
   });
 
 program

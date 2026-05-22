@@ -10,6 +10,7 @@ export type ExplainOptions = {
   strict?: boolean;
   json?: boolean;
   maxResults?: number;
+  share?: boolean;
 };
 
 export function runExplain(
@@ -24,6 +25,7 @@ export function runExplain(
       file,
       strict: options.strict,
       maxResults: options.maxResults,
+      share: options.share,
     });
   } finally {
     db.close();

@@ -22,6 +22,8 @@ export type ConfidenceLevel = "strong" | "moderate" | "weak";
 
 export type FreshnessStatus = "current" | "possibly_stale" | "stale";
 
+export type CoverageGrade = "empty" | "poor" | "fair" | "good" | "excellent";
+
 export type EvidenceRef = {
   prNumber: number;
   prUrl: string;
@@ -91,6 +93,11 @@ export type TeamRule = {
   symbols: string[];
   evidence: EvidenceRef[];
   confidenceLevel: ConfidenceLevel;
+};
+
+export type TeamRuleSuggestion = TeamRule & {
+  repeatedEvidenceCount: number;
+  reason: string;
 };
 
 export type RankedTeamRule = TeamRule & {
@@ -343,6 +350,7 @@ export type AnchorExplainFileInput = {
   symbols?: string[];
   strict?: boolean;
   maxResults?: number;
+  share?: boolean;
 };
 
 export type AnchorReviewDiffInput = {
@@ -350,6 +358,7 @@ export type AnchorReviewDiffInput = {
   files?: string[];
   strict?: boolean;
   maxResults?: number;
+  share?: boolean;
 };
 
 export type IndexRunRecord = {
@@ -377,6 +386,10 @@ export type AnchorIndexHealth = {
   staleCodeIndex: boolean;
   lastSuccessfulRun?: string;
   lastFailedRun?: string;
+  coverageScore: number;
+  coverageGrade: CoverageGrade;
+  coverageReasons: string[];
+  suggestedPrompts: string[];
 };
 
 export type SemanticStatus = {
@@ -409,6 +422,10 @@ export type IndexStatus = {
   lastFailedRun?: string;
   staleCodeIndex?: boolean;
   suggestedNextCommand?: string;
+  coverageScore: number;
+  coverageGrade: CoverageGrade;
+  coverageReasons: string[];
+  suggestedPrompts: string[];
   githubTokenConfigured: boolean;
   health: "ok" | "missing_database" | "schema_invalid" | "empty_index";
 };

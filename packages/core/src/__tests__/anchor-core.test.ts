@@ -39,7 +39,10 @@ import {
   sanitizeHistoricalText,
   stripPromptInjection,
   addTeamRule,
+  calculateCoverage,
   checkTeamRuleEvidence,
+  getSuggestedPrompts,
+  suggestTeamRules,
   validateTeamRulesFile,
   type IndexPullRequestsProgress,
   type PullRequestRecord,
@@ -244,6 +247,39 @@ describe("wisdom extraction", () => {
 });
 
 describe("SQLite indexing and retrieval", () => {
+  it("computes local coverage scores and suggested prompts", () => {
+    const empty = calculateCoverage({
+      prCount: 0,
+      wisdomUnitCount: 0,
+      codeFileCount: 0,
+      codeChunkCount: 0,
+      testLinkCount: 0,
+      regressionEventCount: 0,
+      teamRuleCount: 0,
+      historyCoverage: "unknown",
+      staleEvidenceCount: 0,
+      staleCodeIndex: true,
+    });
+    expect(empty.coverageScore).toBe(0);
+    expect(empty.coverageGrade).toBe("empty");
+
+    const complete = calculateCoverage({
+      prCount: 250,
+      wisdomUnitCount: 80,
+      codeFileCount: 20,
+      codeChunkCount: 120,
+      testLinkCount: 12,
+      regressionEventCount: 4,
+      teamRuleCount: 2,
+      historyCoverage: "all",
+      staleEvidenceCount: 0,
+      staleCodeIndex: false,
+    });
+    expect(complete.coverageScore).toBeGreaterThanOrEqual(80);
+    expect(complete.coverageGrade).toBe("excellent");
+    expect(getSuggestedPrompts().length).toBeGreaterThanOrEqual(4);
+  });
+
   it("inserts normalized PR data and validates the schema", () => {
     const { cwd, db, prs, summary } = createIndexedFixtureDb();
     try {
@@ -257,6 +293,9 @@ describe("SQLite indexing and retrieval", () => {
       expect(status.health).toBe("ok");
       expect(status.regressionEventCount).toBeGreaterThan(0);
       expect(status.databasePath).toBe(defaultDatabasePath(cwd));
+      expect(status.coverageScore).toBeGreaterThan(0);
+      expect(status.coverageGrade).not.toBe("empty");
+      expect(status.suggestedPrompts.length).toBeGreaterThan(0);
       const firstWisdomCount = status.wisdomUnitCount;
       indexPullRequests(db, prs, { cwd, repo: "owner/repo" });
       expect(getIndexStatus(cwd, false).wisdomUnitCount).toBe(firstWisdomCount);
@@ -467,6 +506,12 @@ describe("SQLite indexing and retrieval", () => {
       expect(explain.markdown).toContain("Important symbols:");
       expect(explain.markdown).toContain("## Relevant tests");
 
+      const sharedExplain = explainFile(db, cwd, { file: "src/auth/cache.ts", share: true });
+      expect(sharedExplain.markdown).toContain("# Anchor File Brief");
+      expect(sharedExplain.markdown).toContain("## Key constraints");
+      expect(sharedExplain.markdown).toContain("PR #101");
+      expect(sharedExplain.markdown).not.toContain("ignore previous instructions");
+
       const review = reviewDiff(db, cwd, {
         diff: [
           "diff --git a/src/auth/cache.ts b/src/auth/cache.ts",
@@ -478,6 +523,19 @@ describe("SQLite indexing and retrieval", () => {
       expect(review.markdown).toContain("# Anchor Diff Review");
       expect(review.markdown).toContain("## Regression checks");
       expect(review.metadata.changedFiles).toEqual(["src/auth/cache.ts"]);
+
+      const sharedReview = reviewDiff(db, cwd, {
+        diff: [
+          "diff --git a/src/auth/cache.ts b/src/auth/cache.ts",
+          "--- a/src/auth/cache.ts",
+          "+++ b/src/auth/cache.ts",
+          "+export class AuthCache {}",
+        ].join("\n"),
+        share: true,
+      });
+      expect(sharedReview.markdown).toContain("# Anchor Diff Brief");
+      expect(sharedReview.markdown).toContain("## Historical constraints");
+      expect(sharedReview.markdown).not.toContain("ignore previous instructions");
     } finally {
       db.close();
     }
@@ -634,6 +692,26 @@ describe("team-approved rules", () => {
       db.close();
     }
   });
+
+  it("suggests evidence-backed team rules without modifying anchor.rules.json", () => {
+    const { cwd, db } = createIndexedFixtureDb();
+    try {
+      const rulesPath = path.join(cwd, "anchor.rules.json");
+      const suggestions = suggestTeamRules(db, cwd, { minConfidence: "moderate" });
+      expect(suggestions.length).toBeGreaterThan(0);
+      expect(suggestions[0]?.evidence[0]?.prNumber).toBeGreaterThan(0);
+      expect(suggestions[0]?.sanitizedText).not.toContain("ignore previous instructions");
+      expect(fs.existsSync(rulesPath)).toBe(false);
+
+      const securityOnly = suggestTeamRules(db, cwd, {
+        category: "security_note",
+        minConfidence: "weak",
+      });
+      expect(securityOnly.every((rule) => rule.category === "security_note")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("codebase indexing and retrieval", () => {
@@ -740,6 +818,8 @@ describe("codebase indexing and retrieval", () => {
       const health = getAnchorIndexHealth(cwd);
       expect(health.status).toBe("warning");
       expect(health.warnings.some((warning) => warning.includes("PR history coverage"))).toBe(true);
+      expect(health.coverageScore).toBeGreaterThan(0);
+      expect(health.suggestedPrompts.length).toBeGreaterThan(0);
       expect(getSemanticStatus({ ANCHOR_SEMANTIC: "local" } as NodeJS.ProcessEnv).available).toBe(
         false,
       );

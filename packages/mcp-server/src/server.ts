@@ -15,7 +15,7 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
   const server = new McpServer(
     {
       name: "anchor",
-      version: "0.1.0",
+      version: "0.1.10",
     },
     {
       instructions:
@@ -57,7 +57,7 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
     {
       title: "Anchor Index Status",
       description:
-        "Return local Anchor index counts, history coverage, team-rule count, stale evidence count, and health.",
+        "Return local Anchor index counts, history coverage, coverage score, team-rule count, stale evidence count, and health.",
       inputSchema: AnchorIndexStatusSchema,
       annotations: {
         readOnlyHint: true,

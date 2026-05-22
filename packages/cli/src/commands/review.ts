@@ -14,6 +14,7 @@ export type ReviewOptions = {
   strict?: boolean;
   json?: boolean;
   maxResults?: number;
+  share?: boolean;
 };
 
 function readDiff(root: string, options: ReviewOptions): string {
@@ -31,6 +32,7 @@ export function runReview(cwd: string, options: ReviewOptions = {}): FormattedRe
       diff,
       strict: options.strict,
       maxResults: options.maxResults,
+      share: options.share,
     });
   } finally {
     db.close();

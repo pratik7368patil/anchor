@@ -199,6 +199,7 @@ export function formatAnchorContext(
         claimKey: unit.claimKey,
         repeatedEvidenceCount: unit.repeatedEvidenceCount,
         category: unit.category,
+        sanitizedSnippet: clipSentence(unit.sanitizedText, 260),
         prNumber: unit.prNumber,
         prUrl: unit.prUrl,
         sourceType: unit.sourceType,
@@ -216,6 +217,7 @@ export function formatAnchorContext(
         freshnessStatus: rule.freshnessStatus,
         freshnessReason: rule.freshnessReason,
         category: rule.category,
+        sanitizedSnippet: clipSentence(rule.sanitizedText, 260),
         filePaths: rule.filePaths,
         symbols: rule.symbols,
         evidence: rule.evidence,
@@ -230,6 +232,7 @@ export function formatAnchorContext(
         startLine: chunk.startLine,
         endLine: chunk.endLine,
         symbols: chunk.symbols,
+        sanitizedSnippet: clipSentence(chunk.sanitizedText, 260),
         matchReasons: chunk.matchReasons,
         rankSignals: chunk.rankSignals,
       })),
@@ -311,6 +314,7 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Test files: ${status.testFileCount}`,
     `- Test links: ${status.testLinkCount}`,
     `- Regression events: ${status.regressionEventCount}`,
+    `- Anchor coverage: ${status.coverageScore}% (${status.coverageGrade})`,
     `- History coverage: ${status.historyCoverage ?? "unknown"}`,
     `- History limit: ${status.historyLimit ?? "n/a"}`,
     `- Stale evidence: ${status.staleEvidenceCount}`,
@@ -325,5 +329,13 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- GitHub token configured: ${status.githubTokenConfigured ? "yes" : "no"}`,
     `- Health: ${status.health}`,
   ];
+  if (status.coverageReasons.length > 0) {
+    lines.push("", "Coverage reasons:");
+    for (const reason of status.coverageReasons.slice(0, 8)) lines.push(`- ${reason}`);
+  }
+  if (status.suggestedPrompts.length > 0) {
+    lines.push("", "Suggested prompts:");
+    for (const prompt of status.suggestedPrompts.slice(0, 4)) lines.push(`- ${prompt}`);
+  }
   return { markdown: lines.join("\n"), metadata: status as unknown as Record<string, unknown> };
 }

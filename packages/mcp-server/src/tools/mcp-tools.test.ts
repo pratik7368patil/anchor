@@ -171,6 +171,9 @@ describe("MCP tools", () => {
     expect(status.structuredContent?.wisdomUnitCount).toBeGreaterThan(0);
     expect(status.structuredContent?.teamRuleCount).toBe(1);
     expect(status.structuredContent?.historyCoverage).toBeDefined();
+    expect(status.structuredContent?.coverageScore).toBeGreaterThan(0);
+    expect(status.structuredContent?.coverageGrade).toBeDefined();
+    expect(Array.isArray(status.structuredContent?.suggestedPrompts)).toBe(true);
     expect(status.structuredContent?.testFileCount).toBeGreaterThan(0);
     expect(status.structuredContent?.regressionEventCount).toBeGreaterThan(0);
   });

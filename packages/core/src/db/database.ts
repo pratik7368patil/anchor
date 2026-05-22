@@ -11,6 +11,7 @@ import type {
   PullRequestRecord,
   RegressionEvent,
   SourceType,
+  WisdomCategory,
   TestFileRecord,
   TestLink,
   WisdomUnit,
@@ -19,6 +20,7 @@ import { redactedHistoricalText, sanitizeHistoricalText } from "../security/sani
 import { resolveGitHubToken } from "../utils/github-token.js";
 import { countValidTeamRules } from "../rules/team-rules.js";
 import { inferTestAwareness, isTestFilePath } from "../indexer/test-awareness.js";
+import { calculateCoverage } from "../engagement/coverage.js";
 
 export type AnchorDatabase = Database.Database;
 
@@ -225,7 +227,11 @@ export function upsertPullRequest(
         file.patch ? sanitizeHistoricalText(file.patch) : null,
       );
     }
-    insertPrCochangeTestLinks(db, repoId, pr.files.map((file) => file.filename));
+    insertPrCochangeTestLinks(
+      db,
+      repoId,
+      pr.files.map((file) => file.filename),
+    );
 
     const insertComment = db.prepare(
       `INSERT INTO pr_comments
@@ -472,11 +478,7 @@ export function replaceCodeIndex(
   };
 }
 
-function insertPrCochangeTestLinks(
-  db: AnchorDatabase,
-  repoId: number,
-  filePaths: string[],
-): void {
+function insertPrCochangeTestLinks(db: AnchorDatabase, repoId: number, filePaths: string[]): void {
   const testPaths = filePaths.filter(isTestFilePath);
   const sourcePaths = filePaths.filter((filePath) => !isTestFilePath(filePath));
   if (testPaths.length === 0 || sourcePaths.length === 0) return;
@@ -545,6 +547,30 @@ export function recordIndexRun(db: AnchorDatabase, run: IndexRunRecord): void {
   );
 }
 
+function withCoverage<
+  T extends Omit<
+    IndexStatus,
+    "coverageScore" | "coverageGrade" | "coverageReasons" | "suggestedPrompts"
+  >,
+>(
+  status: T,
+): T &
+  Pick<IndexStatus, "coverageScore" | "coverageGrade" | "coverageReasons" | "suggestedPrompts"> {
+  const coverage = calculateCoverage({
+    prCount: status.prCount,
+    wisdomUnitCount: status.wisdomUnitCount,
+    codeFileCount: status.codeFileCount,
+    codeChunkCount: status.codeChunkCount,
+    testLinkCount: status.testLinkCount,
+    regressionEventCount: status.regressionEventCount,
+    teamRuleCount: status.teamRuleCount,
+    historyCoverage: status.historyCoverage,
+    staleEvidenceCount: status.staleEvidenceCount,
+    staleCodeIndex: status.staleCodeIndex,
+  });
+  return { ...status, ...coverage };
+}
+
 export function getIndexStatus(
   cwd: string,
   githubTokenConfigured = Boolean(resolveGitHubToken({ cwd }).token),
@@ -552,7 +578,7 @@ export function getIndexStatus(
 ): IndexStatus {
   if (!fs.existsSync(databasePath)) {
     const rules = countValidTeamRules(cwd);
-    return {
+    return withCoverage({
       databasePath,
       prCount: 0,
       fileCount: 0,
@@ -567,9 +593,10 @@ export function getIndexStatus(
       staleEvidenceCount: 0,
       teamRuleCount: rules.count,
       lastRuleIndexTime: rules.lastRuleIndexTime,
+      staleCodeIndex: true,
       githubTokenConfigured,
       health: "missing_database",
-    };
+    });
   }
 
   const db = openAnchorDatabase(cwd, databasePath);
@@ -577,7 +604,7 @@ export function getIndexStatus(
     initializeSchema(db);
     if (!checkSchema(db)) {
       const rules = countValidTeamRules(cwd);
-      return {
+      return withCoverage({
         databasePath,
         prCount: 0,
         fileCount: 0,
@@ -592,9 +619,10 @@ export function getIndexStatus(
         staleEvidenceCount: 0,
         teamRuleCount: rules.count,
         lastRuleIndexTime: rules.lastRuleIndexTime,
+        staleCodeIndex: true,
         githubTokenConfigured,
         health: "schema_invalid",
-      };
+      });
     }
     const count = (table: string): number =>
       (db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as CountRow).count;
@@ -623,10 +651,11 @@ export function getIndexStatus(
       .get() as LastRunRow | undefined;
     const staleCodeIndex = isCodeIndexStale(codeIndexRow?.last_indexed_at ?? undefined);
     const rules = countValidTeamRules(cwd);
-    return {
+    const pullRequestCount = count("pull_requests");
+    return withCoverage({
       repo: repoRow?.full_name,
       databasePath,
-      prCount: count("pull_requests"),
+      prCount: pullRequestCount,
       fileCount: count("pr_files"),
       commentCount: count("pr_comments"),
       wisdomUnitCount,
@@ -646,7 +675,7 @@ export function getIndexStatus(
       lastFailedRun: lastFailedRun?.finished_at ?? undefined,
       staleCodeIndex,
       suggestedNextCommand: suggestedNextCommand({
-        prCount: count("pull_requests"),
+        prCount: pullRequestCount,
         wisdomUnitCount,
         codeChunkCount,
         staleCodeIndex,
@@ -654,10 +683,24 @@ export function getIndexStatus(
       }),
       githubTokenConfigured,
       health: wisdomUnitCount > 0 || codeChunkCount > 0 ? "ok" : "empty_index",
-    };
+    });
   } finally {
     db.close();
   }
+}
+
+export function getWisdomCategoryCounts(db: AnchorDatabase): Record<WisdomCategory, number> {
+  initializeSchema(db);
+  const rows = db
+    .prepare("SELECT category, COUNT(*) AS count FROM wisdom_units GROUP BY category")
+    .all() as Array<{ category: WisdomCategory; count: number }>;
+  return rows.reduce(
+    (counts, row) => {
+      counts[row.category] = row.count;
+      return counts;
+    },
+    {} as Record<WisdomCategory, number>,
+  );
 }
 
 function isCodeIndexStale(lastIndexedAt?: string | null): boolean {
