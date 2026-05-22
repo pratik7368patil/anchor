@@ -1,0 +1,76 @@
+name: Deploy site to Netlify
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-netlify.yml"
+      - "apps/site/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netlify-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and deploy site
+    runs-on: ubuntu-latest
+    if: github.repository == 'pratik7368patil/anchor'
+    env:
+      NETLIFY_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify Netlify secrets
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN is missing. Add a Netlify personal access token as a GitHub Actions repository secret."
+            exit 1
+          fi
+
+          if [ -z "${NETLIFY_SITE_ID:-}" ]; then
+            echo "::error::NETLIFY_SITE_ID is missing. Add the Netlify site API ID as a GitHub Actions repository secret."
+            exit 1
+          fi
+
+      - name: Build site
+        run: pnpm site:build
+
+      - name: Deploy production site
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          set -euo pipefail
+
+          npx --yes --package=netlify-cli@26.0.2 netlify deploy \
+            --prod \
+            --dir=apps/site/dist \
+            --site="$NETLIFY_SITE_ID" \
+            --message="GitHub Actions deploy ${GITHUB_SHA}"

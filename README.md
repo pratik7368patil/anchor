@@ -412,6 +412,27 @@ Open a PR with the version bump. After the PR is reviewed and merged, GitHub Act
 
 If the workflow fails at `npm whoami` with `E401 Unauthorized`, update the GitHub repository secret named `NPM_TOKEN` with a valid npm automation/access token that can publish the `@pratik7368patil` packages. Version bumps alone cannot fix an invalid npm token.
 
+## Site Deployment
+
+The docs site deploys to Netlify from GitHub Actions when site changes land on `main`.
+
+Required repository secrets:
+
+```text
+NETLIFY_AUTH_TOKEN
+NETLIFY_SITE_ID
+```
+
+The workflow builds the Vite site with:
+
+```bash
+pnpm site:build
+```
+
+Then it deploys `apps/site/dist` to the configured Netlify production site with Netlify CLI. The workflow never stores Netlify tokens in the repository and disables Netlify CLI telemetry in CI.
+
+If the deploy fails because secrets are missing, add them in GitHub under Settings > Secrets and variables > Actions. `NETLIFY_AUTH_TOKEN` should be a Netlify personal access token. `NETLIFY_SITE_ID` is the Netlify site API ID for `anchor-mcp.netlify.app`.
+
 ## Troubleshooting
 
 Missing token:
