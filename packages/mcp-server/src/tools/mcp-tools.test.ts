@@ -132,6 +132,11 @@ describe("MCP tools", () => {
     expect(Array.isArray(result.structuredContent?.regressionEvents)).toBe(true);
     expect(Array.isArray(result.structuredContent?.queryTerms)).toBe(true);
     expect(Array.isArray(result.structuredContent?.teamRules)).toBe(true);
+    expect(result.structuredContent?.reliabilityGate).toMatchObject({
+      status: "passed",
+      acceptedHistoryCount: expect.any(Number),
+    });
+    expect(Array.isArray(result.structuredContent?.rejectedHistory)).toBe(true);
   });
 
   it("filters stale and weak evidence in strict mode", async () => {
@@ -160,6 +165,10 @@ describe("MCP tools", () => {
 
     expect(result.content[0]?.text).toContain("No reliable historical evidence found.");
     expect(result.structuredContent?.resultCount).toBe(0);
+    expect(result.structuredContent?.reliabilityGate).toMatchObject({
+      status: "failed",
+      strict: true,
+    });
   });
 
   it("supports search history and index status", async () => {

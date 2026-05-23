@@ -38,6 +38,8 @@ export type ArchitectureArea =
   | "util"
   | "unknown";
 
+export type ReliabilityGateStatus = "passed" | "weak" | "failed";
+
 export type EvidenceRef = {
   prNumber: number;
   prUrl: string;
@@ -424,6 +426,29 @@ export type RankedWisdomUnit = WisdomUnit & {
   evidence: EvidenceRef;
   matchReasons: string[];
   rankSignals: Record<string, number>;
+};
+
+export type ReliabilityGateRejection = {
+  id: string;
+  prNumber: number;
+  category: WisdomCategory;
+  confidenceLevel: ConfidenceLevel;
+  freshnessStatus: FreshnessStatus;
+  reasons: string[];
+  rankSignals: Record<string, number>;
+};
+
+export type ReliabilityGate = {
+  status: ReliabilityGateStatus;
+  strict: boolean;
+  minConfidence: ConfidenceLevel;
+  acceptedHistoryCount: number;
+  rejectedHistoryCount: number;
+  acceptedTeamRuleCount: number;
+  strongCurrentCodeSignals: number;
+  strongArchitectureSignals: number;
+  reasons: string[];
+  warnings: string[];
 };
 
 export type AnchorExplainFileInput = {
