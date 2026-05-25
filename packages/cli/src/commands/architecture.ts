@@ -20,6 +20,8 @@ export type ArchitectureOptions = {
   diffFile?: string;
   writeDoc?: boolean;
   json?: boolean;
+  map?: boolean;
+  format?: "mermaid" | "json";
   maxResults?: number;
 };
 
@@ -41,6 +43,8 @@ export function runArchitecture(cwd: string, options: ArchitectureOptions = {}):
       : getArchitectureContext(db, root, {
           file: options.file,
           area: options.area,
+          map: options.map,
+          format: options.format,
           maxResults: options.maxResults,
         });
     if (options.writeDoc) {

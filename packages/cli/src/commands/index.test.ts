@@ -9,8 +9,14 @@ import { runDemo } from "./demo.js";
 import { runExplain } from "./explain.js";
 import { runHealth } from "./health.js";
 import { runIndexCode } from "./index.js";
+import { runPlan } from "./plan.js";
 import { runPrompts } from "./prompts.js";
 import { runReview } from "./review.js";
+import { runTestCommand } from "./test-command.js";
+import { runOnboarding } from "./onboarding.js";
+import { runCi } from "./ci.js";
+import { runEvalAdd, runEvalInit, runEvalRun } from "./eval.js";
+import { runPlaybooksInit, runPlaybooksSuggest } from "./playbooks.js";
 import {
   runRulesAdd,
   runRulesCheckEvidence,
@@ -237,5 +243,55 @@ describe("review command", () => {
     const shared = runReview(cwd, { diffFile: diffPath, share: true });
     expect(shared.markdown).toContain("# Anchor Diff Brief");
     expect(shared.markdown).toContain("## Likely tests");
+  });
+});
+
+describe("developer value commands", () => {
+  it("runs plan, test-command, onboarding, eval, playbook, and CI commands", async () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    execFileSync("git", ["remote", "add", "origin", "git@github.com:owner/repo.git"], {
+      cwd,
+      stdio: "ignore",
+    });
+    writeFileEnsuringDir(
+      path.join(cwd, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest run" } }, null, 2),
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/services/api.ts"),
+      "export function requestApi() { return true; }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/services/api.test.ts"),
+      "import { requestApi } from './api';\ntest('requestApi', () => requestApi());\n",
+    );
+    execFileSync("git", ["add", "."], { cwd, stdio: "ignore" });
+    await runIndexCode(cwd, { token: undefined });
+
+    expect(runTestCommand(cwd, "src/services/api.ts")[0]?.command).toContain("api.test.ts");
+    const plan = runPlan(cwd, "change api service", {
+      file: ["src/services/api.ts"],
+      symbol: ["requestApi"],
+    });
+    expect(plan.markdown).toContain("# Anchor Task Plan");
+
+    const map = runArchitecture(cwd, { map: true, format: "mermaid" });
+    expect(map.markdown).toContain("```mermaid");
+    const onboarding = runOnboarding(cwd, { area: "service" });
+    expect(onboarding.markdown).toContain("# Anchor Onboarding Pack");
+
+    expect(runEvalInit(cwd).created).toBe(true);
+    runEvalAdd(cwd, {
+      task: "change api service",
+      file: ["src/services/api.ts"],
+      expectPr: [],
+      category: [],
+    });
+    expect(runEvalRun(cwd).total).toBe(1);
+
+    expect(runPlaybooksInit(cwd).created).toBe(true);
+    expect(Array.isArray(runPlaybooksSuggest(cwd))).toBe(true);
+    expect(runCi(cwd, { minCoverage: 1 }).markdown).toContain("# Anchor CI");
   });
 });

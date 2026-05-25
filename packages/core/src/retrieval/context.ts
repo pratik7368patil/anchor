@@ -11,6 +11,7 @@ import { getSemanticStatus } from "./semantic.js";
 import { rankArchitecturePatterns } from "./architecture-ranker.js";
 import { clampMaxResults } from "./query-builder.js";
 import { evaluateReliabilityGate } from "./reliability-gate.js";
+import { detectTestCommands } from "./test-commands.js";
 
 export function buildAnchorContextResult(
   db: AnchorDatabase,
@@ -26,6 +27,7 @@ export function buildAnchorContextResult(
   const code = rankCodeChunks(db, input);
   const rules = rankTeamRules(db, cwd, input);
   const tests = rankRelevantTests(db, input);
+  const testCommands = detectTestCommands(db, cwd, input.files ?? []);
   const regressions = rankRegressionEvents(db, input);
   const architecture = rankArchitecturePatterns(db, input);
   const reliability = evaluateReliabilityGate(input, history, rules, code, architecture);
@@ -67,5 +69,6 @@ export function buildAnchorContextResult(
       },
       semanticStatus,
     },
+    testCommands,
   );
 }

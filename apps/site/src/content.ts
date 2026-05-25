@@ -31,10 +31,15 @@ anchor doctor`;
 
 export const workflowCommand = `anchor demo
 anchor prompts
+anchor plan "Add API integration" --file src/api/routes.ts
+anchor test-command src/api/routes.ts
 anchor explain src/api/routes.ts
 anchor architecture --file src/api/routes.ts
+anchor architecture --map --format mermaid
 anchor architecture --check
-anchor review --share`;
+anchor review --share
+anchor onboarding --area api
+anchor ci`;
 
 export const commandGroups: CommandGroup[] = [
   {
@@ -98,6 +103,16 @@ export const commandGroups: CommandGroup[] = [
       "Use these when you want a concise briefing before edits, refactors, onboarding, or PR review.",
     commands: [
       {
+        command: "anchor plan \"<task>\"",
+        description:
+          "Creates a deterministic edit plan with target files, likely symbols, risks, and exact checks.",
+      },
+      {
+        command: "anchor test-command <file>",
+        description:
+          "Infers the most specific test command for a source or test file from scripts and test links.",
+      },
+      {
         command: "anchor explain <file>",
         description:
           "Explains a file using PR history, local code, tests, regressions, and team rules.",
@@ -119,12 +134,58 @@ export const commandGroups: CommandGroup[] = [
         description: "Checks the current git diff against indexed architecture patterns.",
       },
       {
+        command: "anchor architecture --map",
+        description: "Prints a Mermaid or JSON architecture graph from imports and test links.",
+      },
+      {
         command: "anchor review",
         description: "Reviews the current git diff against Anchor history and known risks.",
       },
       {
         command: "anchor review --share",
         description: "Creates a compact review summary for Slack or PR comments.",
+      },
+      {
+        command: "anchor onboarding",
+        description: "Builds a focused onboarding pack for a file, area, or repository.",
+      },
+    ],
+  },
+  {
+    title: "Reliability and team workflows",
+    intro: "Add deterministic gates, live refresh, local feedback, and repo playbooks.",
+    commands: [
+      {
+        command: "anchor eval init",
+        description: "Creates anchor.evals.json for golden retrieval checks.",
+      },
+      {
+        command: "anchor eval add",
+        description: "Adds a task-to-expected-evidence eval case.",
+      },
+      {
+        command: "anchor eval run",
+        description: "Runs retrieval evals and reports ranking drift or missing evidence.",
+      },
+      {
+        command: "anchor watch",
+        description: "Refreshes code, architecture, test links, and test commands while you work.",
+      },
+      {
+        command: "anchor ci",
+        description: "Runs rules, evidence, eval, stale-index, and coverage gates for CI.",
+      },
+      {
+        command: "anchor feedback record",
+        description: "Stores local-only useful/not-useful feedback for ranking transparency.",
+      },
+      {
+        command: "anchor playbooks suggest",
+        description: "Suggests workflow playbooks from repeated local evidence.",
+      },
+      {
+        command: "anchor playbooks list",
+        description: "Lists committed repo playbooks.",
       },
     ],
   },
@@ -175,6 +236,10 @@ export const options: TableItem[] = [
   { name: "--file <path>", description: "Focus architecture or explain output on one file." },
   { name: "--area api", description: "Filter architecture patterns by area." },
   { name: "--check", description: "Check the current diff against architecture patterns." },
+  { name: "--map", description: "Render an architecture map from imports and test links." },
+  { name: "--format mermaid|json", description: "Choose architecture map output format." },
+  { name: "--min-coverage 70", description: "Set the coverage threshold for anchor ci." },
+  { name: "--interval 30", description: "Set watch-mode refresh interval in seconds." },
   { name: "--diff-file path", description: "Read a saved diff instead of the current git diff." },
   { name: "--write-doc", description: "Write ANCHOR_ARCHITECTURE.md from architecture output." },
   { name: "--json", description: "Output machine-readable JSON." },
@@ -211,6 +276,26 @@ export const mcpTools: TableItem[] = [
     name: "anchor_check_architecture",
     description: "Checks a diff against indexed placement, import, and test patterns.",
   },
+  {
+    name: "anchor_plan_task",
+    description: "Creates an evidence-backed deterministic edit plan for Cursor.",
+  },
+  {
+    name: "anchor_get_test_commands",
+    description: "Returns exact local test commands inferred for a file.",
+  },
+  {
+    name: "anchor_get_architecture_map",
+    description: "Returns Mermaid or JSON architecture graph data.",
+  },
+  {
+    name: "anchor_onboarding_pack",
+    description: "Summarizes areas, files, risks, tests, playbooks, and starter prompts.",
+  },
+  {
+    name: "anchor_get_playbook",
+    description: "Returns one committed repo playbook with cited evidence.",
+  },
 ];
 
 export const features = [
@@ -223,9 +308,18 @@ export const features = [
   "Secret redaction",
   "Regression memory",
   "Architecture Memory from local code",
+  "Architecture maps in Mermaid or JSON",
   "Related test detection",
+  "Exact test-command guidance",
+  "Task planning before edits",
   "File onboarding with anchor explain",
+  "Onboarding packs for files and areas",
   "Diff review with anchor review",
+  "Golden retrieval evals",
+  "Watch mode for fresh local code context",
+  "CI reliability gate",
+  "Local feedback for ranking transparency",
+  "Repo playbooks for repeated workflows",
   "Team-approved rules via anchor.rules.json",
   "Strict mode with confidence and freshness checks",
   "Reliability gate for weak, stale, or loose matches",
@@ -240,7 +334,12 @@ export const useCases = [
   "Find historical constraints before changing APIs.",
   "Avoid repeating regressions from old PRs.",
   "Discover likely related tests to run.",
+  "Ask Anchor for the exact test command before and after edits.",
+  "Build a deterministic implementation plan before Cursor starts changing files.",
   "Review a diff before opening a PR.",
+  "Run Anchor in CI to catch stale indexes, invalid rules, and retrieval drift.",
+  "Create onboarding packs for new developers or unfamiliar repo areas.",
+  "Use repo playbooks for repeated tasks such as adding API integrations or tests.",
   "Check whether new code follows existing architecture patterns.",
   "Generate a local architecture briefing for onboarding or refactors.",
   "Convert repeated tribal knowledge into team-approved rules.",
@@ -270,9 +369,33 @@ export const docsPages: DocsPage[] = [
     group: "Guide",
   },
   {
+    path: "/docs/planning",
+    title: "Planning and tests",
+    description: "Plan tasks and get exact test commands before editing.",
+    group: "Guide",
+  },
+  {
     path: "/docs/architecture",
     title: "Architecture Memory",
     description: "Understand file areas, import direction, symbols, and architecture checks.",
+    group: "Guide",
+  },
+  {
+    path: "/docs/onboarding",
+    title: "Onboarding packs",
+    description: "Create focused repo, file, and area onboarding briefs.",
+    group: "Guide",
+  },
+  {
+    path: "/docs/ci",
+    title: "CI and evals",
+    description: "Use retrieval evals and CI gates to keep Anchor reliable.",
+    group: "Guide",
+  },
+  {
+    path: "/docs/playbooks",
+    title: "Playbooks",
+    description: "Turn repeated evidence into repo workflow playbooks.",
     group: "Guide",
   },
   {

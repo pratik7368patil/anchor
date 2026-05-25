@@ -264,6 +264,104 @@ export type RankedRegressionEvent = RegressionEvent & {
   rankSignals: Record<string, number>;
 };
 
+export type TestCommand = {
+  command: string;
+  reason: string;
+  confidence: ConfidenceLevel;
+  filePath?: string;
+};
+
+export type TaskPlan = {
+  targetFiles: string[];
+  likelySymbols: string[];
+  implementationSteps: string[];
+  risks: string[];
+  recommendedTests: string[];
+  evidence: EvidenceRef[];
+  testCommands: TestCommand[];
+};
+
+export type ArchitectureMapFormat = "mermaid" | "json";
+
+export type ArchitectureMapNode = {
+  id: string;
+  label: string;
+  area: ArchitectureArea;
+  path?: string;
+};
+
+export type ArchitectureMapEdge = {
+  source: string;
+  target: string;
+  relationship: string;
+  weight: number;
+};
+
+export type ArchitectureMap = {
+  format: ArchitectureMapFormat;
+  nodes: ArchitectureMapNode[];
+  edges: ArchitectureMapEdge[];
+  mermaid?: string;
+};
+
+export type RetrievalEvalCase = {
+  id: string;
+  task: string;
+  files: string[];
+  expectedPrs: number[];
+  expectedCategories: WisdomCategory[];
+};
+
+export type RetrievalEvalResult = {
+  id: string;
+  task: string;
+  passed: boolean;
+  expectedPrs: number[];
+  foundPrs: number[];
+  missingPrs: number[];
+  expectedCategories: WisdomCategory[];
+  foundCategories: WisdomCategory[];
+  missingCategories: WisdomCategory[];
+};
+
+export type RetrievalEvalRunResult = {
+  ok: boolean;
+  path: string;
+  total: number;
+  passed: number;
+  failed: number;
+  results: RetrievalEvalResult[];
+};
+
+export type FeedbackRating = "useful" | "not-useful";
+
+export type FeedbackEvent = {
+  resultId: string;
+  rating: FeedbackRating;
+  note?: string;
+  createdAt: string;
+};
+
+export type Playbook = {
+  id: string;
+  title: string;
+  body: string;
+  evidence: EvidenceRef[];
+  createdAt: string;
+};
+
+export type OnboardingPack = {
+  title: string;
+  areas: Array<{ area: ArchitectureArea; files: string[]; patternCount: number }>;
+  importantFiles: string[];
+  riskyModules: string[];
+  relevantTests: string[];
+  topRules: TeamRule[];
+  playbooks: Playbook[];
+  starterPrompts: string[];
+  architectureMap: ArchitectureMap;
+};
+
 export type FetchPullRequestsProgress =
   | {
       stage: "discovering_pull_requests";
@@ -520,6 +618,11 @@ export type IndexStatus = {
   architectureComponentCount: number;
   architecturePatternCount: number;
   architectureImportCount: number;
+  architectureMapEdgeCount: number;
+  testCommandCount: number;
+  retrievalEvalCount: number;
+  feedbackEventCount: number;
+  playbookCount: number;
   historyCoverage?: "limited" | "all" | "unknown";
   historyLimit?: number;
   staleEvidenceCount: number;
@@ -528,6 +631,7 @@ export type IndexStatus = {
   lastCodeIndexTime?: string;
   lastArchitectureIndexTime?: string;
   lastRuleIndexTime?: string;
+  lastWatchIndexTime?: string;
   lastSuccessfulRun?: string;
   lastFailedRun?: string;
   staleCodeIndex?: boolean;

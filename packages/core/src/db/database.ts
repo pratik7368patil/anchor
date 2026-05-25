@@ -93,6 +93,17 @@ export function checkSchema(db: AnchorDatabase): boolean {
     const architectureFts = db
       .prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual') AND name = ?")
       .all("architecture_patterns_fts");
+    const developerValueTables = [
+      "architecture_map_edges",
+      "test_commands",
+      "retrieval_evals",
+      "feedback_events",
+      "playbooks",
+      "watch_state",
+    ].every(
+      (tableName) =>
+        db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all(tableName).length > 0,
+    );
     return (
       tables.length > 0 &&
       wisdom.length > 0 &&
@@ -101,7 +112,8 @@ export function checkSchema(db: AnchorDatabase): boolean {
       tests.length > 0 &&
       regressions.length > 0 &&
       architecture.length > 0 &&
-      architectureFts.length > 0
+      architectureFts.length > 0 &&
+      developerValueTables
     );
   } catch {
     return false;
@@ -467,6 +479,7 @@ export function replaceCodeIndex(
 
     insertTestAwareness(db, repoId, testAwareness.testFiles, testAwareness.testLinks);
     insertArchitectureData(db, repoId, architecture);
+    insertArchitectureMapEdges(db, repoId, repo, architecture, testAwareness.testLinks);
 
     db.prepare(
       `INSERT INTO code_index_state (repo, last_indexed_at, indexed_files, code_chunks, skipped_files)
@@ -519,6 +532,7 @@ function deleteExistingArchitectureData(db: AnchorDatabase, repoId: number): voi
   db.prepare("DELETE FROM architecture_patterns WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM architecture_components WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM code_imports WHERE repo_id = ?").run(repoId);
+  db.prepare("DELETE FROM architecture_map_edges WHERE repo_id = ?").run(repoId);
 }
 
 function insertArchitectureData(
@@ -594,6 +608,36 @@ function insertArchitectureData(
       pattern.sourceFiles.join(" "),
       pattern.symbols.join(" "),
     );
+  }
+}
+
+function insertArchitectureMapEdges(
+  db: AnchorDatabase,
+  repoId: number,
+  repo: string,
+  architecture: ArchitectureIndexData,
+  testLinks: TestLink[],
+): void {
+  const now = new Date().toISOString();
+  const insert = db.prepare(
+    `INSERT INTO architecture_map_edges
+     (id, repo_id, repo, source_path, target_path, relationship, weight, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
+  const seen = new Set<string>();
+  const addEdge = (sourcePath: string, targetPath: string, relationship: string, weight: number) => {
+    if (!sourcePath || !targetPath || sourcePath === targetPath) return;
+    const id = `${repo}:${sourcePath}->${targetPath}:${relationship}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    insert.run(id, repoId, repo, sourcePath, targetPath, relationship, weight, now);
+  };
+
+  for (const item of architecture.imports) {
+    if (item.importedPath) addEdge(item.sourcePath, item.importedPath, "imports", 0.9);
+  }
+  for (const link of testLinks) {
+    addEdge(link.sourcePath, link.testPath, "tested_by", link.strength);
   }
 }
 
@@ -681,9 +725,13 @@ function withCoverage<
     codeFileCount: status.codeFileCount,
     codeChunkCount: status.codeChunkCount,
     testLinkCount: status.testLinkCount,
+    testCommandCount: status.testCommandCount,
     regressionEventCount: status.regressionEventCount,
     architecturePatternCount: status.architecturePatternCount,
+    architectureMapEdgeCount: status.architectureMapEdgeCount,
     teamRuleCount: status.teamRuleCount,
+    retrievalEvalCount: status.retrievalEvalCount,
+    playbookCount: status.playbookCount,
     historyCoverage: status.historyCoverage,
     staleEvidenceCount: status.staleEvidenceCount,
     staleCodeIndex: status.staleCodeIndex,
@@ -712,6 +760,11 @@ export function getIndexStatus(
       architectureComponentCount: 0,
       architecturePatternCount: 0,
       architectureImportCount: 0,
+      architectureMapEdgeCount: 0,
+      testCommandCount: 0,
+      retrievalEvalCount: 0,
+      feedbackEventCount: 0,
+      playbookCount: 0,
       historyCoverage: "unknown",
       staleEvidenceCount: 0,
       teamRuleCount: rules.count,
@@ -741,6 +794,11 @@ export function getIndexStatus(
         architectureComponentCount: 0,
         architecturePatternCount: 0,
         architectureImportCount: 0,
+        architectureMapEdgeCount: 0,
+        testCommandCount: 0,
+        retrievalEvalCount: 0,
+        feedbackEventCount: 0,
+        playbookCount: 0,
         historyCoverage: "unknown",
         staleEvidenceCount: 0,
         teamRuleCount: rules.count,
@@ -768,6 +826,9 @@ export function getIndexStatus(
         "SELECT last_indexed_at FROM architecture_index_state ORDER BY last_indexed_at DESC LIMIT 1",
       )
       .get() as ArchitectureIndexStateRow | undefined;
+    const watchIndexRow = db
+      .prepare("SELECT last_indexed_at FROM watch_state ORDER BY last_indexed_at DESC LIMIT 1")
+      .get() as CodeIndexStateRow | undefined;
     const wisdomUnitCount = count("wisdom_units");
     const codeChunkCount = count("code_chunks");
     const lastSuccessfulRun = db
@@ -798,6 +859,11 @@ export function getIndexStatus(
       architectureComponentCount: count("architecture_components"),
       architecturePatternCount: count("architecture_patterns"),
       architectureImportCount: count("code_imports"),
+      architectureMapEdgeCount: count("architecture_map_edges"),
+      testCommandCount: count("test_commands"),
+      retrievalEvalCount: count("retrieval_evals"),
+      feedbackEventCount: count("feedback_events"),
+      playbookCount: count("playbooks"),
       historyCoverage: syncRow?.history_coverage ?? "unknown",
       historyLimit: syncRow?.history_limit ?? undefined,
       staleEvidenceCount: countStaleEvidence(db),
@@ -806,6 +872,7 @@ export function getIndexStatus(
       lastCodeIndexTime: codeIndexRow?.last_indexed_at ?? undefined,
       lastArchitectureIndexTime: architectureIndexRow?.last_indexed_at ?? undefined,
       lastRuleIndexTime: rules.lastRuleIndexTime,
+      lastWatchIndexTime: watchIndexRow?.last_indexed_at ?? undefined,
       lastSuccessfulRun: lastSuccessfulRun?.finished_at ?? undefined,
       lastFailedRun: lastFailedRun?.finished_at ?? undefined,
       staleCodeIndex,

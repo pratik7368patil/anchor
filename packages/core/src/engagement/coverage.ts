@@ -8,9 +8,13 @@ export type CoverageInput = Pick<
   | "codeFileCount"
   | "codeChunkCount"
   | "testLinkCount"
+  | "testCommandCount"
   | "regressionEventCount"
   | "architecturePatternCount"
+  | "architectureMapEdgeCount"
   | "teamRuleCount"
+  | "retrievalEvalCount"
+  | "playbookCount"
   | "historyCoverage"
   | "staleEvidenceCount"
   | "staleCodeIndex"
@@ -76,6 +80,13 @@ export function calculateCoverage(input: CoverageInput): CoverageReport {
     reasons.push("No source-to-test links inferred yet.");
   }
 
+  if (input.testCommandCount > 0) {
+    score += 5;
+    reasons.push(`${input.testCommandCount} exact test command(s) inferred.`);
+  } else {
+    reasons.push("No exact test commands inferred yet.");
+  }
+
   if (input.regressionEventCount > 0) {
     score += 10;
     reasons.push(`${input.regressionEventCount} regression events indexed.`);
@@ -90,11 +101,28 @@ export function calculateCoverage(input: CoverageInput): CoverageReport {
     reasons.push("No architecture patterns indexed yet.");
   }
 
+  if (input.architectureMapEdgeCount > 0) {
+    score += 5;
+    reasons.push(`${input.architectureMapEdgeCount} architecture map edge(s) indexed.`);
+  } else {
+    reasons.push("No architecture map edges indexed yet.");
+  }
+
   if (input.teamRuleCount > 0) {
     score += 5;
     reasons.push(`${input.teamRuleCount} team-approved rules available.`);
   } else {
     reasons.push("No team-approved rules found.");
+  }
+
+  if (input.retrievalEvalCount > 0) {
+    score += 5;
+    reasons.push(`${input.retrievalEvalCount} retrieval eval(s) configured.`);
+  }
+
+  if (input.playbookCount > 0) {
+    score += 5;
+    reasons.push(`${input.playbookCount} repo playbook(s) available.`);
   }
 
   if (input.staleEvidenceCount > 0) {

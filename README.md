@@ -215,11 +215,19 @@ anchor rules check-evidence
 
 `anchor rules suggest` reads local evidence and suggests draft rules from repeated or high-confidence constraints, API contracts, security notes, and regressions. It never modifies `anchor.rules.json`; the team still has to review and add any rule explicitly.
 
+Developer-value config files are opt-in and reviewable:
+
+- `anchor.evals.json` stores golden retrieval evals.
+- `anchor.playbooks.json` stores repo playbooks.
+- `.anchor/index.sqlite` stores local-only indexes and feedback.
+
 ## Explain And Review
 
 Use Anchor directly from a terminal:
 
 ```bash
+anchor plan "Add membership API integration" --file src/api/membership.ts --symbol createMembership
+anchor test-command src/api/membership.ts
 anchor explain src/auth/cache.ts
 anchor explain src/auth/cache.ts --share
 anchor review
@@ -230,15 +238,19 @@ anchor health
 anchor prompts
 ```
 
+`anchor plan "<task>"` turns the same local evidence into a deterministic edit plan: target files, likely symbols, implementation steps, risks, exact checks, and PR/rule/code evidence.
+
+`anchor test-command <file>` detects the most specific test command Anchor can infer from package scripts, workspace/package boundaries, Vitest/Jest/Playwright config, and related test files.
+
 `anchor explain <file>` summarizes what the file appears to own, matching PR decisions, team rules, known regressions, related tests, and important symbols using the local index only.
 
-`anchor review` reads the current `git diff` by default and groups evidence-backed findings into blockers, risks, historical constraints, regression checks, and recommended tests. It never approves or rejects code automatically.
+`anchor review` reads the current `git diff` by default and groups evidence-backed findings into blockers, risks, historical constraints, architecture concerns, regression checks, and exact recommended tests. It never approves or rejects code automatically.
 
 `anchor health` focuses on index quality: partial PR history, stale code index, invalid team rules, last failed index run, and the next suggested command.
 
 `--share` mode prints compact Markdown for Slack or PR comments: file summary, key constraints, known regressions, likely tests, and PR citations.
 
-`anchor prompts` prints Cursor-ready prompts for before-edit, explain-file, strict-mode, and review-diff workflows.
+`anchor prompts` prints Cursor-ready prompts for before-edit, planning, test-command, explain-file, strict-mode, review-diff, onboarding, and playbook workflows.
 
 `anchor health` and `anchor_index_status` include a local coverage score:
 
@@ -262,6 +274,8 @@ Anchor can summarize current repo architecture from the local code index:
 anchor architecture
 anchor architecture --file src/auth/cache.ts
 anchor architecture --area api
+anchor architecture --map --format mermaid
+anchor architecture --map --format json
 anchor architecture --check
 anchor architecture --diff-file change.diff --check
 anchor architecture --write-doc
@@ -284,6 +298,77 @@ Use it when Cursor is about to add a new integration, create tests, move code be
 - `## Recommended checks`
 
 Structured MCP metadata includes `matchReasons`, `rankSignals`, `queryTerms`, `relevantTests`, `regressionEvents`, `reliabilityGate`, `rejectedHistory`, and `indexHealth`.
+
+## Developer Value Workflows
+
+Anchor now covers more of the developer loop before, during, and after code changes:
+
+```bash
+anchor plan "Write tests for membership renewal" --file src/services/membership.ts --strict
+anchor test-command src/services/membership.ts
+anchor onboarding --area api
+anchor eval init
+anchor eval add --task "membership renewal contract" --file src/services/membership.ts --expect-pr 123
+anchor eval run
+anchor watch --interval 30
+anchor ci --strict --min-coverage 70
+anchor feedback record --result-id anchor-result-id --rating useful
+anchor playbooks init
+anchor playbooks suggest
+anchor playbooks list
+anchor playbooks get add-api-integration
+```
+
+- Task planning combines PR history, code evidence, architecture patterns, tests, regressions, and rules into a small edit plan.
+- Test-command guidance gives Cursor and humans exact checks instead of vague “run tests” advice.
+- Architecture maps render a deterministic Mermaid or JSON graph from imports, file areas, and test links.
+- Retrieval evals let a team pin golden tasks to expected PR evidence and detect ranking drift.
+- Watch mode keeps code, architecture, test links, and test commands fresh while developers work.
+- `anchor ci` runs rules validation, evidence checks, evals, coverage threshold checks, and stale-index checks for CI.
+- Onboarding packs summarize repo areas, important files, known risky modules, test conventions, playbooks, and starter prompts.
+- Local feedback is stored only in SQLite and lightly adjusts ranking without hiding cited evidence.
+- Repo playbooks turn repeated evidence into reviewed workflow briefs such as adding API integrations, writing service tests, or changing API contracts.
+
+Suggested team rollout:
+
+```bash
+anchor demo
+anchor init
+anchor index --limit 200
+anchor index-code
+anchor health
+anchor eval init
+anchor rules suggest
+anchor ci
+```
+
+Optional GitHub Actions check:
+
+```yaml
+name: Anchor CI
+
+on:
+  pull_request:
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pratik7368patil/anchor build
+      - run: pnpm --filter @pratik7368patil/anchor start -- index-code
+      - run: pnpm --filter @pratik7368patil/anchor start -- ci --strict --min-coverage 70
+```
+
+Anchor does not add this workflow automatically. Teams should opt in after agreeing on coverage thresholds and eval cases.
 
 ## Reliability Gate
 
@@ -362,10 +447,28 @@ Review diff:
 After making the diff, call `anchor_review_diff` and list evidence-backed blockers, risks, historical constraints, regression checks, and recommended tests.
 ```
 
+Plan task:
+
+```text
+Before implementing this task, call `anchor_plan_task` with the task, target files, and likely symbols. Follow the evidence-backed plan and run the exact test commands it returns.
+```
+
+Test command:
+
+```text
+Before editing this file, call `anchor_get_test_commands` and use the most specific strong or moderate command after the change.
+```
+
 Architecture:
 
 ```text
 Before adding this API integration, call `anchor_get_architecture` for the `api` area and summarize existing placement, import, and test patterns.
+```
+
+Onboarding:
+
+```text
+Before working in this area, call `anchor_onboarding_pack` for the relevant file or architecture area and summarize important files, risks, tests, and playbooks.
 ```
 
 The main tool input is:
@@ -393,6 +496,11 @@ Secondary tools:
 - `anchor_review_diff`
 - `anchor_get_architecture`
 - `anchor_check_architecture`
+- `anchor_plan_task`
+- `anchor_get_test_commands`
+- `anchor_get_architecture_map`
+- `anchor_onboarding_pack`
+- `anchor_get_playbook`
 
 ## Development Commands
 
@@ -404,12 +512,20 @@ pnpm --filter @pratik7368patil/anchor start -- init
 pnpm --filter @pratik7368patil/anchor start -- demo
 pnpm --filter @pratik7368patil/anchor start -- prompts
 pnpm --filter @pratik7368patil/anchor start -- index --repo owner/name --limit 10
+pnpm --filter @pratik7368patil/anchor start -- plan "Add membership API" --file src/api/membership.ts
+pnpm --filter @pratik7368patil/anchor start -- test-command src/api/membership.ts
 pnpm --filter @pratik7368patil/anchor start -- explain src/auth/cache.ts
 pnpm --filter @pratik7368patil/anchor start -- architecture
+pnpm --filter @pratik7368patil/anchor start -- architecture --map --format mermaid
 pnpm --filter @pratik7368patil/anchor start -- architecture --file src/auth/cache.ts
 pnpm --filter @pratik7368patil/anchor start -- architecture --check --diff-file change.diff
 pnpm --filter @pratik7368patil/anchor start -- review
 pnpm --filter @pratik7368patil/anchor start -- health
+pnpm --filter @pratik7368patil/anchor start -- onboarding --area api
+pnpm --filter @pratik7368patil/anchor start -- eval init
+pnpm --filter @pratik7368patil/anchor start -- eval run
+pnpm --filter @pratik7368patil/anchor start -- ci
+pnpm --filter @pratik7368patil/anchor start -- playbooks suggest
 pnpm --filter @pratik7368patil/anchor start -- rules suggest
 pnpm --filter @pratik7368patil/anchor start -- doctor
 pnpm --filter @pratik7368patil/anchor start -- serve
@@ -428,9 +544,9 @@ NPM_TOKEN
 Release flow:
 
 ```bash
-npm --prefix packages/core version 0.1.14 --no-git-tag-version
-npm --prefix packages/mcp-server version 0.1.14 --no-git-tag-version
-npm --prefix packages/cli version 0.1.14 --no-git-tag-version
+npm --prefix packages/core version 0.1.15 --no-git-tag-version
+npm --prefix packages/mcp-server version 0.1.15 --no-git-tag-version
+npm --prefix packages/cli version 0.1.15 --no-git-tag-version
 ```
 
 Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.
