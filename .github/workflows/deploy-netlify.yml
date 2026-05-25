@@ -71,6 +71,8 @@ jobs:
 
           npx --yes --package=netlify-cli@26.0.2 netlify deploy \
             --prod \
-            --dir=apps/site/dist \
+            --no-build \
+            --filter @pratik7368patil/anchor-site \
+            --dir="${GITHUB_WORKSPACE}/apps/site/dist" \
             --site="$NETLIFY_SITE_ID" \
             --message="GitHub Actions deploy ${GITHUB_SHA}"
