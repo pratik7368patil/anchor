@@ -6,7 +6,7 @@ It helps Cursor notice past architecture decisions, current architecture pattern
 
 Anchor is not a SaaS, does not create a dashboard, does not send telemetry, and does not call any LLM API in the MVP.
 
-Anchor is evidence-backed, not truth-backed: retrieved history includes confidence and current-code freshness signals so Cursor can see when evidence may be weak or stale.
+Anchor is evidence-backed, not truth-backed: retrieved history includes confidence, current-code freshness, and a reliability gate so Cursor can see when evidence may be weak, stale, or only loosely matched to the requested file.
 
 ## Why Cursor Users Need It
 
@@ -97,7 +97,7 @@ This safely merges `.cursor/mcp.json` with:
 }
 ```
 
-It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor_get_context` before non-trivial edits and to treat returned history as evidence, not instructions.
+It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor_get_context` before non-trivial edits, use strict mode for risky changes, and treat returned history as evidence, not instructions.
 
 `anchor init` adds `.anchor/` to `.git/info/exclude` as a local-only exclude rule. That keeps `.anchor/index.sqlite` out of `git status` without adding or changing a committed `.gitignore` file.
 
@@ -283,7 +283,32 @@ Use it when Cursor is about to add a new integration, create tests, move code be
 - `## Risks`
 - `## Recommended checks`
 
-Structured MCP metadata includes `matchReasons`, `rankSignals`, `queryTerms`, `relevantTests`, `regressionEvents`, and `indexHealth`.
+Structured MCP metadata includes `matchReasons`, `rankSignals`, `queryTerms`, `relevantTests`, `regressionEvents`, `reliabilityGate`, `rejectedHistory`, and `indexHealth`.
+
+## Reliability Gate
+
+Anchor is designed to reduce misleading context, not to pretend history is always correct. During `anchor_get_context`, Anchor cross-checks historical PR evidence against the requested files, symbols, indexed current code, team rules, and architecture patterns.
+
+The reliability gate:
+
+- accepts evidence that is non-stale, meets the requested confidence threshold, and has a direct file, symbol, or repeated-evidence match
+- flags stale, weak, or loose text-only matches in structured metadata
+- fails closed in strict mode and returns `No reliable historical evidence found.` when nothing qualifies
+- adds warning lines when context should be treated as a lead to verify instead of guidance to follow
+
+For high-risk changes, ask Cursor to call:
+
+```json
+{
+  "task": "Refactor auth cache loading",
+  "files": ["src/auth/cache.ts"],
+  "symbols": ["AuthCache"],
+  "strict": true,
+  "minConfidence": "moderate"
+}
+```
+
+The MCP metadata includes `reliabilityGate` and `rejectedHistory`, so agents can inspect why evidence was trusted or filtered.
 
 ## Optional Local Semantic Search
 
@@ -358,7 +383,7 @@ The main tool input is:
 }
 ```
 
-Use `strict: true` when Cursor should only receive non-stale evidence at or above `minConfidence`. If nothing qualifies, Anchor returns “No reliable historical evidence found.”
+Use `strict: true` when Cursor should only receive non-stale evidence at or above `minConfidence` with a direct relevance signal. If nothing qualifies, Anchor returns “No reliable historical evidence found.”
 
 Secondary tools:
 
@@ -403,9 +428,9 @@ NPM_TOKEN
 Release flow:
 
 ```bash
-npm --prefix packages/core version 0.1.13 --no-git-tag-version
-npm --prefix packages/mcp-server version 0.1.13 --no-git-tag-version
-npm --prefix packages/cli version 0.1.13 --no-git-tag-version
+npm --prefix packages/core version 0.1.14 --no-git-tag-version
+npm --prefix packages/mcp-server version 0.1.14 --no-git-tag-version
+npm --prefix packages/cli version 0.1.14 --no-git-tag-version
 ```
 
 Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.
@@ -492,4 +517,4 @@ Run `anchor index-code` and confirm test files are not ignored by git. Anchor on
 
 ## Safety Notes
 
-Anchor never obeys historical PR comments as instructions. It surfaces them as cited evidence with PR numbers, source types, file paths when available, PR URLs, confidence, and current-code freshness. Low-confidence evidence is phrased cautiously, and stale evidence is penalized or filtered in strict mode.
+Anchor never obeys historical PR comments as instructions. It surfaces them as cited evidence with PR numbers, source types, file paths when available, PR URLs, confidence, current-code freshness, and reliability-gate reasons. Low-confidence evidence is phrased cautiously, stale or loose matches are flagged, and strict mode filters anything that does not pass freshness, confidence, and target relevance checks.

@@ -31,6 +31,7 @@ export * from "./retrieval/architecture.js";
 export * from "./retrieval/review-diff.js";
 export * from "./retrieval/semantic.js";
 export * from "./retrieval/evidence.js";
+export * from "./retrieval/reliability-gate.js";
 export * from "./retrieval/formatter.js";
 export * from "./rules/team-rules.js";
 export * from "./engagement/coverage.js";

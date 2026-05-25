@@ -168,7 +168,10 @@ export const options: TableItem[] = [
   { name: "--no-code", description: "Skip codebase indexing." },
   { name: "--since YYYY-MM-DD", description: "Index PRs updated since a date." },
   { name: "--force", description: "Rebuild the local index." },
-  { name: "--strict", description: "Only return stronger, non-stale evidence." },
+  {
+    name: "--strict",
+    description: "Fail closed unless evidence is non-stale, confident, and directly relevant.",
+  },
   { name: "--file <path>", description: "Focus architecture or explain output on one file." },
   { name: "--area api", description: "Filter architecture patterns by area." },
   { name: "--check", description: "Check the current diff against architecture patterns." },
@@ -225,6 +228,7 @@ export const features = [
   "Diff review with anchor review",
   "Team-approved rules via anchor.rules.json",
   "Strict mode with confidence and freshness checks",
+  "Reliability gate for weak, stale, or loose matches",
   "Coverage score via anchor health",
   "Offline demo via anchor demo",
   "Shareable Slack and PR summaries",
@@ -243,6 +247,7 @@ export const useCases = [
   "Onboard new developers faster.",
   "Demo repo memory to the team without GitHub access.",
   "Keep Cursor grounded in actual repo history instead of guessing.",
+  "Use strict mode for risky work so loose historical matches do not steer the agent.",
 ];
 
 export const docsPages: DocsPage[] = [

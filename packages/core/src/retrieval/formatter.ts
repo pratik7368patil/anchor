@@ -33,7 +33,12 @@ function currentCodeCheckLine(unit: RankedWisdomUnit | RankedTeamRule): string {
 }
 
 function whyItMatters(unit: RankedWisdomUnit, input: AnchorContextInput): string {
-  const prefix = unit.confidenceLevel === "weak" ? "Historical evidence suggests " : "";
+  const prefix =
+    unit.freshnessStatus === "possibly_stale"
+      ? "Historical evidence may be stale, but suggests "
+      : unit.confidenceLevel === "weak"
+        ? "Weak historical evidence suggests "
+        : "";
   const target = input.files?.[0] ? ` when editing ${input.files[0]}` : " for this change";
   const categoryReasons: Record<WisdomCategory, string> = {
     security_note: `${prefix}there is a security-sensitive constraint to preserve${target}.`,
@@ -48,6 +53,16 @@ function whyItMatters(unit: RankedWisdomUnit, input: AnchorContextInput): string
     unknown: `${prefix}this may be relevant background evidence.`,
   };
   return categoryReasons[unit.category];
+}
+
+function historicalStatement(unit: RankedWisdomUnit): string {
+  const sentence = clipSentence(unit.sanitizedText);
+  if (unit.freshnessStatus === "stale") return `Stale historical evidence: ${sentence}`;
+  if (unit.freshnessStatus === "possibly_stale") {
+    return `Historical evidence may be stale: ${sentence}`;
+  }
+  if (unit.confidenceLevel === "weak") return `Weak historical signal only: ${sentence}`;
+  return sentence;
 }
 
 function riskLines(units: RankedWisdomUnit[]): string[] {
@@ -112,10 +127,7 @@ export function formatAnchorContext(
     );
   } else {
     units.forEach((unit, index) => {
-      const statement =
-        unit.confidenceLevel === "weak"
-          ? `Historical evidence suggests ${clipSentence(unit.sanitizedText)}`
-          : clipSentence(unit.sanitizedText);
+      const statement = historicalStatement(unit);
       lines.push(`${index + 1}. [${unit.category}] ${statement}`);
       lines.push(`   Evidence: ${evidenceLine(unit)}`);
       lines.push(`   Confidence: ${confidenceLine(unit)}`);

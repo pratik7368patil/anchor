@@ -366,6 +366,10 @@ function renderWorkflowsPage(): string {
           <p>Ask Cursor to call <code>anchor_get_context</code> before refactors, API changes, or security-sensitive work.</p>
         </div>
         <div>
+          <strong>Risky changes</strong>
+          <p>Use <code>strict: true</code> with <code>minConfidence: "moderate"</code> so weak, stale, or loose matches do not steer the agent.</p>
+        </div>
+        <div>
           <strong>Explain a file</strong>
           <p>Run <code>anchor explain &lt;file&gt;</code> to onboard yourself before touching a confusing area.</p>
         </div>
@@ -488,7 +492,9 @@ function renderMcpPage(): string {
   "task": "Refactor auth cache loading",
   "files": ["src/auth/cache.ts"],
   "symbols": ["AuthCache"],
-  "maxResults": 8
+  "maxResults": 8,
+  "strict": true,
+  "minConfidence": "moderate"
 }`,
         true,
       )}
@@ -514,6 +520,10 @@ function renderPrivacyPage(): string {
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderShieldIcon()}</span>
           <div><strong>PR text is untrusted evidence</strong><span>Secrets and prompt-injection phrases are sanitized or redacted before they can become context for Cursor.</span></div>
+        </div>
+        <div class="safety-row">
+          <span class="safety-icon" aria-hidden="true">${renderShieldIcon()}</span>
+          <div><strong>Reliability gate</strong><span>Strict mode filters stale, weak, or loose text-only historical matches and returns a clear no reliable evidence message when nothing passes.</span></div>
         </div>
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderReadOnlyIcon()}</span>

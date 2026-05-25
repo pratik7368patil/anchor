@@ -41,6 +41,7 @@ import {
   sanitizeHistoricalText,
   stripPromptInjection,
   addTeamRule,
+  buildAnchorContextResult,
   checkArchitecture,
   classifyArchitectureArea,
   calculateCoverage,
@@ -79,6 +80,41 @@ function createIndexedFixtureDb() {
 function writeFileEnsuringDir(filePath: string, content: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content);
+}
+
+function looseTokenMigrationPr(): PullRequestRecord {
+  return {
+    repo: "owner/repo",
+    number: 303,
+    html_url: "https://github.com/owner/repo/pull/303",
+    title: "Preserve token migration behavior",
+    body: "Constraint: token migration must remain backward compatible because older payment retries depend on it.",
+    user: { login: "dana" },
+    labels: [{ name: "migration" }],
+    created_at: "2024-05-01T10:00:00Z",
+    merged_at: "2024-05-02T10:00:00Z",
+    updated_at: "2024-05-02T10:00:00Z",
+    files: [
+      {
+        filename: "src/payments/webhook.ts",
+        patch:
+          "@@ function migratePaymentToken @@\n+export function migratePaymentToken() { return true; }",
+        additions: 5,
+        deletions: 1,
+      },
+    ],
+    reviews: [],
+    reviewComments: [
+      {
+        user: { login: "reviewer-b" },
+        body: "Must keep the token migration fallback because old webhook retries can arrive late.",
+        path: "src/payments/webhook.ts",
+        created_at: "2024-05-02T09:00:00Z",
+      },
+    ],
+    issueComments: [],
+    commits: [{ commit: { message: "Keep payment token migration compatible" } }],
+  };
 }
 
 afterEach(() => {
@@ -236,6 +272,9 @@ describe("Cursor config", () => {
     expect(fs.existsSync(config.path)).toBe(true);
     expect(fs.existsSync(rule.path)).toBe(true);
     expect(fs.readFileSync(rule.path, "utf8")).toBe(ANCHOR_CURSOR_RULE);
+    expect(ANCHOR_CURSOR_RULE).toContain("strict: true");
+    expect(ANCHOR_CURSOR_RULE).toContain('minConfidence: "moderate"');
+    expect(ANCHOR_CURSOR_RULE).toContain("No reliable historical evidence found");
   });
 
   it("adds .anchor/ to local git exclude without changing .gitignore", () => {
@@ -531,6 +570,138 @@ describe("SQLite indexing and retrieval", () => {
       expect(formatted.metadata.queryTerms).toContain("authcache");
       expect(formatted.metadata.relevantTests).toBeDefined();
       expect(formatted.metadata.regressionEvents).toBeDefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("strict context fails closed when history only loosely matches the task text", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.ts"),
+      "export class AuthCache { refreshToken() { return true; } }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/payments/webhook.ts"),
+      "export function migratePaymentToken() { return true; }\n",
+    );
+    execFileSync("git", ["add", "src/auth/cache.ts", "src/payments/webhook.ts"], {
+      cwd,
+      stdio: "ignore",
+    });
+
+    const db = openAnchorDatabase(cwd);
+    try {
+      indexPullRequests(db, [looseTokenMigrationPr()], { cwd, repo: "owner/repo" });
+      indexCodebase(db, { cwd, repo: "owner/repo" });
+
+      const context = buildAnchorContextResult(db, cwd, {
+        task: "change AuthCache token migration",
+        files: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+        strict: true,
+        minConfidence: "moderate",
+      });
+
+      expect(context.markdown).toContain("No reliable historical evidence found.");
+      expect(context.markdown).toContain("Strict reliability gate");
+      expect(context.metadata.resultCount).toBe(0);
+      expect(context.metadata.reliabilityGate).toMatchObject({
+        status: "failed",
+        acceptedHistoryCount: 0,
+        rejectedHistoryCount: expect.any(Number),
+      });
+      expect(JSON.stringify(context.metadata.rejectedHistory)).toContain(
+        "no direct file, symbol, or repeated-evidence match",
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("strict context keeps exact file and symbol evidence that passes the reliability gate", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.ts"),
+      "export class AuthCache { refreshToken() { return true; } }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.test.ts"),
+      "import { AuthCache } from './cache';\ntest('refreshToken', () => new AuthCache());\n",
+    );
+    execFileSync("git", ["add", "src/auth/cache.ts", "src/auth/cache.test.ts"], {
+      cwd,
+      stdio: "ignore",
+    });
+
+    const db = openAnchorDatabase(cwd);
+    try {
+      indexPullRequests(db, [...loadFixtures(), looseTokenMigrationPr()], {
+        cwd,
+        repo: "owner/repo",
+      });
+      indexCodebase(db, { cwd, repo: "owner/repo" });
+
+      const context = buildAnchorContextResult(db, cwd, {
+        task: "refactor AuthCache token migration",
+        files: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+        strict: true,
+        minConfidence: "moderate",
+      });
+
+      expect(context.markdown).toContain("PR #101");
+      expect(context.markdown).not.toContain("No reliable historical evidence found.");
+      expect(context.metadata.reliabilityGate).toMatchObject({
+        status: "passed",
+        acceptedHistoryCount: expect.any(Number),
+      });
+      expect(context.metadata.resultCount).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("golden retrieval prefers exact file and symbol evidence over loose text-only matches", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.ts"),
+      "export class AuthCache { refreshToken() { return true; } }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/payments/webhook.ts"),
+      "export function migratePaymentToken() { return true; }\n",
+    );
+    execFileSync("git", ["add", "src/auth/cache.ts", "src/payments/webhook.ts"], {
+      cwd,
+      stdio: "ignore",
+    });
+
+    const db = openAnchorDatabase(cwd);
+    try {
+      indexPullRequests(db, [...loadFixtures(), looseTokenMigrationPr()], {
+        cwd,
+        repo: "owner/repo",
+      });
+      indexCodebase(db, { cwd, repo: "owner/repo" });
+
+      const context = buildAnchorContextResult(db, cwd, {
+        task: "refactor AuthCache token migration",
+        files: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+        maxResults: 8,
+      });
+      const items = context.metadata.items as Array<{ prNumber: number; matchReasons: string[] }>;
+
+      expect(items[0]?.prNumber).toBe(101);
+      expect(items[0]?.matchReasons).toContain("exact file path match");
+      expect(context.metadata.reliabilityGate).toMatchObject({
+        status: "passed",
+      });
+      expect(JSON.stringify(context.metadata.rejectedHistory)).toContain("303");
     } finally {
       db.close();
     }
