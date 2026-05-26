@@ -9,7 +9,11 @@ import { fetchPullRequestDetails } from "./fetch-pr-details.js";
 import { fetchMergedPullRequestsWithGraphQL } from "./fetch-prs-graphql.js";
 import type { GitHubGraphQLFetch } from "./graphql-client.js";
 import type { GitHubRateLimitController } from "./rate-limit.js";
-import { requestWithGitHubRateLimit } from "./rate-limit.js";
+import {
+  isGitHubGraphQLResourceLimitError,
+  isGitHubRateLimitError,
+  requestWithGitHubRateLimit,
+} from "./rate-limit.js";
 
 export type FetchPullRequestsOptions = {
   token: string;
@@ -51,6 +55,10 @@ function createProgressRateLimitController(
         ...progress,
       }),
   };
+}
+
+export function shouldFallbackToRestAfterGraphQLError(error: unknown): boolean {
+  return !isGitHubRateLimitError(error) && !isGitHubGraphQLResourceLimitError(error);
 }
 
 async function fetchPullRequestDetailsConcurrently(options: {
@@ -228,6 +236,7 @@ export async function fetchMergedPullRequests(
       restClient: options.restClient,
     });
   } catch (error) {
+    if (!shouldFallbackToRestAfterGraphQLError(error)) throw error;
     options.onProgress?.({
       stage: "github_fetch_backend_fallback",
       repo: options.repo,

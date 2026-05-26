@@ -45,6 +45,7 @@ import {
   fetchMergedPullRequestsWithGraphQL,
   runDoctor,
   sanitizeHistoricalText,
+  shouldFallbackToRestAfterGraphQLError,
   stripPromptInjection,
   addTeamRule,
   buildAnchorContextResult,
@@ -690,6 +691,21 @@ describe("GitHub GraphQL PR fetching", () => {
         }),
       ),
     ).toBe(true);
+  });
+
+  it("does not fall back to the REST detail crawler for GraphQL rate or resource limits", () => {
+    expect(
+      shouldFallbackToRestAfterGraphQLError(
+        new GitHubGraphQLError("API rate limit exceeded", {
+          status: 403,
+          headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "20" },
+        }),
+      ),
+    ).toBe(false);
+    expect(shouldFallbackToRestAfterGraphQLError(new Error("GraphQL resource limit exceeded"))).toBe(
+      false,
+    );
+    expect(shouldFallbackToRestAfterGraphQLError(new Error("GraphQL unavailable"))).toBe(true);
   });
 
   it("sanitizes GraphQL-fetched prompt injection and secrets before indexed output", async () => {
