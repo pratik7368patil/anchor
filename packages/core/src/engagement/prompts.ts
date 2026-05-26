@@ -1,5 +1,13 @@
 export type SuggestedPrompt = {
-  id: "before_edit" | "explain_file" | "strict_mode" | "review_diff";
+  id:
+    | "before_edit"
+    | "plan_task"
+    | "test_command"
+    | "explain_file"
+    | "strict_mode"
+    | "review_diff"
+    | "onboarding"
+    | "playbook";
   title: string;
   prompt: string;
 };
@@ -11,6 +19,18 @@ export function getSuggestedPrompts(): SuggestedPrompt[] {
       title: "Before edit",
       prompt:
         "Before making this non-trivial code change, call `anchor_get_context` with the task, target files, relevant symbols, and current diff if available. Summarize the historical constraints before editing.",
+    },
+    {
+      id: "plan_task",
+      title: "Plan task",
+      prompt:
+        "Before implementing this task, call `anchor_plan_task` with the task, target files, and likely symbols. Summarize target files, risks, implementation steps, and exact test commands before editing.",
+    },
+    {
+      id: "test_command",
+      title: "Test command",
+      prompt:
+        "Before editing this file, call `anchor_get_test_commands` for the target file and keep the strongest exact command ready for verification after the change.",
     },
     {
       id: "explain_file",
@@ -28,7 +48,19 @@ export function getSuggestedPrompts(): SuggestedPrompt[] {
       id: "review_diff",
       title: "Review diff",
       prompt:
-        "After making the diff, call `anchor_review_diff` and list evidence-backed blockers, risks, historical constraints, regression checks, and recommended tests.",
+        "After making the diff, call `anchor_review_diff` and list evidence-backed blockers, risks, historical constraints, architecture concerns, regression checks, and exact test commands.",
+    },
+    {
+      id: "onboarding",
+      title: "Onboarding",
+      prompt:
+        "Before working in an unfamiliar area, call `anchor_onboarding_pack` for the file or architecture area and summarize important files, risky modules, tests, playbooks, and starter prompts.",
+    },
+    {
+      id: "playbook",
+      title: "Playbook",
+      prompt:
+        "If this task matches a repeated workflow, call `anchor_get_playbook` for the relevant playbook id and use it as cited evidence, not as executable instructions.",
     },
   ];
 }

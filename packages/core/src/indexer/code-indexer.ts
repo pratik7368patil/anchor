@@ -4,6 +4,7 @@ import type { CodeChunk, CodeIndexProgress, CodeIndexSummary } from "../types.js
 import { buildArchitectureIndex } from "./architecture-indexer.js";
 import { chunkCodeFile } from "./code-chunker.js";
 import { discoverCodeFiles } from "./code-file-discovery.js";
+import { refreshTestCommands } from "../retrieval/test-commands.js";
 
 export function indexCodebase(
   db: AnchorDatabase,
@@ -55,7 +56,7 @@ export function indexCodebase(
     imports: architecture.imports.length,
   });
 
-  return replaceCodeIndex(
+  const summary = replaceCodeIndex(
     db,
     options.repo,
     discovery.files.map(({ content: _content, absolutePath: _absolutePath, ...file }) => file),
@@ -64,6 +65,8 @@ export function indexCodebase(
     options.cwd,
     architecture,
   );
+  refreshTestCommands(db, options.cwd, options.repo);
+  return summary;
 }
 
 export function emptyCodeIndexSummary(cwd: string): CodeIndexSummary {

@@ -7,6 +7,7 @@ import type {
   RankedTeamRule,
   RankedTestFile,
   RankedWisdomUnit,
+  TestCommand,
   WisdomCategory,
 } from "../types.js";
 import { clipSentence } from "../utils/text.js";
@@ -92,6 +93,7 @@ export function formatAnchorContext(
   regressionEvents: RankedRegressionEvent[] = [],
   architecturePatterns: RankedArchitecturePattern[] = [],
   extraMetadata: Record<string, unknown> = {},
+  testCommands: TestCommand[] = [],
 ): FormattedResult {
   const lines = ["# Anchor Context", ""];
 
@@ -183,6 +185,18 @@ export function formatAnchorContext(
     });
   }
 
+  lines.push("## Test commands", "");
+  if (testCommands.length === 0) {
+    lines.push("No exact test command inferred from the local index.", "");
+  } else {
+    testCommands.slice(0, 6).forEach((command, index) => {
+      lines.push(`${index + 1}. \`${command.command}\``);
+      lines.push(`   Why: ${command.reason} (${command.confidence})`);
+      if (command.filePath) lines.push(`   Target: ${command.filePath}`);
+      lines.push("");
+    });
+  }
+
   lines.push("## Regression memory", "");
   if (regressionEvents.length === 0) {
     lines.push("No related regression events found in the local index.", "");
@@ -219,6 +233,7 @@ export function formatAnchorContext(
       items: units.map((unit) => ({
         id: unit.id,
         score: unit.score,
+        feedbackAdjustedScore: unit.score,
         confidence: unit.confidence,
         confidenceLevel: unit.confidenceLevel,
         confidenceReasons: unit.confidenceReasons,
@@ -285,6 +300,12 @@ export function formatAnchorContext(
         strength: test.strength,
         score: test.score,
         matchedSymbols: test.matchedSymbols,
+      })),
+      testCommands: testCommands.map((command) => ({
+        command: command.command,
+        reason: command.reason,
+        confidence: command.confidence,
+        filePath: command.filePath,
       })),
       regressionEvents: regressionEvents.map((event) => ({
         id: event.id,
@@ -359,6 +380,11 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Architecture components: ${status.architectureComponentCount}`,
     `- Architecture patterns: ${status.architecturePatternCount}`,
     `- Architecture imports: ${status.architectureImportCount}`,
+    `- Architecture map edges: ${status.architectureMapEdgeCount}`,
+    `- Test commands: ${status.testCommandCount}`,
+    `- Retrieval evals: ${status.retrievalEvalCount}`,
+    `- Feedback events: ${status.feedbackEventCount}`,
+    `- Playbooks: ${status.playbookCount}`,
     `- Anchor coverage: ${status.coverageScore}% (${status.coverageGrade})`,
     `- History coverage: ${status.historyCoverage ?? "unknown"}`,
     `- History limit: ${status.historyLimit ?? "n/a"}`,
@@ -368,6 +394,7 @@ export function formatIndexStatus(status: IndexStatus): FormattedResult {
     `- Last code index: ${status.lastCodeIndexTime ?? "never"}`,
     `- Last architecture index: ${status.lastArchitectureIndexTime ?? "never"}`,
     `- Last rule index: ${status.lastRuleIndexTime ?? "never"}`,
+    `- Last watch index: ${status.lastWatchIndexTime ?? "never"}`,
     `- Last successful index run: ${status.lastSuccessfulRun ?? "never"}`,
     `- Last failed index run: ${status.lastFailedRun ?? "never"}`,
     `- Stale code index: ${status.staleCodeIndex ? "yes" : "no"}`,

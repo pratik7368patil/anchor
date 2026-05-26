@@ -44,6 +44,11 @@ type ClaimRepetitionRow = {
   pr_number: number;
 };
 
+type FeedbackAdjustmentRow = {
+  result_id: string;
+  rating: "useful" | "not-useful";
+};
+
 function parseJsonArray(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -288,6 +293,18 @@ function loadClaimRepetitionCounts(db: AnchorDatabase): Map<string, number> {
   return new Map([...grouped.entries()].map(([key, prs]) => [key, prs.size]));
 }
 
+function loadFeedbackAdjustments(db: AnchorDatabase): Map<string, number> {
+  const rows = db
+    .prepare("SELECT result_id, rating FROM feedback_events")
+    .all() as FeedbackAdjustmentRow[];
+  const adjustments = new Map<string, number>();
+  for (const row of rows) {
+    const delta = row.rating === "useful" ? 0.03 : -0.03;
+    adjustments.set(row.result_id, (adjustments.get(row.result_id) ?? 0) + delta);
+  }
+  return adjustments;
+}
+
 function minConfidence(input: AnchorContextInput | SearchHistoryInput): ConfidenceLevel {
   if ("minConfidence" in input && input.minConfidence) return input.minConfidence;
   return "strong";
@@ -309,6 +326,7 @@ export function rankWisdomUnits(
   const candidates = loadCandidates(db, input);
   const codeSnapshot = loadCurrentCodeSnapshot(db);
   const repetitionCounts = loadClaimRepetitionCounts(db);
+  const feedbackAdjustments = loadFeedbackAdjustments(db);
   const duplicates = new Map<string, number>();
   for (const unit of candidates) {
     const key = claimKeyFor(unit.category, unit.sanitizedText);
@@ -318,13 +336,24 @@ export function rankWisdomUnits(
   const ranked = candidates
     .map((unit) => {
       const key = claimKeyFor(unit.category, unit.sanitizedText);
-      return scoreUnit(
+      const scored = scoreUnit(
         unit,
         input,
         duplicates.get(key) ?? 1,
         repetitionCounts.get(key) ?? 1,
         evaluateFreshness(unit, codeSnapshot),
       );
+      const adjustment = feedbackAdjustments.get(unit.id) ?? 0;
+      if (adjustment === 0) return scored;
+      const score = Number(Math.max(0, Math.min(1, scored.score + adjustment)).toFixed(4));
+      return {
+        ...scored,
+        score,
+        rankSignals: {
+          ...scored.rankSignals,
+          feedbackAdjustment: Number(adjustment.toFixed(4)),
+        },
+      };
     })
     .filter((unit) => passesStrictMode(unit, input))
     .sort((a, b) => b.score - a.score || b.confidence - a.confidence);

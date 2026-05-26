@@ -17,7 +17,11 @@ const legacyDocsHashes: Record<string, string> = {
   "#docs": "/docs",
   "#quickstart": "/docs/quickstart",
   "#workflows": "/docs/workflows",
+  "#planning": "/docs/planning",
   "#architecture": "/docs/architecture",
+  "#onboarding": "/docs/onboarding",
+  "#ci": "/docs/ci",
+  "#playbooks": "/docs/playbooks",
   "#commands": "/docs/cli",
   "#options": "/docs/options",
   "#mcp": "/docs/mcp",
@@ -275,8 +279,16 @@ function renderDocsPageContent(path: string): string {
       return renderQuickstartPage();
     case "/docs/workflows":
       return renderWorkflowsPage();
+    case "/docs/planning":
+      return renderPlanningPage();
     case "/docs/architecture":
       return renderArchitecturePage();
+    case "/docs/onboarding":
+      return renderOnboardingPage();
+    case "/docs/ci":
+      return renderCiPage();
+    case "/docs/playbooks":
+      return renderPlaybooksPage();
     case "/docs/rules":
       return renderRulesPage();
     case "/docs/cli":
@@ -305,6 +317,20 @@ function renderDocsOverview(): string {
       <div class="doc-divider"></div>
       <p class="doc-prose">It is built for maintainers who want AI edits grounded in local evidence instead of guesses. Anchor indexes repository history into SQLite, exposes that memory through a narrow Cursor MCP server, and returns cited context before risky edits.</p>
       <p class="doc-prose">Start with installation, then use the workflow and reference pages when you need exact commands, MCP tool names, or team rule behavior.</p>
+      <h3>Recommended team rollout</h3>
+      ${renderCodeBlock(
+        "Rollout commands",
+        "rollout-code",
+        `anchor demo
+anchor init
+anchor index --limit 200
+anchor index-code
+anchor health
+anchor eval init
+anchor rules suggest
+anchor ci`,
+        true,
+      )}
       <div class="doc-callout">
         <span aria-hidden="true">${renderDocIcon("/docs")}</span>
         <p>Anchor does not need a hosted dashboard. The product surface that matters is the context Cursor receives before it edits.</p>
@@ -362,6 +388,14 @@ function renderWorkflowsPage(): string {
       <p class="section-intro">Use the right Anchor surface depending on whether you are preparing a change, explaining a file, reviewing a diff, or sharing context with the team.</p>
       <div class="workflow-grid">
         <div>
+          <strong>Plan the task</strong>
+          <p>Run <code>anchor plan "&lt;task&gt;"</code> or ask Cursor for <code>anchor_plan_task</code> before the first edit.</p>
+        </div>
+        <div>
+          <strong>Know exact checks</strong>
+          <p>Run <code>anchor test-command &lt;file&gt;</code> so the agent has a concrete verification command.</p>
+        </div>
+        <div>
           <strong>Before editing</strong>
           <p>Ask Cursor to call <code>anchor_get_context</code> before refactors, API changes, or security-sensitive work.</p>
         </div>
@@ -382,11 +416,56 @@ function renderWorkflowsPage(): string {
           <p>Run <code>anchor architecture --check</code> before large changes to compare the diff against local placement, import, and test patterns.</p>
         </div>
         <div>
+          <strong>Onboard to an area</strong>
+          <p>Use <code>anchor onboarding --area api</code> to summarize areas, risky modules, tests, and starter prompts.</p>
+        </div>
+        <div>
+          <strong>Gate reliability</strong>
+          <p>Use <code>anchor eval run</code> and <code>anchor ci</code> to catch drift, low coverage, stale indexes, and invalid rules.</p>
+        </div>
+        <div>
           <strong>Share context</strong>
           <p>Add <code>--share</code> when the output should fit in Slack or a PR comment.</p>
         </div>
       </div>
       ${renderCodeBlock("Common workflow commands", "workflow-code", workflowCommand, true)}
+    </article>
+  `;
+}
+
+function renderPlanningPage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Guide</span>
+      <h2>Planning and tests</h2>
+      <p class="section-intro">Anchor can brief Cursor on what to edit, what patterns to follow, and exactly which checks to run before the first code change.</p>
+      <div class="workflow-grid">
+        <div>
+          <strong>Task plans</strong>
+          <p><code>anchor plan</code> combines PR evidence, current code, architecture patterns, tests, regressions, and team rules into target files, symbols, steps, risks, and checks.</p>
+        </div>
+        <div>
+          <strong>Exact tests</strong>
+          <p><code>anchor test-command</code> reads package scripts, workspace boundaries, Vitest/Jest/Playwright config, and related tests to infer concrete commands.</p>
+        </div>
+        <div>
+          <strong>Cursor tools</strong>
+          <p>Use <code>anchor_plan_task</code> before editing and <code>anchor_get_test_commands</code> before verification.</p>
+        </div>
+        <div>
+          <strong>Evidence labels</strong>
+          <p>Plans cite PR/rule evidence when available and label current-code inference when history does not exist.</p>
+        </div>
+      </div>
+      ${renderCodeBlock(
+        "Planning commands",
+        "planning-code",
+        `anchor plan "Add membership API integration" --file src/api/membership.ts --symbol createMembership
+anchor plan "Refactor auth cache" --file src/auth/cache.ts --strict --json
+anchor test-command src/services/membership.ts
+anchor test-command src/services/membership.test.ts --json`,
+        true,
+      )}
     </article>
   `;
 }
@@ -422,6 +501,8 @@ function renderArchitecturePage(): string {
 anchor architecture
 anchor architecture --file src/auth/cache.ts
 anchor architecture --area api
+anchor architecture --map --format mermaid
+anchor architecture --map --format json
 anchor architecture --check
 anchor architecture --diff-file change.diff --check
 anchor architecture --write-doc`,
@@ -431,6 +512,147 @@ anchor architecture --write-doc`,
         <span aria-hidden="true">${renderDocIcon("/docs/architecture")}</span>
         <p><code>--write-doc</code> is the only architecture command that writes a file. It creates <code>ANCHOR_ARCHITECTURE.md</code> from local evidence when you explicitly request it.</p>
       </div>
+    </article>
+  `;
+}
+
+function renderOnboardingPage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Guide</span>
+      <h2>Onboarding packs</h2>
+      <p class="section-intro">Onboarding packs compress current architecture, important files, risky modules, likely tests, team rules, playbooks, and starter prompts into one local brief.</p>
+      <div class="workflow-grid">
+        <div>
+          <strong>Repo brief</strong>
+          <p><code>anchor onboarding</code> summarizes the indexed repository areas and useful starting points.</p>
+        </div>
+        <div>
+          <strong>Area brief</strong>
+          <p><code>anchor onboarding --area api</code> focuses on one architecture area for feature work.</p>
+        </div>
+        <div>
+          <strong>File brief</strong>
+          <p><code>anchor onboarding --file src/auth/cache.ts</code> gives a narrow view for one file.</p>
+        </div>
+        <div>
+          <strong>Cursor handoff</strong>
+          <p><code>anchor_onboarding_pack</code> lets Cursor orient itself before a large refactor or unfamiliar task.</p>
+        </div>
+      </div>
+      ${renderCodeBlock(
+        "Onboarding commands",
+        "onboarding-code",
+        `anchor onboarding
+anchor onboarding --area api
+anchor onboarding --file src/auth/cache.ts --json`,
+        true,
+      )}
+    </article>
+  `;
+}
+
+function renderCiPage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Guide</span>
+      <h2>CI and evals</h2>
+      <p class="section-intro">Use evals and CI checks when your team wants Anchor context to stay trustworthy as the repository changes.</p>
+      <div class="workflow-grid">
+        <div>
+          <strong>Golden retrieval</strong>
+          <p><code>anchor eval add</code> records tasks that should surface known PRs or categories.</p>
+        </div>
+        <div>
+          <strong>Drift detection</strong>
+          <p><code>anchor eval run</code> reports missing PR evidence and ranking drift.</p>
+        </div>
+        <div>
+          <strong>CI gate</strong>
+          <p><code>anchor ci</code> validates rules, rule evidence, evals, stale code index, and coverage score.</p>
+        </div>
+        <div>
+          <strong>Fresh context</strong>
+          <p><code>anchor watch</code> keeps code, architecture, test links, and test commands fresh while developers work.</p>
+        </div>
+      </div>
+      ${renderCodeBlock(
+        "Reliability commands",
+        "ci-code",
+        `anchor eval init
+anchor eval add --task "auth cache lazy loading" --file src/auth/cache.ts --expect-pr 101
+anchor eval run
+anchor ci --strict --min-coverage 70
+anchor watch --interval 30`,
+        true,
+      )}
+      ${renderCodeBlock(
+        "GitHub Actions snippet",
+        "ci-actions-code",
+        `name: Anchor CI
+
+on:
+  pull_request:
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @pratik7368patil/anchor build
+      - run: pnpm --filter @pratik7368patil/anchor start -- index-code
+      - run: pnpm --filter @pratik7368patil/anchor start -- ci --strict --min-coverage 70`,
+        true,
+      )}
+      <div class="doc-callout">
+        <span aria-hidden="true">${renderDocIcon("/docs/ci")}</span>
+        <p>Anchor documents CI usage but does not enable a workflow automatically. Add it only when your team wants Anchor as a repository quality gate.</p>
+      </div>
+    </article>
+  `;
+}
+
+function renderPlaybooksPage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Guide</span>
+      <h2>Playbooks</h2>
+      <p class="section-intro">Repo playbooks turn repeated evidence into reviewed workflow briefs for common changes. They are evidence, not executable instructions.</p>
+      <div class="workflow-grid">
+        <div>
+          <strong>Initialize</strong>
+          <p><code>anchor playbooks init</code> creates <code>anchor.playbooks.json</code> as the committed source of truth.</p>
+        </div>
+        <div>
+          <strong>Suggest</strong>
+          <p><code>anchor playbooks suggest</code> reads local PR/rule evidence and proposes drafts without writing the file.</p>
+        </div>
+        <div>
+          <strong>Use</strong>
+          <p><code>anchor playbooks get &lt;id&gt;</code> or <code>anchor_get_playbook</code> retrieves a cited workflow brief.</p>
+        </div>
+        <div>
+          <strong>Examples</strong>
+          <p>Good playbooks cover adding API integrations, writing service tests, changing API contracts, or refactoring shared utilities.</p>
+        </div>
+      </div>
+      ${renderCodeBlock(
+        "Playbook commands",
+        "playbooks-code",
+        `anchor playbooks init
+anchor playbooks suggest
+anchor playbooks list
+anchor playbooks get add-api-integration`,
+        true,
+      )}
     </article>
   `;
 }
@@ -660,7 +882,11 @@ function renderDocIcon(path: string): string {
     "/docs": `<circle cx="12" cy="12" r="9"></circle><path d="M12 10v6"></path><path d="M12 7.2v.1"></path>`,
     "/docs/quickstart": `<path d="m8 5 10 7-10 7V5Z"></path>`,
     "/docs/workflows": `<path d="M4 7h6v6H4z"></path><path d="M14 11h6v6h-6z"></path><path d="M10 10h4"></path>`,
+    "/docs/planning": `<path d="M5 6h14"></path><path d="M5 12h9"></path><path d="M5 18h6"></path><path d="m15 18 2 2 4-5"></path>`,
     "/docs/architecture": `<path d="M4 18h16"></path><path d="M7 18V9l5-4 5 4v9"></path><path d="M10 18v-6h4v6"></path>`,
+    "/docs/onboarding": `<path d="M7 7h10"></path><path d="M7 12h10"></path><path d="M7 17h6"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect>`,
+    "/docs/ci": `<path d="M6 12h4l2-6 3 12 2-6h1"></path><path d="M4 20h16"></path>`,
+    "/docs/playbooks": `<path d="M6 4h9l3 3v13H6z"></path><path d="M15 4v4h4"></path><path d="M9 12h6"></path><path d="M9 16h6"></path>`,
     "/docs/rules": `<path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 6.5 2.1 2.1"></path><path d="m17.1 15.4 2.1 2.1"></path><circle cx="12" cy="12" r="4"></circle>`,
     "/docs/cli": `<path d="M5 7h14"></path><path d="M7 12h4"></path><path d="M7 17h10"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect>`,
     "/docs/options": `<path d="M6 8h12"></path><path d="M6 16h12"></path><circle cx="9" cy="8" r="2"></circle><circle cx="15" cy="16" r="2"></circle>`,

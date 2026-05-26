@@ -171,6 +171,17 @@ CREATE TABLE IF NOT EXISTS architecture_index_state (
   imports INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS architecture_map_edges (
+  id TEXT PRIMARY KEY,
+  repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
+  repo TEXT NOT NULL,
+  source_path TEXT NOT NULL,
+  target_path TEXT NOT NULL,
+  relationship TEXT NOT NULL,
+  weight REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS test_files (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
@@ -190,6 +201,16 @@ CREATE TABLE IF NOT EXISTS test_links (
   reason TEXT NOT NULL,
   strength REAL NOT NULL,
   UNIQUE(repo_id, source_path, test_path, reason)
+);
+
+CREATE TABLE IF NOT EXISTS test_commands (
+  id TEXT PRIMARY KEY,
+  repo TEXT NOT NULL,
+  file_path TEXT,
+  command TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS regression_events (
@@ -228,6 +249,37 @@ CREATE TABLE IF NOT EXISTS index_runs (
   status TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS retrieval_evals (
+  id TEXT PRIMARY KEY,
+  task TEXT NOT NULL,
+  files_json TEXT NOT NULL,
+  expected_prs_json TEXT NOT NULL,
+  expected_categories_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS feedback_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  result_id TEXT NOT NULL,
+  rating TEXT NOT NULL,
+  note_sanitized TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS playbooks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  body_sanitized TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS watch_state (
+  repo TEXT PRIMARY KEY,
+  last_indexed_at TEXT NOT NULL,
+  indexed_files INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sync_state (
   repo TEXT PRIMARY KEY,
   last_sync_at TEXT,
@@ -250,8 +302,12 @@ CREATE INDEX IF NOT EXISTS idx_code_imports_imported ON code_imports(imported_pa
 CREATE INDEX IF NOT EXISTS idx_architecture_components_path ON architecture_components(path);
 CREATE INDEX IF NOT EXISTS idx_architecture_components_area ON architecture_components(area);
 CREATE INDEX IF NOT EXISTS idx_architecture_patterns_area ON architecture_patterns(area);
+CREATE INDEX IF NOT EXISTS idx_architecture_map_edges_source ON architecture_map_edges(source_path);
+CREATE INDEX IF NOT EXISTS idx_architecture_map_edges_target ON architecture_map_edges(target_path);
 CREATE INDEX IF NOT EXISTS idx_test_files_path ON test_files(path);
 CREATE INDEX IF NOT EXISTS idx_test_links_source ON test_links(source_path);
 CREATE INDEX IF NOT EXISTS idx_test_links_test ON test_links(test_path);
+CREATE INDEX IF NOT EXISTS idx_test_commands_file ON test_commands(file_path);
 CREATE INDEX IF NOT EXISTS idx_regression_events_pr ON regression_events(pr_id);
 CREATE INDEX IF NOT EXISTS idx_index_runs_started ON index_runs(started_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_events_result ON feedback_events(result_id);

@@ -26,6 +26,12 @@ type MetadataTest = {
   reason?: string;
 };
 
+type MetadataTestCommand = {
+  command?: string;
+  reason?: string;
+  confidence?: string;
+};
+
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
@@ -40,6 +46,7 @@ function formatShareMode(input: {
   const rules = asArray<MetadataItem>(input.context.metadata.teamRules);
   const regressions = asArray<MetadataRegression>(input.context.metadata.regressionEvents);
   const tests = asArray<MetadataTest>(input.context.metadata.relevantTests);
+  const testCommands = asArray<MetadataTestCommand>(input.context.metadata.testCommands);
   const lines = [
     "# Anchor File Brief",
     "",
@@ -83,6 +90,14 @@ function formatShareMode(input: {
   else {
     for (const test of tests.slice(0, 5)) {
       lines.push(`- ${test.path ?? "unknown test"} (${test.reason ?? "related"})`);
+    }
+  }
+
+  lines.push("", "## Exact test commands", "");
+  if (testCommands.length === 0) lines.push("- No exact test command inferred.");
+  else {
+    for (const command of testCommands.slice(0, 4)) {
+      lines.push(`- \`${command.command ?? "unknown"}\` (${command.confidence ?? "unknown"})`);
     }
   }
 

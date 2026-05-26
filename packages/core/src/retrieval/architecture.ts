@@ -1,6 +1,7 @@
 import type { AnchorDatabase } from "../db/database.js";
 import type { ArchitectureArea, RankedArchitecturePattern } from "../types.js";
 import { clipSentence, uniqueStrings } from "../utils/text.js";
+import { buildArchitectureMap, type ArchitectureMapInput } from "./architecture-map.js";
 import { rankArchitecturePatterns } from "./architecture-ranker.js";
 import type { FormattedResult } from "./formatter.js";
 
@@ -9,6 +10,8 @@ export type ArchitectureContextInput = {
   area?: ArchitectureArea;
   query?: string;
   maxResults?: number;
+  map?: boolean;
+  format?: "mermaid" | "json";
 };
 
 export type ArchitectureCheckInput = {
@@ -26,6 +29,30 @@ export function architectureFilesFromDiff(diff: string): string[] {
     if (plus?.[1] && plus[1] !== "/dev/null") files.push(plus[1]);
   }
   return uniqueStrings(files);
+}
+
+export function getArchitectureMapContext(
+  db: AnchorDatabase,
+  input: ArchitectureMapInput = {},
+): FormattedResult {
+  const map = buildArchitectureMap(db, input);
+  const lines = ["# Anchor Architecture Map", ""];
+  if (input.file) lines.push(`File: ${input.file}`);
+  if (input.area) lines.push(`Area: ${input.area}`);
+  if (input.file || input.area) lines.push("");
+  lines.push(`Nodes: ${map.nodes.length}`);
+  lines.push(`Edges: ${map.edges.length}`, "");
+  if ((input.format ?? "mermaid") === "mermaid") {
+    lines.push("```mermaid", map.mermaid ?? "graph TD", "```");
+  } else {
+    lines.push("```json", JSON.stringify({ nodes: map.nodes, edges: map.edges }, null, 2), "```");
+  }
+  return {
+    markdown: lines.join("\n"),
+    metadata: {
+      architectureMap: map,
+    },
+  };
 }
 
 function formatPatternList(patterns: RankedArchitecturePattern[]): string[] {
@@ -68,6 +95,13 @@ export function getArchitectureContext(
   _cwd: string,
   input: ArchitectureContextInput = {},
 ): FormattedResult {
+  if (input.map) {
+    return getArchitectureMapContext(db, {
+      file: input.file,
+      area: input.area,
+      format: input.format ?? "mermaid",
+    });
+  }
   const task =
     input.query ??
     (input.file

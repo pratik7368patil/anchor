@@ -17,6 +17,11 @@ import { handleAnchorReviewDiff } from "./review-diff.js";
 import { handleAnchorSearchHistory } from "./search-history.js";
 import { handleAnchorGetArchitecture } from "./get-architecture.js";
 import { handleAnchorCheckArchitecture } from "./check-architecture.js";
+import { handleAnchorPlanTask } from "./plan-task.js";
+import { handleAnchorGetTestCommands } from "./get-test-commands.js";
+import { handleAnchorGetArchitectureMap } from "./get-architecture-map.js";
+import { handleAnchorOnboardingPack } from "./onboarding-pack.js";
+import { handleAnchorGetPlaybook } from "./get-playbook.js";
 
 const tempDirs: string[] = [];
 
@@ -34,6 +39,10 @@ function loadFixtures(): PullRequestRecord[] {
 function createIndexedFixture(cwd: string): void {
   execFileSync("git", ["init"], { cwd, stdio: "ignore" });
   fs.mkdirSync(path.join(cwd, "src/auth"), { recursive: true });
+  fs.writeFileSync(
+    path.join(cwd, "package.json"),
+    JSON.stringify({ scripts: { test: "vitest run" } }, null, 2),
+  );
   fs.writeFileSync(
     path.join(cwd, "src/auth/cache.ts"),
     "export class AuthCache { refreshToken() { return true; } }\n",
@@ -62,6 +71,31 @@ function createIndexedFixture(cwd: string): void {
                 note: "Reviewer called out the lazy constraint.",
               },
             ],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+  fs.writeFileSync(
+    path.join(cwd, "anchor.playbooks.json"),
+    JSON.stringify(
+      {
+        version: 1,
+        playbooks: [
+          {
+            id: "auth-cache-playbook",
+            title: "Change auth cache safely",
+            body: "Check AuthCache history and run nearby tests.",
+            evidence: [
+              {
+                prNumber: 101,
+                prUrl: "https://github.com/owner/repo/pull/101",
+                sourceType: "review_comment",
+              },
+            ],
+            createdAt: "2025-01-01T00:00:00.000Z",
           },
         ],
       },
@@ -233,5 +267,35 @@ describe("MCP tools", () => {
     expect(architecture.structuredContent?.mode).toBe("architecture");
     expect(check.content[0]?.text).toContain("# Anchor Architecture Check");
     expect(check.structuredContent?.mode).toBe("architecture_check");
+  });
+
+  it("supports developer value MCP tools", async () => {
+    const cwd = tempDir();
+    createIndexedFixture(cwd);
+    const plan = await handleAnchorPlanTask(
+      {
+        task: "change AuthCache",
+        files: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+      },
+      cwd,
+    );
+    const commands = await handleAnchorGetTestCommands({ file: "src/auth/cache.ts" }, cwd);
+    const map = await handleAnchorGetArchitectureMap({ file: "src/auth/cache.ts" }, cwd);
+    const onboarding = await handleAnchorOnboardingPack({ area: "service" }, cwd);
+    const playbook = await handleAnchorGetPlaybook({ id: "auth-cache-playbook" }, cwd);
+
+    expect(plan.content[0]?.text).toContain("# Anchor Task Plan");
+    expect(plan.structuredContent?.taskPlan).toBeDefined();
+    expect(commands.content[0]?.text).toContain("cache.test.ts");
+    expect(Array.isArray(commands.structuredContent?.testCommands)).toBe(true);
+    expect(map.content[0]?.text).toContain("# Anchor Architecture Map");
+    expect(map.structuredContent?.architectureMap).toBeDefined();
+    expect(onboarding.content[0]?.text).toContain("# Anchor Onboarding Pack");
+    expect(onboarding.structuredContent?.onboardingPack).toBeDefined();
+    expect(playbook.content[0]?.text).toContain("Change auth cache safely");
+    expect(playbook.structuredContent?.playbooks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "auth-cache-playbook" })]),
+    );
   });
 });

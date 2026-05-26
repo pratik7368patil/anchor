@@ -13,6 +13,20 @@ import {
   AnchorCheckArchitectureSchema,
   handleAnchorCheckArchitecture,
 } from "./tools/check-architecture.js";
+import { AnchorPlanTaskSchema, handleAnchorPlanTask } from "./tools/plan-task.js";
+import {
+  AnchorGetTestCommandsSchema,
+  handleAnchorGetTestCommands,
+} from "./tools/get-test-commands.js";
+import {
+  AnchorGetArchitectureMapSchema,
+  handleAnchorGetArchitectureMap,
+} from "./tools/get-architecture-map.js";
+import {
+  AnchorOnboardingPackSchema,
+  handleAnchorOnboardingPack,
+} from "./tools/onboarding-pack.js";
+import { AnchorGetPlaybookSchema, handleAnchorGetPlaybook } from "./tools/get-playbook.js";
 
 export type AnchorServerOptions = {
   cwd?: string;
@@ -23,7 +37,7 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
   const server = new McpServer(
     {
       name: "anchor",
-      version: "0.1.14",
+      version: "0.1.15",
     },
     {
       instructions:
@@ -133,6 +147,80 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
       },
     },
     async (input) => handleAnchorReviewDiff(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_plan_task",
+    {
+      title: "Plan Anchor Task",
+      description:
+        "Create a deterministic edit plan with target files, likely symbols, risks, exact test commands, and cited Anchor evidence.",
+      inputSchema: AnchorPlanTaskSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorPlanTask(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_get_test_commands",
+    {
+      title: "Get Anchor Test Commands",
+      description:
+        "Infer exact local test commands for a source or test file using indexed test links and package scripts.",
+      inputSchema: AnchorGetTestCommandsSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorGetTestCommands(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_get_architecture_map",
+    {
+      title: "Get Anchor Architecture Map",
+      description:
+        "Return a deterministic architecture graph from indexed imports, components, and test links.",
+      inputSchema: AnchorGetArchitectureMapSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorGetArchitectureMap(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_onboarding_pack",
+    {
+      title: "Get Anchor Onboarding Pack",
+      description:
+        "Return a concise onboarding brief with areas, important files, risk modules, tests, playbooks, and starter prompts.",
+      inputSchema: AnchorOnboardingPackSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorOnboardingPack(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_get_playbook",
+    {
+      title: "Get Anchor Playbook",
+      description: "Return one committed repo playbook by id, with cited local evidence.",
+      inputSchema: AnchorGetPlaybookSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorGetPlaybook(input, cwd),
   );
 
   return server;

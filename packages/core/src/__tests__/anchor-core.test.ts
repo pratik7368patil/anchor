@@ -42,14 +42,27 @@ import {
   stripPromptInjection,
   addTeamRule,
   buildAnchorContextResult,
+  buildOnboardingPack,
   checkArchitecture,
   classifyArchitectureArea,
   calculateCoverage,
   checkTeamRuleEvidence,
+  addRetrievalEval,
+  detectTestCommandsForFile,
   extractCodeImports,
+  feedbackAdjustedScore,
   getArchitectureContext,
+  getArchitectureMapContext,
   getSuggestedPrompts,
+  initRetrievalEvals,
+  initPlaybooks,
+  planTask,
   rankArchitecturePatterns,
+  recordFeedback,
+  refreshWatchIndex,
+  runAnchorCi,
+  runRetrievalEvals,
+  suggestPlaybooks,
   suggestTeamRules,
   validateTeamRulesFile,
   type IndexPullRequestsProgress,
@@ -1200,6 +1213,145 @@ describe("architecture memory", () => {
       expect(formatted.markdown).toContain("## Architecture Guidance");
       expect(formatted.markdown).not.toContain("ignore previous instructions");
       expect(formatted.markdown).not.toContain("npm_");
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("developer value workflows", () => {
+  function createDeveloperValueRepo() {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    writeFileEnsuringDir(
+      path.join(cwd, "package.json"),
+      JSON.stringify({ scripts: { test: "vitest run" } }, null, 2),
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/services/membership.ts"),
+      [
+        "export type Membership = { id: string };",
+        "export async function getMembership(): Promise<Membership> {",
+        "  return { id: '1' };",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/services/membership.test.ts"),
+      [
+        "import { getMembership } from './membership';",
+        "test('getMembership keeps id contract', async () => {",
+        "  expect(await getMembership()).toEqual({ id: '1' });",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    execFileSync("git", ["add", "."], { cwd, stdio: "ignore" });
+    const db = openAnchorDatabase(cwd);
+    indexCodebase(db, { cwd, repo: "owner/repo" });
+    indexPullRequests(db, [looseTokenMigrationPr()], { cwd, repo: "owner/repo" });
+    return { cwd, db };
+  }
+
+  it("infers exact test commands and includes them in context and plans", () => {
+    const { cwd, db } = createDeveloperValueRepo();
+    try {
+      const commands = detectTestCommandsForFile(db, cwd, "src/services/membership.ts");
+      expect(commands[0]?.command).toContain("membership.test.ts");
+      expect(commands[0]?.confidence).toBe("strong");
+
+      const context = buildAnchorContextResult(db, cwd, {
+        task: "change membership service contract",
+        files: ["src/services/membership.ts"],
+        symbols: ["getMembership"],
+      });
+      expect(context.markdown).toContain("## Test commands");
+      expect(context.metadata.testCommands).toEqual(
+        expect.arrayContaining([expect.objectContaining({ confidence: "strong" })]),
+      );
+
+      const plan = planTask(db, cwd, {
+        task: "change membership service contract",
+        files: ["src/services/membership.ts"],
+        symbols: ["getMembership"],
+      });
+      expect(plan.markdown).toContain("# Anchor Task Plan");
+      expect(plan.metadata.taskPlan).toEqual(
+        expect.objectContaining({
+          targetFiles: expect.arrayContaining(["src/services/membership.ts"]),
+          recommendedTests: expect.arrayContaining([expect.stringContaining("membership.test.ts")]),
+        }),
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("generates architecture maps, onboarding packs, watch state, feedback, evals, CI, and playbook suggestions", () => {
+    const { cwd, db } = createDeveloperValueRepo();
+    try {
+      const map = getArchitectureMapContext(db, {
+        file: "src/services/membership.ts",
+        format: "mermaid",
+      });
+      expect(map.markdown).toContain("```mermaid");
+      expect(map.metadata.architectureMap).toEqual(
+        expect.objectContaining({
+          nodes: expect.arrayContaining([
+            expect.objectContaining({ path: "src/services/membership.ts" }),
+          ]),
+        }),
+      );
+
+      const onboarding = buildOnboardingPack(db, cwd, { area: "service" });
+      expect(onboarding.markdown).toContain("# Anchor Onboarding Pack");
+      expect(onboarding.metadata.onboardingPack).toEqual(
+        expect.objectContaining({
+          importantFiles: expect.arrayContaining(["src/services/membership.ts"]),
+        }),
+      );
+
+      refreshWatchIndex(db, { cwd, repo: "owner/repo" });
+      const status = getIndexStatus(cwd, false);
+      expect(status.lastWatchIndexTime).toBeDefined();
+      expect(status.architectureMapEdgeCount).toBeGreaterThan(0);
+      expect(status.testCommandCount).toBeGreaterThan(0);
+
+      initRetrievalEvals(cwd);
+      addRetrievalEval(db, cwd, {
+        task: "payment token migration fallback",
+        files: ["src/payments/webhook.ts"],
+        expectedPrs: [303],
+      });
+      const evals = runRetrievalEvals(db, cwd);
+      expect(evals.ok).toBe(true);
+
+      const feedback = recordFeedback(db, {
+        resultId: "result-1",
+        rating: "useful",
+        note: "helped with the membership plan",
+      });
+      expect(feedback.note).not.toContain("ignore previous instructions");
+      expect(feedbackAdjustedScore(db, "result-1", 0.5)).toBeGreaterThan(0.5);
+
+      initPlaybooks(cwd);
+      const playbooks = suggestPlaybooks(db, cwd);
+      expect(playbooks.length).toBeGreaterThan(0);
+      expect(playbooks[0]?.evidence[0]?.prNumber).toBe(303);
+
+      addTeamRule(cwd, {
+        id: "payment-token-migration",
+        category: "constraint",
+        text: "Keep payment token migration backward compatible.",
+        prNumber: 303,
+        prUrl: "https://github.com/owner/repo/pull/303",
+        sourceType: "pr_body",
+        filePaths: ["src/payments/webhook.ts"],
+      });
+      const ci = runAnchorCi(db, cwd, { minCoverage: 1 });
+      expect(ci.markdown).toContain("# Anchor CI");
+      expect(ci.metadata.ok).toBe(true);
     } finally {
       db.close();
     }

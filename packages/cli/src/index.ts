@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import type { WisdomCategory } from "@pratik7368patil/anchor-core";
 import { printInitResult, runInit } from "./commands/init.js";
 import { runIndex, runIndexCode } from "./commands/index.js";
 import { runSync } from "./commands/sync.js";
@@ -14,6 +15,29 @@ import { printArchitecture, runArchitecture } from "./commands/architecture.js";
 import { printHealth, runHealth } from "./commands/health.js";
 import { printDemo, runDemo } from "./commands/demo.js";
 import { printPrompts, runPrompts } from "./commands/prompts.js";
+import { printPlan, runPlan } from "./commands/plan.js";
+import { printTestCommand, runTestCommand } from "./commands/test-command.js";
+import {
+  printEvalAdd,
+  printEvalInit,
+  printEvalRun,
+  runEvalAdd,
+  runEvalInit,
+  runEvalRun,
+} from "./commands/eval.js";
+import { printCi, runCi } from "./commands/ci.js";
+import { printOnboarding, runOnboarding } from "./commands/onboarding.js";
+import { printFeedbackRecord, runFeedbackRecord } from "./commands/feedback.js";
+import {
+  printPlaybook,
+  printPlaybooks,
+  printPlaybooksInit,
+  runPlaybooksGet,
+  runPlaybooksInit,
+  runPlaybooksList,
+  runPlaybooksSuggest,
+} from "./commands/playbooks.js";
+import { runWatch } from "./commands/watch.js";
 import {
   printRulesAdd,
   printRulesEvidenceCheck,
@@ -41,6 +65,10 @@ function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 
+function collectNumberOption(value: string, previous: number[]): number[] {
+  return [...previous, parseIntegerOption(value)];
+}
+
 function parseConfidenceOption(value: string): "strong" | "moderate" | "weak" {
   if (value === "strong" || value === "moderate" || value === "weak") return value;
   throw new Error("Invalid confidence level. Use strong, moderate, or weak.");
@@ -63,6 +91,33 @@ function parseArchitectureAreaOption(value: string) {
   ];
   if (areas.includes(value)) return value;
   throw new Error(`Invalid architecture area: ${value}`);
+}
+
+function parseWisdomCategoryOption(value: string): WisdomCategory {
+  const categories = [
+    "architecture_decision",
+    "constraint",
+    "rejected_approach",
+    "bug_regression",
+    "testing_rule",
+    "api_contract",
+    "performance_note",
+    "security_note",
+    "style_convention",
+    "unknown",
+  ];
+  if (categories.includes(value)) return value as WisdomCategory;
+  throw new Error(`Invalid wisdom category: ${value}`);
+}
+
+function parseMapFormatOption(value: string): "mermaid" | "json" {
+  if (value === "mermaid" || value === "json") return value;
+  throw new Error("Invalid map format. Use mermaid or json.");
+}
+
+function parseFeedbackRatingOption(value: string): "useful" | "not-useful" {
+  if (value === "useful" || value === "not-useful") return value;
+  throw new Error("Invalid feedback rating. Use useful or not-useful.");
 }
 
 function readPackageVersion(): string {
@@ -109,6 +164,27 @@ program
   .option("--json", "Print prompts as JSON")
   .action((options) => {
     printPrompts(runPrompts(), options);
+  });
+
+program
+  .command("plan")
+  .description("Create a deterministic edit plan from Anchor context")
+  .argument("<task>", "Task to plan")
+  .option("--file <path>", "Target file", collectOption, [])
+  .option("--symbol <name>", "Target symbol", collectOption, [])
+  .option("--strict", "Use strict non-stale evidence filtering")
+  .option("--json", "Print structured plan as JSON")
+  .action((task, options) => {
+    printPlan(runPlan(process.cwd(), task, options), options);
+  });
+
+program
+  .command("test-command")
+  .description("Infer exact test commands for a source or test file")
+  .argument("<file>", "Source or test file")
+  .option("--json", "Print test commands as JSON")
+  .action((file, options) => {
+    printTestCommand(runTestCommand(process.cwd(), file), options);
   });
 
 program
@@ -185,12 +261,51 @@ program
   .option("--file <path>", "Explain architecture patterns for one file")
   .option("--area <area>", "Filter architecture patterns by area", parseArchitectureAreaOption)
   .option("--check", "Check the current git diff against architecture patterns")
+  .option("--map", "Print an architecture graph from indexed imports and test links")
+  .option("--format <format>", "Architecture map format: mermaid or json", parseMapFormatOption)
   .option("--diff-file <path>", "Read a diff from a file for --check")
   .option("--write-doc", "Write ANCHOR_ARCHITECTURE.md from the architecture summary")
   .option("--json", "Print structured metadata as JSON")
   .option("--max-results <number>", "Maximum architecture patterns", parseIntegerOption)
   .action((options) => {
     printArchitecture(runArchitecture(process.cwd(), options), options);
+  });
+
+const evals = program.command("eval").description("Manage deterministic Anchor retrieval evals");
+
+evals
+  .command("init")
+  .description("Create anchor.evals.json if missing")
+  .action(() => {
+    printEvalInit(runEvalInit(process.cwd()));
+  });
+
+evals
+  .command("add")
+  .description("Add a golden retrieval eval")
+  .requiredOption("--task <task>", "Task query")
+  .option("--file <path>", "Expected target file", collectOption, [])
+  .option("--expect-pr <number>", "Expected PR number", collectNumberOption, [])
+  .option("--category <category>", "Expected wisdom category", collectOption, [])
+  .action((options) => {
+    printEvalAdd(
+      runEvalAdd(process.cwd(), {
+        task: options.task,
+        file: options.file,
+        expectPr: options.expectPr,
+        category: (options.category ?? []).map(parseWisdomCategoryOption),
+      }),
+    );
+  });
+
+evals
+  .command("run")
+  .description("Run Anchor retrieval evals")
+  .option("--json", "Print eval results as JSON")
+  .action((options) => {
+    const result = runEvalRun(process.cwd());
+    printEvalRun(result, options);
+    if (!result.ok) process.exitCode = 1;
   });
 
 program
@@ -295,6 +410,83 @@ program
   .option("--json", "Print structured health report as JSON")
   .action((options) => {
     printHealth(runHealth(process.cwd()), options);
+  });
+
+program
+  .command("watch")
+  .description("Keep local code, architecture, tests, and test commands fresh")
+  .option("--interval <seconds>", "Refresh interval in seconds", parseIntegerOption, 30)
+  .option("--repo <owner/name>", "Repository name to associate with the code index")
+  .action((options) => {
+    runWatch(process.cwd(), options);
+  });
+
+program
+  .command("ci")
+  .description("Run Anchor reliability gates for CI")
+  .option("--strict", "Fail when the code index is stale")
+  .option("--min-coverage <number>", "Minimum Anchor coverage score", parseIntegerOption, 70)
+  .option("--json", "Print CI result as JSON")
+  .action((options) => {
+    const result = runCi(process.cwd(), options);
+    printCi(result, options);
+    if (result.metadata.ok === false) process.exitCode = 1;
+  });
+
+program
+  .command("onboarding")
+  .description("Build a deterministic onboarding pack from the local Anchor index")
+  .option("--file <path>", "Focus on one file")
+  .option("--area <area>", "Focus on one architecture area", parseArchitectureAreaOption)
+  .option("--json", "Print onboarding pack as JSON")
+  .action((options) => {
+    printOnboarding(runOnboarding(process.cwd(), options), options);
+  });
+
+const feedback = program.command("feedback").description("Record local-only Anchor feedback");
+
+feedback
+  .command("record")
+  .description("Record whether an Anchor result was useful")
+  .requiredOption("--result-id <id>", "Result id from structured Anchor metadata")
+  .requiredOption("--rating <rating>", "Feedback rating: useful or not-useful", parseFeedbackRatingOption)
+  .option("--note <note>", "Optional local-only note")
+  .action((options) => {
+    printFeedbackRecord(runFeedbackRecord(process.cwd(), options));
+  });
+
+const playbooks = program.command("playbooks").description("Manage repo playbooks from Anchor evidence");
+
+playbooks
+  .command("init")
+  .description("Create anchor.playbooks.json if missing")
+  .action(() => {
+    printPlaybooksInit(runPlaybooksInit(process.cwd()));
+  });
+
+playbooks
+  .command("suggest")
+  .description("Suggest draft playbooks from local evidence")
+  .option("--json", "Print suggestions as JSON")
+  .action((options) => {
+    printPlaybooks(runPlaybooksSuggest(process.cwd()), options);
+  });
+
+playbooks
+  .command("list")
+  .description("List committed repo playbooks")
+  .option("--json", "Print playbooks as JSON")
+  .action((options) => {
+    printPlaybooks(runPlaybooksList(process.cwd()), options);
+  });
+
+playbooks
+  .command("get")
+  .description("Show one committed repo playbook")
+  .argument("<id>", "Playbook id")
+  .option("--json", "Print playbook as JSON")
+  .action((id, options) => {
+    printPlaybook(runPlaybooksGet(process.cwd(), id), options);
   });
 
 program

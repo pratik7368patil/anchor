@@ -14,6 +14,7 @@ import {
   indexCodebase,
   indexPullRequests,
   openAnchorDatabase,
+  planTask,
   reviewDiff,
   type FormattedResult,
 } from "@pratik7368patil/anchor-core";
@@ -31,6 +32,7 @@ export type DemoResult = {
   context: FormattedResult;
   explain: FormattedResult;
   review: FormattedResult;
+  plan: FormattedResult;
   prompts: ReturnType<typeof getSuggestedPrompts>;
 };
 
@@ -88,6 +90,11 @@ export function runDemo(options: DemoOptions = {}): DemoResult {
       });
       const explain = explainFile(db, dir, { file: "src/auth/cache.ts", share: true });
       const review = reviewDiff(db, dir, { diff: demoDiff(), share: true });
+      const plan = planTask(db, dir, {
+        task: "Refactor AuthCache to simplify token loading",
+        files: ["src/auth/cache.ts"],
+        symbols: ["AuthCache"],
+      });
       result = {
         path: dir,
         kept: !cleanup,
@@ -95,6 +102,7 @@ export function runDemo(options: DemoOptions = {}): DemoResult {
         context,
         explain,
         review,
+        plan,
         prompts: getSuggestedPrompts(),
       };
       return result;
@@ -127,6 +135,9 @@ export function printDemo(result: DemoResult, options: DemoOptions = {}): void {
   console.log("");
   console.log("## anchor_review_diff share output");
   console.log(result.review.markdown);
+  console.log("");
+  console.log("## anchor_plan_task");
+  console.log(result.plan.markdown);
   console.log("");
   console.log("## Cursor prompts");
   for (const prompt of result.prompts) console.log(`- ${prompt.prompt}`);
