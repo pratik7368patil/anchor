@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   publish:
@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,6 +44,68 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Resolve release version
+        id: release
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          version="$(
+            node <<'NODE'
+          const fs = require("node:fs");
+
+          const packages = [
+            "packages/core/package.json",
+            "packages/mcp-server/package.json",
+            "packages/cli/package.json",
+          ];
+          const versions = packages.map((file) => {
+            const json = JSON.parse(fs.readFileSync(file, "utf8"));
+            return [file, json.version];
+          });
+          const unique = [...new Set(versions.map(([, version]) => version))];
+
+          if (unique.length !== 1) {
+            console.error("Anchor package versions must match before publishing:");
+            for (const [file, version] of versions) {
+              console.error(`- ${file}: ${version}`);
+            }
+            process.exit(1);
+          }
+
+          console.log(unique[0]);
+          NODE
+          )"
+
+          previous_version=""
+          changed="false"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            changed="true"
+          elif [ -n "${BEFORE_SHA:-}" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            previous_version="$(
+              git show "${BEFORE_SHA}:packages/cli/package.json" 2>/dev/null \
+                | node -e 'const fs = require("node:fs"); const input = fs.readFileSync(0, "utf8").trim(); if (input) process.stdout.write(JSON.parse(input).version);' \
+                || true
+            )"
+
+            if [ -z "$previous_version" ] || [ "$previous_version" != "$version" ]; then
+              changed="true"
+            fi
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
+          if [ "$changed" = "true" ]; then
+            echo "Release changelog will be created for v$version."
+          else
+            echo "Package version did not change; release changelog will be skipped."
+          fi
 
       - name: Verify npm authentication
         run: |
@@ -76,3 +140,37 @@ jobs:
           publish_if_missing "@pratik7368patil/anchor-core" "packages/core"
           publish_if_missing "@pratik7368patil/anchor-mcp-server" "packages/mcp-server"
           publish_if_missing "@pratik7368patil/anchor" "packages/cli"
+
+      - name: Create GitHub release changelog
+        if: steps.release.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists; skipping."
+            exit 0
+          fi
+
+          previous_tag="$(
+            git tag --list 'v[0-9]*' --sort=-v:refname \
+              | grep -v "^${RELEASE_TAG}$" \
+              | head -n 1 \
+              || true
+          )"
+
+          release_args=(
+            release create "$RELEASE_TAG"
+            --target "$GITHUB_SHA"
+            --title "Anchor $RELEASE_VERSION"
+            --generate-notes
+          )
+
+          if [ -n "$previous_tag" ]; then
+            release_args+=(--notes-start-tag "$previous_tag")
+          fi
+
+          gh "${release_args[@]}"
