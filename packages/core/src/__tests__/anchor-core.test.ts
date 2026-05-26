@@ -478,7 +478,7 @@ describe("GitHub GraphQL PR fetching", () => {
       restClient: { pulls: { listFiles: async () => ({ data: [], headers: {} }) } } as never,
     });
 
-    expect(pageSizes).toEqual([50, 10]);
+    expect(pageSizes).toEqual([40, 10]);
   });
 
   it("adapts GraphQL page size upward when observed cost is low", async () => {
@@ -535,7 +535,7 @@ describe("GitHub GraphQL PR fetching", () => {
       restClient: { pulls: { listFiles: async () => ({ data: [], headers: {} }) } } as never,
     });
 
-    expect(pageSizes).toEqual([50, 100]);
+    expect(pageSizes).toEqual([40, 45]);
   });
 
   it("defers before exhausting GraphQL budget and returns a resumable checkpoint", async () => {
@@ -705,6 +705,13 @@ describe("GitHub GraphQL PR fetching", () => {
     expect(shouldFallbackToRestAfterGraphQLError(new Error("GraphQL resource limit exceeded"))).toBe(
       false,
     );
+    expect(
+      shouldFallbackToRestAfterGraphQLError(
+        new Error(
+          "This query requests up to 525,050 possible nodes which exceeds the maximum limit of 500,000.",
+        ),
+      ),
+    ).toBe(false);
     expect(shouldFallbackToRestAfterGraphQLError(new Error("GraphQL unavailable"))).toBe(true);
   });
 

@@ -85,7 +85,10 @@ export function isGitHubGraphQLResourceLimitError(error: unknown): boolean {
     message.includes("timed out") ||
     message.includes("couldn't respond") ||
     message.includes("could not respond") ||
-    message.includes("exceeded") && message.includes("node")
+    (message.includes("exceeded") && message.includes("node")) ||
+    (message.includes("exceeds") && message.includes("node")) ||
+    message.includes("possible nodes") ||
+    message.includes("maximum limit of 500,000")
   );
 }
 

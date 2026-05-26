@@ -1,6 +1,6 @@
 {
   "name": "@pratik7368patil/anchor-mcp-server",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Cursor MCP stdio server for Anchor.",
   "license": "MIT",
   "type": "module",
