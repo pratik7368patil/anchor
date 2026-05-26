@@ -533,7 +533,7 @@ pnpm --filter @pratik7368patil/anchor start -- serve
 
 ## Release Automation
 
-The repository includes a GitHub Actions workflow that publishes missing package versions to npm after changes land on `main`.
+The repository includes a GitHub Actions workflow that publishes missing package versions to npm after changes land on `main`. When the package version changes, the same workflow also creates a GitHub Release named `Anchor <version>` with a generated changelog from merged PRs.
 
 Required repository secret:
 
@@ -549,7 +549,7 @@ npm --prefix packages/mcp-server version 0.1.15 --no-git-tag-version
 npm --prefix packages/cli version 0.1.15 --no-git-tag-version
 ```
 
-Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, and publishes any package version that is not already on npm.
+Open a PR with the version bump. After the PR is reviewed and merged, GitHub Actions runs tests, builds the packages, publishes any package version that is not already on npm, creates the `v<version>` tag, and adds the generated changelog under GitHub Releases. If the release already exists, the workflow leaves it untouched so reruns stay safe.
 
 If the workflow fails at `npm whoami` with `E401 Unauthorized`, update the GitHub repository secret named `NPM_TOKEN` with a valid npm automation/access token that can publish the `@pratik7368patil` packages. Version bumps alone cannot fix an invalid npm token.
 
