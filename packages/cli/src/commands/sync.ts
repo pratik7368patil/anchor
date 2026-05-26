@@ -1,14 +1,19 @@
 import fs from "node:fs";
 import {
+  clearGraphQLFetchCheckpoint,
   defaultDatabasePath,
   fetchMergedPullRequests,
   getLastSyncTime,
+  getGraphQLFetchCheckpoint,
+  graphQLFetchCheckpointScope,
   indexCodebase,
   indexPullRequests,
   initializeSchema,
   openAnchorDatabase,
   recordIndexRun,
   resolveGitHubToken,
+  saveGraphQLFetchCheckpoint,
+  type GitHubGraphQLFetchCheckpoint,
 } from "@pratik7368patil/anchor-core";
 import { printIndexOutcome } from "./engagement.js";
 import { resolveRepo, type IndexOptions } from "./index.js";
@@ -43,6 +48,14 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
   try {
     initializeSchema(db);
     const since = options.force ? options.since : (options.since ?? getLastSyncTime(db, repo));
+    const checkpointScope = options.all
+      ? graphQLFetchCheckpointScope({
+          repo,
+          all: true,
+          since,
+        })
+      : undefined;
+    let pendingGraphQLCheckpoint: GitHubGraphQLFetchCheckpoint | null | undefined;
     const pullRequests = await fetchMergedPullRequests({
       token: auth.token,
       repo,
@@ -50,17 +63,32 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
       all: options.all,
       detailConcurrency: options.concurrency,
       since,
+      graphQLCheckpoint: checkpointScope
+        ? getGraphQLFetchCheckpoint(db, repo, checkpointScope)
+        : undefined,
+      onGraphQLCheckpoint: (checkpoint) => {
+        pendingGraphQLCheckpoint = checkpoint;
+      },
       onProgress: printFetchProgress,
     });
     console.error(`[anchor] writing ${pullRequests.length} PRs to SQLite...`);
+    const historyCoverage = options.all && !pendingGraphQLCheckpoint ? "all" : "limited";
     const summary = indexPullRequests(db, pullRequests, {
       cwd: root,
       repo,
-      historyCoverage: options.all ? "all" : "limited",
+      historyCoverage,
       historyLimit: options.all ? undefined : (options.limit ?? 200),
       historySince: since,
       onProgress: printIndexProgress,
     });
+    if (checkpointScope && pendingGraphQLCheckpoint) {
+      saveGraphQLFetchCheckpoint(db, pendingGraphQLCheckpoint);
+      console.log(
+        `GraphQL resume checkpoint saved: rerun the same command after ${pendingGraphQLCheckpoint.resetAt ?? "the GitHub reset"} to continue.`,
+      );
+    } else if (checkpointScope && pendingGraphQLCheckpoint === null) {
+      clearGraphQLFetchCheckpoint(db, repo, checkpointScope);
+    }
     const codeSummary =
       options.code === false
         ? undefined
@@ -95,7 +123,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
       repo,
       startedAt,
       finishedAt: new Date().toISOString(),
-      historyCoverage: options.all ? "all" : "limited",
+      historyCoverage,
       historyLimit: options.all ? undefined : (options.limit ?? 200),
       prsFetched: summary.indexedPrs,
       prsSkipped: summary.skippedItems,

@@ -13,6 +13,12 @@ export type GitHubRateLimitController = {
   blockedUntilMs?: number;
 };
 
+export type GitHubGraphQLRateLimitState = {
+  cost?: number | null;
+  remaining?: number | null;
+  resetAt?: string | null;
+};
+
 export type GitHubRateLimitErrorLike = {
   status?: number;
   message?: string;
@@ -71,6 +77,38 @@ export function getGitHubRateLimitDelayMs(
   };
 }
 
+export function isGitHubGraphQLResourceLimitError(error: unknown): boolean {
+  const message = ((error as { message?: string }).message ?? "").toLowerCase();
+  return (
+    message.includes("resource limit") ||
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("couldn't respond") ||
+    message.includes("could not respond") ||
+    message.includes("exceeded") && message.includes("node")
+  );
+}
+
+export function updateGitHubGraphQLRateLimitState(
+  controller: GitHubRateLimitController,
+  rateLimit: GitHubGraphQLRateLimitState | undefined,
+  requestName: string,
+): void {
+  if (!rateLimit || rateLimit.remaining !== 0 || !rateLimit.resetAt) return;
+  const resetAtMs = Date.parse(rateLimit.resetAt);
+  if (!Number.isFinite(resetAtMs)) return;
+  const now = controller.now?.() ?? Date.now();
+  const retryAtMs = Math.max(resetAtMs + 2000, now);
+  controller.blockedUntilMs = Math.max(controller.blockedUntilMs ?? 0, retryAtMs);
+  controller.onRateLimit?.({
+    waitSeconds: Math.ceil(Math.max(0, retryAtMs - now) / 1000),
+    retryAt: new Date(retryAtMs).toISOString(),
+    reason: `GraphQL rate limit exhausted${rateLimit.cost ? ` after query cost ${rateLimit.cost}` : ""}`,
+    request: requestName,
+    attempt: 1,
+  });
+}
+
 async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -126,6 +164,7 @@ export async function paginateWithGitHubRateLimit<T>(
   options: {
     controller: GitHubRateLimitController;
     requestName: string;
+    maxRetries?: number;
   },
 ): Promise<T[]> {
   const results: T[] = [];
@@ -133,6 +172,7 @@ export async function paginateWithGitHubRateLimit<T>(
     const response = await requestWithGitHubRateLimit(() => requestPage(page), {
       controller: options.controller,
       requestName: `${options.requestName} page ${page}`,
+      maxRetries: options.maxRetries,
     });
     results.push(...response.data);
     if (!hasNextPage(response.headers) && response.data.length < 100) break;
