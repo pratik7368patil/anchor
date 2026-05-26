@@ -40,6 +40,8 @@ export type ArchitectureArea =
 
 export type ReliabilityGateStatus = "passed" | "weak" | "failed";
 
+export type GitHubFetchBackend = "graphql" | "rest";
+
 export type EvidenceRef = {
   prNumber: number;
   prUrl: string;
@@ -369,6 +371,7 @@ export type FetchPullRequestsProgress =
       all: boolean;
       limit?: number;
       since?: string;
+      backend?: GitHubFetchBackend;
     }
   | {
       stage: "scanned_pull_request_page";
@@ -377,6 +380,8 @@ export type FetchPullRequestsProgress =
       limit?: number;
       scannedPullRequests: number;
       matchedMergedPullRequests: number;
+      backend?: GitHubFetchBackend;
+      pageSize?: number;
     }
   | {
       stage: "discovered_pull_requests";
@@ -385,6 +390,7 @@ export type FetchPullRequestsProgress =
       total: number;
       limit?: number;
       detailConcurrency: number;
+      backend?: GitHubFetchBackend;
     }
   | {
       stage: "fetching_pull_request_details";
@@ -401,6 +407,45 @@ export type FetchPullRequestsProgress =
       total: number;
       prNumber: number;
       detailConcurrency: number;
+    }
+  | {
+      stage: "enriching_pull_request_patches";
+      repo: string;
+      current: number;
+      total: number;
+      prNumber: number;
+      detailConcurrency: number;
+    }
+  | {
+      stage: "enriched_pull_request_patches";
+      repo: string;
+      current: number;
+      total: number;
+      prNumber: number;
+      detailConcurrency: number;
+      patches: number;
+    }
+  | {
+      stage: "skipped_pull_request_patch_enrichment";
+      repo: string;
+      current: number;
+      total: number;
+      prNumber: number;
+      reason: string;
+    }
+  | {
+      stage: "github_fetch_backend_fallback";
+      repo: string;
+      from: GitHubFetchBackend;
+      to: GitHubFetchBackend;
+      reason: string;
+    }
+  | {
+      stage: "github_graphql_page_size_reduced";
+      repo: string;
+      previousPageSize: number;
+      nextPageSize: number;
+      reason: string;
     }
   | {
       stage: "github_rate_limited";

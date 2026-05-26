@@ -128,8 +128,8 @@ anchor index --repo owner/name --force
 ```
 
 Default limit: 200 merged PRs. `--limit` is capped at 1000 merged PRs for normal runs.
-Use `anchor index --all` or `anchor index-all` when you intentionally want to fetch every merged PR in the repository. Full-history indexing can take a long time on large repositories and is still subject to GitHub API rate limits.
-PR detail fetching uses bounded parallelism. The default concurrency is 5, and `--concurrency` is capped at 10 to reduce the chance of GitHub secondary rate limits.
+Use `anchor index --all` or `anchor index-all` when you intentionally want to fetch every merged PR in the repository. Existing indexing commands use GitHub GraphQL first for PR metadata, comments, reviews, commits, labels, and changed files, then use REST only to enrich PR file patches for diff-context extraction. Full-history indexing is still subject to GitHub rate limits, but GraphQL batching greatly reduces the number of round trips compared with fetching every PR detail endpoint through REST.
+Patch enrichment uses bounded parallelism. The default concurrency is 5, and `--concurrency` is capped at 10 to reduce the chance of GitHub secondary rate limits.
 
 Anchor also indexes the local codebase by default after PR indexing. Code discovery uses `git ls-files --cached --others --exclude-standard`, so it includes tracked files plus untracked files that are not ignored by git. Generated/private paths such as `.anchor/`, `.cursor/`, `.codex/`, `.aws/`, `.ssh/`, `node_modules/`, `.nuxt/`, `.next/`, `dist/`, `build/`, `coverage/`, and secret-like files such as `.env*`, `.npmrc`, `.netrc`, `*.pem`, `*.key`, and `id_rsa` are always skipped.
 
@@ -580,7 +580,7 @@ Missing token:
 Run `gh auth login`, or export `GITHUB_TOKEN`/`GH_TOKEN` with a read-only token, then rerun `anchor doctor`.
 
 GitHub rate limit:
-Full-history indexing can require thousands of GitHub API calls because each PR has details, files, reviews, review comments, issue comments, and commits. Anchor detects GitHub `403`/`429` rate-limit responses and waits for `retry-after` or `x-ratelimit-reset` before retrying. Keep the terminal open when this happens. To reduce pressure, use a smaller run first:
+Anchor uses GitHub GraphQL by default for batched PR history fetching and REST only for PR patch enrichment. GraphQL has a point-based hourly budget, every connection still needs pagination with `first`/`last` values from 1 to 100, and GitHub can still apply secondary limits to expensive or highly concurrent requests. Anchor detects GitHub `403`/`429` and GraphQL rate-limit responses, waits for `retry-after` or reset timestamps, reduces GraphQL page size when a query is too expensive, and keeps useful GraphQL data even when optional REST patch enrichment is skipped. Keep the terminal open when this happens. To reduce pressure, use a smaller run first:
 
 ```bash
 anchor index --limit 200 --concurrency 2
