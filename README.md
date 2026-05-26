@@ -226,8 +226,8 @@ Developer-value config files are opt-in and reviewable:
 Use Anchor directly from a terminal:
 
 ```bash
-anchor plan "Add membership API integration" --file src/api/membership.ts --symbol createMembership
-anchor test-command src/api/membership.ts
+anchor plan "Add resource API integration" --file src/api/resource.ts --symbol createResource
+anchor test-command src/api/resource.ts
 anchor explain src/auth/cache.ts
 anchor explain src/auth/cache.ts --share
 anchor review
@@ -304,11 +304,11 @@ Structured MCP metadata includes `matchReasons`, `rankSignals`, `queryTerms`, `r
 Anchor now covers more of the developer loop before, during, and after code changes:
 
 ```bash
-anchor plan "Write tests for membership renewal" --file src/services/membership.ts --strict
-anchor test-command src/services/membership.ts
+anchor plan "Write tests for resource update" --file src/services/resource.ts --strict
+anchor test-command src/services/resource.ts
 anchor onboarding --area api
 anchor eval init
-anchor eval add --task "membership renewal contract" --file src/services/membership.ts --expect-pr 123
+anchor eval add --task "resource update contract" --file src/services/resource.ts --expect-pr 123
 anchor eval run
 anchor watch --interval 30
 anchor ci --strict --min-coverage 70
@@ -512,8 +512,8 @@ pnpm --filter @pratik7368patil/anchor start -- init
 pnpm --filter @pratik7368patil/anchor start -- demo
 pnpm --filter @pratik7368patil/anchor start -- prompts
 pnpm --filter @pratik7368patil/anchor start -- index --repo owner/name --limit 10
-pnpm --filter @pratik7368patil/anchor start -- plan "Add membership API" --file src/api/membership.ts
-pnpm --filter @pratik7368patil/anchor start -- test-command src/api/membership.ts
+pnpm --filter @pratik7368patil/anchor start -- plan "Add resource API" --file src/api/resource.ts
+pnpm --filter @pratik7368patil/anchor start -- test-command src/api/resource.ts
 pnpm --filter @pratik7368patil/anchor start -- explain src/auth/cache.ts
 pnpm --filter @pratik7368patil/anchor start -- architecture
 pnpm --filter @pratik7368patil/anchor start -- architecture --map --format mermaid

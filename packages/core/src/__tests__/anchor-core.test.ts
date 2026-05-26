@@ -1076,22 +1076,22 @@ describe("codebase indexing and retrieval", () => {
 
 describe("architecture memory", () => {
   it("classifies file areas and extracts import edges deterministically", () => {
-    expect(classifyArchitectureArea("src/services/membership.ts", "typescript")).toBe("service");
-    expect(classifyArchitectureArea("src/hooks/useMembership.ts", "typescript")).toBe("hook");
+    expect(classifyArchitectureArea("src/services/resource.ts", "typescript")).toBe("service");
+    expect(classifyArchitectureArea("src/hooks/useResource.ts", "typescript")).toBe("hook");
     expect(classifyArchitectureArea("src/components/Card.tsx", "tsx")).toBe("component");
     expect(classifyArchitectureArea("src/auth/cache.test.ts", "typescript")).toBe("test");
 
     const imports = extractCodeImports(
-      "src/hooks/useMembership.ts",
+      "src/hooks/useResource.ts",
       [
-        "import { getMembership } from '../services/membership';",
-        "import type { Membership } from '../types/membership';",
+        "import { getResource } from '../services/resource';",
+        "import type { Resource } from '../types/resource';",
         "const z = require('zod');",
         `const injected = import('npm_${"A".repeat(32)}');`,
       ].join("\n"),
-      new Set(["src/services/membership.ts", "src/types/membership.ts"]),
+      new Set(["src/services/resource.ts", "src/types/resource.ts"]),
     );
-    expect(imports.map((item) => item.importedPath)).toContain("src/services/membership.ts");
+    expect(imports.map((item) => item.importedPath)).toContain("src/services/resource.ts");
     expect(imports.map((item) => item.specifier)).toContain("zod");
     expect(imports.map((item) => item.specifier).join(" ")).not.toContain("npm_");
   });
@@ -1100,37 +1100,37 @@ describe("architecture memory", () => {
     const cwd = tempDir();
     execFileSync("git", ["init"], { cwd, stdio: "ignore" });
     writeFileEnsuringDir(
-      path.join(cwd, "src/services/membership.ts"),
+      path.join(cwd, "src/services/resource.ts"),
       [
-        "import type { Membership } from '../types/membership';",
+        "import type { Resource } from '../types/resource';",
         `const injected = import('npm_${"B".repeat(32)}');`,
-        "export async function getMembership(): Promise<Membership> {",
+        "export async function getResource(): Promise<Resource> {",
         "  return { id: '1' };",
         "}",
         "",
       ].join("\n"),
     );
     writeFileEnsuringDir(
-      path.join(cwd, "src/hooks/useMembership.ts"),
+      path.join(cwd, "src/hooks/useResource.ts"),
       [
-        "import { getMembership } from '../services/membership';",
-        "export function useMembership() {",
-        "  return getMembership();",
+        "import { getResource } from '../services/resource';",
+        "export function useResource() {",
+        "  return getResource();",
         "}",
         "",
       ].join("\n"),
     );
     writeFileEnsuringDir(
-      path.join(cwd, "src/services/membership.test.ts"),
+      path.join(cwd, "src/services/resource.test.ts"),
       [
-        "import { getMembership } from './membership';",
-        "test('getMembership', () => getMembership());",
+        "import { getResource } from './resource';",
+        "test('getResource', () => getResource());",
         "",
       ].join("\n"),
     );
     writeFileEnsuringDir(
-      path.join(cwd, "src/types/membership.ts"),
-      "export type Membership = { id: string };\n",
+      path.join(cwd, "src/types/resource.ts"),
+      "export type Resource = { id: string };\n",
     );
     execFileSync("git", ["add", "src"], { cwd, stdio: "ignore" });
 
@@ -1146,30 +1146,30 @@ describe("architecture memory", () => {
       expect(storedImports.map((item) => item.specifier).join(" ")).not.toContain("npm_");
 
       const patterns = rankArchitecturePatterns(db, {
-        task: "integrate a new membership API",
-        files: ["src/services/membership.ts"],
-        symbols: ["getMembership"],
+        task: "integrate a new resource API",
+        files: ["src/services/resource.ts"],
+        symbols: ["getResource"],
       });
       expect(patterns[0]?.area).toBe("service");
-      expect(patterns[0]?.sourceFiles).toContain("src/services/membership.ts");
+      expect(patterns[0]?.sourceFiles).toContain("src/services/resource.ts");
 
       const architecture = getArchitectureContext(db, cwd, {
-        file: "src/services/membership.ts",
+        file: "src/services/resource.ts",
       });
       expect(architecture.markdown).toContain("# Anchor Architecture");
-      expect(architecture.markdown).toContain("src/services/membership.ts");
+      expect(architecture.markdown).toContain("src/services/resource.ts");
       expect(architecture.metadata.architecturePatterns).toBeDefined();
 
       const check = checkArchitecture(db, cwd, {
         diff: [
-          "diff --git a/src/services/membership.ts b/src/services/membership.ts",
-          "--- a/src/services/membership.ts",
-          "+++ b/src/services/membership.ts",
-          "+export async function getMembership() { return { id: '2' }; }",
+          "diff --git a/src/services/resource.ts b/src/services/resource.ts",
+          "--- a/src/services/resource.ts",
+          "+++ b/src/services/resource.ts",
+          "+export async function getResource() { return { id: '2' }; }",
         ].join("\n"),
       });
       expect(check.markdown).toContain("# Anchor Architecture Check");
-      expect(check.markdown).toContain("src/services/membership.ts");
+      expect(check.markdown).toContain("src/services/resource.ts");
     } finally {
       db.close();
     }
@@ -1228,21 +1228,21 @@ describe("developer value workflows", () => {
       JSON.stringify({ scripts: { test: "vitest run" } }, null, 2),
     );
     writeFileEnsuringDir(
-      path.join(cwd, "src/services/membership.ts"),
+      path.join(cwd, "src/services/resource.ts"),
       [
-        "export type Membership = { id: string };",
-        "export async function getMembership(): Promise<Membership> {",
+        "export type Resource = { id: string };",
+        "export async function getResource(): Promise<Resource> {",
         "  return { id: '1' };",
         "}",
         "",
       ].join("\n"),
     );
     writeFileEnsuringDir(
-      path.join(cwd, "src/services/membership.test.ts"),
+      path.join(cwd, "src/services/resource.test.ts"),
       [
-        "import { getMembership } from './membership';",
-        "test('getMembership keeps id contract', async () => {",
-        "  expect(await getMembership()).toEqual({ id: '1' });",
+        "import { getResource } from './resource';",
+        "test('getResource keeps id contract', async () => {",
+        "  expect(await getResource()).toEqual({ id: '1' });",
         "});",
         "",
       ].join("\n"),
@@ -1257,14 +1257,14 @@ describe("developer value workflows", () => {
   it("infers exact test commands and includes them in context and plans", () => {
     const { cwd, db } = createDeveloperValueRepo();
     try {
-      const commands = detectTestCommandsForFile(db, cwd, "src/services/membership.ts");
-      expect(commands[0]?.command).toContain("membership.test.ts");
+      const commands = detectTestCommandsForFile(db, cwd, "src/services/resource.ts");
+      expect(commands[0]?.command).toContain("resource.test.ts");
       expect(commands[0]?.confidence).toBe("strong");
 
       const context = buildAnchorContextResult(db, cwd, {
-        task: "change membership service contract",
-        files: ["src/services/membership.ts"],
-        symbols: ["getMembership"],
+        task: "change resource service contract",
+        files: ["src/services/resource.ts"],
+        symbols: ["getResource"],
       });
       expect(context.markdown).toContain("## Test commands");
       expect(context.metadata.testCommands).toEqual(
@@ -1272,15 +1272,15 @@ describe("developer value workflows", () => {
       );
 
       const plan = planTask(db, cwd, {
-        task: "change membership service contract",
-        files: ["src/services/membership.ts"],
-        symbols: ["getMembership"],
+        task: "change resource service contract",
+        files: ["src/services/resource.ts"],
+        symbols: ["getResource"],
       });
       expect(plan.markdown).toContain("# Anchor Task Plan");
       expect(plan.metadata.taskPlan).toEqual(
         expect.objectContaining({
-          targetFiles: expect.arrayContaining(["src/services/membership.ts"]),
-          recommendedTests: expect.arrayContaining([expect.stringContaining("membership.test.ts")]),
+          targetFiles: expect.arrayContaining(["src/services/resource.ts"]),
+          recommendedTests: expect.arrayContaining([expect.stringContaining("resource.test.ts")]),
         }),
       );
     } finally {
@@ -1292,14 +1292,14 @@ describe("developer value workflows", () => {
     const { cwd, db } = createDeveloperValueRepo();
     try {
       const map = getArchitectureMapContext(db, {
-        file: "src/services/membership.ts",
+        file: "src/services/resource.ts",
         format: "mermaid",
       });
       expect(map.markdown).toContain("```mermaid");
       expect(map.metadata.architectureMap).toEqual(
         expect.objectContaining({
           nodes: expect.arrayContaining([
-            expect.objectContaining({ path: "src/services/membership.ts" }),
+            expect.objectContaining({ path: "src/services/resource.ts" }),
           ]),
         }),
       );
@@ -1308,7 +1308,7 @@ describe("developer value workflows", () => {
       expect(onboarding.markdown).toContain("# Anchor Onboarding Pack");
       expect(onboarding.metadata.onboardingPack).toEqual(
         expect.objectContaining({
-          importantFiles: expect.arrayContaining(["src/services/membership.ts"]),
+          importantFiles: expect.arrayContaining(["src/services/resource.ts"]),
         }),
       );
 
@@ -1330,7 +1330,7 @@ describe("developer value workflows", () => {
       const feedback = recordFeedback(db, {
         resultId: "result-1",
         rating: "useful",
-        note: "helped with the membership plan",
+        note: "helped with the resource plan",
       });
       expect(feedback.note).not.toContain("ignore previous instructions");
       expect(feedbackAdjustedScore(db, "result-1", 0.5)).toBeGreaterThan(0.5);
