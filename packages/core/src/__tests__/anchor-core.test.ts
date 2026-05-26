@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ANCHOR_CURSOR_RULE,
   checkSchema,
+  clearGraphQLFetchCheckpoint,
   defaultDatabasePath,
   discoverCodeFiles,
   ensureAnchorGitExclude,
@@ -16,6 +17,8 @@ import {
   extractRegressionEvents,
   formatAnchorContext,
   getAnchorIndexHealth,
+  getGraphQLFetchCheckpoint,
+  graphQLFetchCheckpointScope,
   getSemanticStatus,
   getIndexStatus,
   indexCodebase,
@@ -63,6 +66,7 @@ import {
   rankArchitecturePatterns,
   recordFeedback,
   refreshWatchIndex,
+  saveGraphQLFetchCheckpoint,
   runAnchorCi,
   runRetrievalEvals,
   suggestPlaybooks,
@@ -439,6 +443,13 @@ describe("GitHub GraphQL PR fetching", () => {
     let calls = 0;
     const fetchImpl: typeof fetch = async (_input, init) => {
       const body = parseGraphQLRequest(init);
+      if (body.query?.includes("AnchorGraphQLRateLimit")) {
+        return jsonResponse({
+          data: {
+            rateLimit: { cost: 1, remaining: 4999, resetAt: "2024-01-04T00:00:00Z" },
+          },
+        });
+      }
       pageSizes.push(body.variables?.first);
       calls += 1;
       if (calls === 1) {
@@ -466,7 +477,152 @@ describe("GitHub GraphQL PR fetching", () => {
       restClient: { pulls: { listFiles: async () => ({ data: [], headers: {} }) } } as never,
     });
 
-    expect(pageSizes).toEqual([25, 10]);
+    expect(pageSizes).toEqual([50, 10]);
+  });
+
+  it("adapts GraphQL page size upward when observed cost is low", async () => {
+    const pageSizes: unknown[] = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = parseGraphQLRequest(init);
+      if (body.query?.includes("AnchorGraphQLRateLimit")) {
+        return jsonResponse({
+          data: {
+            rateLimit: { cost: 1, remaining: 4999, resetAt: "2024-01-04T00:00:00Z" },
+          },
+        });
+      }
+      pageSizes.push(body.variables?.first);
+      if (pageSizes.length === 1) {
+        return jsonResponse({
+          data: {
+            repository: {
+              pullRequests: {
+                nodes: [
+                  pullNode({
+                    files: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                    comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                    reviews: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                    commits: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                  }),
+                ],
+                pageInfo: { hasNextPage: true, endCursor: "page-1" },
+              },
+            },
+            rateLimit: { cost: 1, remaining: 4998, resetAt: "2024-01-04T00:00:00Z" },
+          },
+        });
+      }
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequests: {
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+          rateLimit: { cost: 1, remaining: 4997, resetAt: "2024-01-04T00:00:00Z" },
+        },
+      });
+    };
+
+    await fetchMergedPullRequestsWithGraphQL({
+      token: "token",
+      repo: "acme/widgets",
+      detailConcurrency: 1,
+      controller: {},
+      fetchImpl,
+      restClient: { pulls: { listFiles: async () => ({ data: [], headers: {} }) } } as never,
+    });
+
+    expect(pageSizes).toEqual([50, 100]);
+  });
+
+  it("defers before exhausting GraphQL budget and returns a resumable checkpoint", async () => {
+    let checkpoint:
+      | Parameters<NonNullable<Parameters<typeof fetchMergedPullRequestsWithGraphQL>[0]["onGraphQLCheckpoint"]>>[0]
+      | undefined;
+    const progress: string[] = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = parseGraphQLRequest(init);
+      if (body.query?.includes("AnchorGraphQLRateLimit")) {
+        return jsonResponse({
+          data: {
+            rateLimit: { cost: 1, remaining: 300, resetAt: "2024-01-04T00:00:00Z" },
+          },
+        });
+      }
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequests: {
+              nodes: [
+                pullNode({
+                  files: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                  comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                  reviews: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                  commits: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+                }),
+              ],
+              pageInfo: { hasNextPage: true, endCursor: "resume-after-page-1" },
+            },
+          },
+          rateLimit: { cost: 40, remaining: 240, resetAt: "2024-01-04T00:00:00Z" },
+        },
+      });
+    };
+
+    const records = await fetchMergedPullRequestsWithGraphQL({
+      token: "token",
+      repo: "acme/widgets",
+      detailConcurrency: 1,
+      controller: {},
+      fetchImpl,
+      restClient: { pulls: { listFiles: async () => ({ data: [], headers: {} }) } } as never,
+      onGraphQLCheckpoint: (value) => {
+        checkpoint = value;
+      },
+      onProgress: (item) => progress.push(item.stage),
+    });
+
+    expect(records).toHaveLength(1);
+    expect(checkpoint).toMatchObject({
+      repo: "acme/widgets",
+      cursor: "resume-after-page-1",
+      matchedMergedPullRequests: 1,
+      resetAt: "2024-01-04T00:00:00Z",
+    });
+    expect(progress).toContain("github_graphql_budget_deferred");
+  });
+
+  it("persists and clears GraphQL fetch checkpoints in SQLite", () => {
+    const cwd = tempDir();
+    const db = openAnchorDatabase(cwd);
+    const scope = graphQLFetchCheckpointScope({ repo: "acme/widgets", all: true });
+    try {
+      saveGraphQLFetchCheckpoint(db, {
+        repo: "acme/widgets",
+        scope,
+        cursor: "cursor-1",
+        scannedPullRequests: 100,
+        matchedMergedPullRequests: 80,
+        pageSize: 50,
+        resetAt: "2024-01-04T00:00:00Z",
+        reason: "budget",
+        updatedAt: "2024-01-03T00:00:00Z",
+      });
+
+      expect(getGraphQLFetchCheckpoint(db, "acme/widgets", scope)).toMatchObject({
+        cursor: "cursor-1",
+        scannedPullRequests: 100,
+        matchedMergedPullRequests: 80,
+        pageSize: 50,
+      });
+
+      clearGraphQLFetchCheckpoint(db, "acme/widgets", scope);
+      expect(getGraphQLFetchCheckpoint(db, "acme/widgets", scope)).toBeUndefined();
+    } finally {
+      db.close();
+    }
   });
 
   it("falls back to REST when GraphQL is unavailable before useful data is fetched", async () => {

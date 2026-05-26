@@ -1,6 +1,7 @@
 import type { Octokit } from "@octokit/rest";
 import type {
   FetchPullRequestsProgress,
+  GitHubGraphQLFetchCheckpoint,
   PullRequestComment,
   PullRequestFile,
   PullRequestRecord,
@@ -18,9 +19,12 @@ import {
   paginateWithGitHubRateLimit,
 } from "./rate-limit.js";
 
-const INITIAL_PULL_REQUEST_PAGE_SIZE = 25;
+const MIN_PULL_REQUEST_PAGE_SIZE = 5;
+const INITIAL_PULL_REQUEST_PAGE_SIZE = 50;
+const MAX_PULL_REQUEST_PAGE_SIZE = 100;
 const REDUCED_PULL_REQUEST_PAGE_SIZES = [10, 5];
 const CONNECTION_PAGE_SIZE = 100;
+const GRAPHQL_RATE_LIMIT_RESERVE = 250;
 
 type GraphQLPageInfo = {
   hasNextPage: boolean;
@@ -110,6 +114,10 @@ type PullRequestReviewCommentsQueryData = {
   rateLimit?: GitHubGraphQLRateLimitState;
 };
 
+type RateLimitQueryData = {
+  rateLimit?: GitHubGraphQLRateLimitState;
+};
+
 export type FetchMergedPullRequestsGraphQLOptions = {
   token: string;
   repo: string;
@@ -119,12 +127,87 @@ export type FetchMergedPullRequestsGraphQLOptions = {
   since?: string;
   controller: GitHubRateLimitController;
   restController?: GitHubRateLimitController;
+  graphQLCheckpoint?: GitHubGraphQLFetchCheckpoint;
+  onGraphQLCheckpoint?: (checkpoint: GitHubGraphQLFetchCheckpoint | null) => void;
   onProgress?: (progress: FetchPullRequestsProgress) => void;
   fetchImpl?: GitHubGraphQLFetch;
   restClient?: Octokit;
 };
 
 type RequestGraphQL = ReturnType<typeof createGitHubGraphQLRequester>;
+
+type GraphQLBudgetDecision = {
+  pageSize: number;
+  averageCostPerPr?: number;
+};
+
+class GraphQLBudget {
+  private activePageCost = 0;
+  private averageCostPerPr: number | undefined;
+  private latestRateLimit: GitHubGraphQLRateLimitState | undefined;
+
+  constructor(private readonly reserve: number) {}
+
+  beginPage(): void {
+    this.activePageCost = 0;
+  }
+
+  observe(rateLimit: GitHubGraphQLRateLimitState | undefined): void {
+    this.latestRateLimit = rateLimit ?? this.latestRateLimit;
+    if (typeof rateLimit?.cost === "number" && Number.isFinite(rateLimit.cost)) {
+      this.activePageCost += Math.max(0, rateLimit.cost);
+    }
+  }
+
+  completePage(prCount: number): void {
+    if (prCount <= 0 || this.activePageCost <= 0) return;
+    const pageCostPerPr = this.activePageCost / prCount;
+    this.averageCostPerPr =
+      this.averageCostPerPr === undefined
+        ? pageCostPerPr
+        : this.averageCostPerPr * 0.65 + pageCostPerPr * 0.35;
+  }
+
+  shouldDefer(): boolean {
+    const remaining = this.latestRateLimit?.remaining;
+    return typeof remaining === "number" && remaining <= this.reserve;
+  }
+
+  rateLimit(): GitHubGraphQLRateLimitState | undefined {
+    return this.latestRateLimit;
+  }
+
+  choosePageSize(currentPageSize: number, remainingPrs?: number): GraphQLBudgetDecision {
+    const remaining = this.latestRateLimit?.remaining;
+    const averageCostPerPr = this.averageCostPerPr;
+    if (
+      typeof remaining !== "number" ||
+      remaining <= this.reserve ||
+      averageCostPerPr === undefined ||
+      averageCostPerPr <= 0
+    ) {
+      return { pageSize: currentPageSize, averageCostPerPr };
+    }
+
+    const safeBudget = Math.max(0, remaining - this.reserve);
+    const budgetPageSize = Math.max(
+      MIN_PULL_REQUEST_PAGE_SIZE,
+      Math.min(MAX_PULL_REQUEST_PAGE_SIZE, Math.floor(safeBudget / averageCostPerPr)),
+    );
+    const growthLimitedPageSize =
+      budgetPageSize > currentPageSize
+        ? Math.min(budgetPageSize, currentPageSize * 2)
+        : budgetPageSize;
+    const cappedPageSize =
+      remainingPrs === undefined
+        ? growthLimitedPageSize
+        : Math.min(growthLimitedPageSize, Math.max(MIN_PULL_REQUEST_PAGE_SIZE, remainingPrs));
+    return {
+      pageSize: Math.max(MIN_PULL_REQUEST_PAGE_SIZE, Math.min(MAX_PULL_REQUEST_PAGE_SIZE, cappedPageSize)),
+      averageCostPerPr,
+    };
+  }
+}
 
 const PULL_REQUEST_FIELDS = `
   number
@@ -259,8 +342,32 @@ query AnchorPullRequestReviewComments($reviewId: ID!, $first: Int!, $after: Stri
 }
 `;
 
+const RATE_LIMIT_QUERY = `
+query AnchorGraphQLRateLimit {
+  rateLimit { cost remaining resetAt }
+}
+`;
+
 function connectionNodes<T>(connection: GraphQLConnection<T> | null | undefined): T[] {
   return (connection?.nodes ?? []).filter((node): node is T => Boolean(node));
+}
+
+async function requestGraphQLWithBudget<T extends { rateLimit?: GitHubGraphQLRateLimitState }>(
+  requestGraphQL: RequestGraphQL,
+  query: string,
+  variables: Record<string, unknown>,
+  options: {
+    controller: GitHubRateLimitController;
+    requestName: string;
+    budget: GraphQLBudget;
+  },
+): Promise<GitHubGraphQLResponse<T>> {
+  const response = await requestGraphQL<T>(query, variables, {
+    controller: options.controller,
+    requestName: options.requestName,
+  });
+  options.budget.observe(response.data.rateLimit);
+  return response;
 }
 
 function pageInfo(connection: GraphQLConnection<unknown> | null | undefined): GraphQLPageInfo {
@@ -340,10 +447,11 @@ async function requestConnection<TConnectionName extends string, TNode>(
   options: {
     controller: GitHubRateLimitController;
     requestName: string;
+    budget: GraphQLBudget;
   },
 ): Promise<GraphQLConnection<TNode> | null | undefined> {
   const response: GitHubGraphQLResponse<PullRequestConnectionQueryData<TConnectionName, TNode>> =
-    await requestGraphQL(query, variables, options);
+    await requestGraphQLWithBudget(requestGraphQL, query, variables, options);
   return response.data.repository?.pullRequest?.[connectionName];
 }
 
@@ -355,6 +463,7 @@ async function appendAdditionalFiles(
     owner: string;
     name: string;
     controller: GitHubRateLimitController;
+    budget: GraphQLBudget;
   },
 ): Promise<void> {
   let info = pageInfo(initialConnection);
@@ -373,6 +482,7 @@ async function appendAdditionalFiles(
       {
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/pulls/${record.number}/files`,
+        budget: options.budget,
       },
     );
     record.files.push(
@@ -392,6 +502,7 @@ async function appendAdditionalIssueComments(
     owner: string;
     name: string;
     controller: GitHubRateLimitController;
+    budget: GraphQLBudget;
   },
 ): Promise<void> {
   let info = pageInfo(initialConnection);
@@ -410,6 +521,7 @@ async function appendAdditionalIssueComments(
       {
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/issues/${record.number}/comments`,
+        budget: options.budget,
       },
     );
     record.issueComments?.push(...connectionNodes(connection).map(mapIssueComment));
@@ -425,6 +537,7 @@ async function appendAdditionalCommits(
     owner: string;
     name: string;
     controller: GitHubRateLimitController;
+    budget: GraphQLBudget;
   },
 ): Promise<void> {
   let info = pageInfo(initialConnection);
@@ -443,6 +556,7 @@ async function appendAdditionalCommits(
       {
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/pulls/${record.number}/commits`,
+        budget: options.budget,
       },
     );
     record.commits?.push(
@@ -460,12 +574,14 @@ async function appendAdditionalReviewComments(
   review: GraphQLReview,
   options: {
     controller: GitHubRateLimitController;
+    budget: GraphQLBudget;
   },
 ): Promise<void> {
   let info = pageInfo(review.comments);
   while (info.hasNextPage && info.endCursor) {
     const response: GitHubGraphQLResponse<PullRequestReviewCommentsQueryData> =
-      await requestGraphQL(
+      await requestGraphQLWithBudget(
+        requestGraphQL,
         REVIEW_COMMENTS_QUERY,
         {
           reviewId: review.id,
@@ -475,6 +591,7 @@ async function appendAdditionalReviewComments(
         {
           controller: options.controller,
           requestName: `GraphQL /pull-request-reviews/${review.id}/comments`,
+          budget: options.budget,
         },
       );
     const connection = response.data.node?.comments;
@@ -491,6 +608,7 @@ async function appendAdditionalReviews(
     owner: string;
     name: string;
     controller: GitHubRateLimitController;
+    budget: GraphQLBudget;
   },
 ): Promise<void> {
   const reviewsToHydrate = [...connectionNodes(initialConnection)];
@@ -510,6 +628,7 @@ async function appendAdditionalReviews(
       {
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/pulls/${record.number}/reviews`,
+        budget: options.budget,
       },
     );
     const reviewNodes = connectionNodes(connection);
@@ -524,6 +643,7 @@ async function appendAdditionalReviews(
   for (const review of reviewsToHydrate) {
     await appendAdditionalReviewComments(requestGraphQL, record, review, {
       controller: options.controller,
+      budget: options.budget,
     });
   }
 }
@@ -536,6 +656,7 @@ async function hydratePullRequestNestedConnections(
     owner: string;
     name: string;
     controller: GitHubRateLimitController;
+    budget: GraphQLBudget;
   },
 ): Promise<void> {
   await appendAdditionalFiles(requestGraphQL, record, pull.files, options);
@@ -678,6 +799,29 @@ function nextReducedPageSize(current: number): number | undefined {
   return REDUCED_PULL_REQUEST_PAGE_SIZES.find((candidate) => candidate < current);
 }
 
+function checkpointFromState(options: {
+  repo: string;
+  scope: string;
+  cursor?: string | null;
+  scannedPullRequests: number;
+  matchedMergedPullRequests: number;
+  pageSize: number;
+  rateLimit?: GitHubGraphQLRateLimitState;
+  reason: string;
+}): GitHubGraphQLFetchCheckpoint {
+  return {
+    repo: options.repo,
+    scope: options.scope,
+    cursor: options.cursor ?? null,
+    scannedPullRequests: options.scannedPullRequests,
+    matchedMergedPullRequests: options.matchedMergedPullRequests,
+    pageSize: options.pageSize,
+    resetAt: options.rateLimit?.resetAt ?? undefined,
+    reason: options.reason,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export async function fetchMergedPullRequestsWithGraphQL(
   options: FetchMergedPullRequestsGraphQLOptions,
 ): Promise<PullRequestRecord[]> {
@@ -690,10 +834,20 @@ export async function fetchMergedPullRequestsWithGraphQL(
   });
   const sinceTime = options.since ? Date.parse(options.since) : undefined;
   const records: PullRequestRecord[] = [];
-  let scannedPullRequests = 0;
+  const checkpoint = options.graphQLCheckpoint;
+  const baseScannedPullRequests = checkpoint?.scannedPullRequests ?? 0;
+  const baseMatchedMergedPullRequests = checkpoint?.matchedMergedPullRequests ?? 0;
+  let scannedPullRequests = baseScannedPullRequests;
   let reachedSinceBoundary = false;
-  let cursor: string | null | undefined;
-  let pageSize = Math.min(INITIAL_PULL_REQUEST_PAGE_SIZE, options.limit ?? INITIAL_PULL_REQUEST_PAGE_SIZE);
+  let cursor: string | null | undefined = checkpoint?.cursor ?? undefined;
+  let pageSize = Math.min(
+    MAX_PULL_REQUEST_PAGE_SIZE,
+    checkpoint?.pageSize ?? Math.min(INITIAL_PULL_REQUEST_PAGE_SIZE, options.limit ?? INITIAL_PULL_REQUEST_PAGE_SIZE),
+  );
+  const budget = new GraphQLBudget(GRAPHQL_RATE_LIMIT_RESERVE);
+  const checkpointScope =
+    checkpoint?.scope ??
+    `${options.repo}|${options.limit === undefined ? "all" : `limit:${options.limit}`}|since:${options.since ?? ""}`;
 
   options.onProgress?.({
     stage: "discovering_pull_requests",
@@ -703,11 +857,76 @@ export async function fetchMergedPullRequestsWithGraphQL(
     since: options.since,
     backend: "graphql",
   });
+  if (checkpoint) {
+    options.onProgress?.({
+      stage: "github_graphql_checkpoint_resumed",
+      repo: options.repo,
+      scannedPullRequests: checkpoint.scannedPullRequests,
+      matchedMergedPullRequests: checkpoint.matchedMergedPullRequests,
+      pageSize: checkpoint.pageSize,
+      resetAt: checkpoint.resetAt,
+    });
+  }
+  await requestGraphQLWithBudget<RateLimitQueryData>(
+    requestGraphQL,
+    RATE_LIMIT_QUERY,
+    {},
+    {
+      controller: options.controller,
+      requestName: "GraphQL rate limit preflight",
+      budget,
+    },
+  );
+  const preflightRateLimit = budget.rateLimit();
+  if (budget.shouldDefer()) {
+    options.onGraphQLCheckpoint?.(
+      checkpointFromState({
+        repo: options.repo,
+        scope: checkpointScope,
+        cursor: cursor ?? null,
+        scannedPullRequests,
+        matchedMergedPullRequests: baseMatchedMergedPullRequests,
+        pageSize,
+        rateLimit: preflightRateLimit,
+        reason: "GraphQL budget safety reserve reached before fetching another page",
+      }),
+    );
+    options.onProgress?.({
+      stage: "github_graphql_budget_deferred",
+      repo: options.repo,
+      remaining: preflightRateLimit?.remaining,
+      reserve: GRAPHQL_RATE_LIMIT_RESERVE,
+      resetAt: preflightRateLimit?.resetAt,
+      matchedMergedPullRequests: baseMatchedMergedPullRequests,
+    });
+    return records;
+  }
+  if (typeof preflightRateLimit?.remaining === "number") {
+    const preflightPageSize = Math.max(
+      MIN_PULL_REQUEST_PAGE_SIZE,
+      Math.min(
+        pageSize,
+        Math.floor((preflightRateLimit.remaining - GRAPHQL_RATE_LIMIT_RESERVE) / 4),
+      ),
+    );
+    if (preflightPageSize !== pageSize) {
+      options.onProgress?.({
+        stage: "github_graphql_page_size_selected",
+        repo: options.repo,
+        previousPageSize: pageSize,
+        nextPageSize: preflightPageSize,
+        remaining: preflightRateLimit.remaining,
+      });
+      pageSize = preflightPageSize;
+    }
+  }
 
   while (true) {
     let response: GitHubGraphQLResponse<PullRequestsQueryData>;
+    budget.beginPage();
     try {
-      response = await requestGraphQL(
+      response = await requestGraphQLWithBudget(
+        requestGraphQL,
         LIST_MERGED_PULL_REQUESTS_QUERY,
         {
           owner,
@@ -718,6 +937,7 @@ export async function fetchMergedPullRequestsWithGraphQL(
         {
           controller: options.controller,
           requestName: `GraphQL /repos/${options.repo}/pullRequests`,
+          budget,
         },
       );
     } catch (error) {
@@ -739,6 +959,7 @@ export async function fetchMergedPullRequestsWithGraphQL(
     const connection = response.data.repository?.pullRequests;
     const pullNodes = connectionNodes(connection);
     scannedPullRequests += pullNodes.length;
+    const recordsBeforePage = records.length;
     for (const pull of pullNodes) {
       if (sinceTime && Date.parse(pull.updatedAt ?? pull.mergedAt ?? pull.createdAt) < sinceTime) {
         reachedSinceBoundary = true;
@@ -750,10 +971,13 @@ export async function fetchMergedPullRequestsWithGraphQL(
         owner,
         name,
         controller: options.controller,
+        budget,
       });
       records.push(record);
       if (options.limit !== undefined && records.length >= options.limit) break;
     }
+    const pageMatchedPullRequests = records.length - recordsBeforePage;
+    budget.completePage(pageMatchedPullRequests);
 
     options.onProgress?.({
       stage: "scanned_pull_request_page",
@@ -761,21 +985,62 @@ export async function fetchMergedPullRequestsWithGraphQL(
       all: options.limit === undefined,
       limit: options.limit,
       scannedPullRequests,
-      matchedMergedPullRequests: records.length,
+      matchedMergedPullRequests: baseMatchedMergedPullRequests + records.length,
       backend: "graphql",
       pageSize,
     });
 
     const info = pageInfo(connection);
+    const totalMatchedMergedPullRequests = baseMatchedMergedPullRequests + records.length;
+    if (info.hasNextPage && info.endCursor && budget.shouldDefer()) {
+      const rateLimit = budget.rateLimit();
+      const checkpointToSave = checkpointFromState({
+        repo: options.repo,
+        scope: checkpointScope,
+        cursor: info.endCursor,
+        scannedPullRequests,
+        matchedMergedPullRequests: totalMatchedMergedPullRequests,
+        pageSize,
+        rateLimit,
+        reason: "GraphQL budget safety reserve reached",
+      });
+      options.onGraphQLCheckpoint?.(checkpointToSave);
+      options.onProgress?.({
+        stage: "github_graphql_budget_deferred",
+        repo: options.repo,
+        remaining: rateLimit?.remaining,
+        reserve: GRAPHQL_RATE_LIMIT_RESERVE,
+        resetAt: rateLimit?.resetAt,
+        matchedMergedPullRequests: totalMatchedMergedPullRequests,
+      });
+      break;
+    }
     if (
       reachedSinceBoundary ||
       (options.limit !== undefined && records.length >= options.limit) ||
       !info.hasNextPage ||
       !info.endCursor
     ) {
+      options.onGraphQLCheckpoint?.(null);
       break;
     }
     cursor = info.endCursor;
+    const remainingPrs =
+      options.limit === undefined
+        ? undefined
+        : Math.max(0, options.limit - records.length);
+    const decision = budget.choosePageSize(pageSize, remainingPrs);
+    if (decision.pageSize !== pageSize) {
+      options.onProgress?.({
+        stage: "github_graphql_page_size_selected",
+        repo: options.repo,
+        previousPageSize: pageSize,
+        nextPageSize: decision.pageSize,
+        remaining: budget.rateLimit()?.remaining,
+        averageCostPerPr: decision.averageCostPerPr,
+      });
+      pageSize = decision.pageSize;
+    }
   }
 
   options.onProgress?.({

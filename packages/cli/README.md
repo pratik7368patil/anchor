@@ -37,7 +37,7 @@ anchor doctor
 
 Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, and `anchor_check_architecture`.
 
-Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, comments, reviews, commits, labels, and changed files. Anchor uses REST only to enrich PR file patches, so `anchor index`, `anchor index-all`, and `anchor sync` are more efficient without adding another command.
+Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, comments, reviews, commits, labels, and changed files. Anchor uses REST only to enrich PR file patches, adapts GraphQL page size from live rate-limit cost, and saves a local resume checkpoint for full-history runs, so `anchor index`, `anchor index-all`, and `anchor sync` are more efficient without adding another command.
 
 Use `anchor_get_context` with `strict: true` when Cursor should only receive non-stale, high-confidence evidence.
 

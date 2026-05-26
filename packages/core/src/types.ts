@@ -42,6 +42,18 @@ export type ReliabilityGateStatus = "passed" | "weak" | "failed";
 
 export type GitHubFetchBackend = "graphql" | "rest";
 
+export type GitHubGraphQLFetchCheckpoint = {
+  repo: string;
+  scope: string;
+  cursor?: string | null;
+  scannedPullRequests: number;
+  matchedMergedPullRequests: number;
+  pageSize: number;
+  resetAt?: string | null;
+  reason: string;
+  updatedAt: string;
+};
+
 export type EvidenceRef = {
   prNumber: number;
   prUrl: string;
@@ -446,6 +458,30 @@ export type FetchPullRequestsProgress =
       previousPageSize: number;
       nextPageSize: number;
       reason: string;
+    }
+  | {
+      stage: "github_graphql_page_size_selected";
+      repo: string;
+      previousPageSize: number;
+      nextPageSize: number;
+      remaining?: number | null;
+      averageCostPerPr?: number;
+    }
+  | {
+      stage: "github_graphql_budget_deferred";
+      repo: string;
+      remaining?: number | null;
+      reserve: number;
+      resetAt?: string | null;
+      matchedMergedPullRequests: number;
+    }
+  | {
+      stage: "github_graphql_checkpoint_resumed";
+      repo: string;
+      scannedPullRequests: number;
+      matchedMergedPullRequests: number;
+      pageSize: number;
+      resetAt?: string | null;
     }
   | {
       stage: "github_rate_limited";

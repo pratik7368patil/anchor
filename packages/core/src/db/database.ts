@@ -9,6 +9,7 @@ import type {
   CodeIndexSummary,
   IndexRunRecord,
   IndexStatus,
+  GitHubGraphQLFetchCheckpoint,
   PullRequestRecord,
   RegressionEvent,
   SourceType,
@@ -33,6 +34,14 @@ type SyncRow = {
   last_sync_at?: string | null;
   history_coverage?: "limited" | "all" | "unknown" | null;
   history_limit?: number | null;
+  graphql_cursor?: string | null;
+  graphql_cursor_scope?: string | null;
+  graphql_cursor_scanned_prs?: number | null;
+  graphql_cursor_matched_prs?: number | null;
+  graphql_cursor_page_size?: number | null;
+  graphql_cursor_reset_at?: string | null;
+  graphql_cursor_reason?: string | null;
+  graphql_cursor_updated_at?: string | null;
 };
 type CodeIndexStateRow = { last_indexed_at?: string | null };
 type ArchitectureIndexStateRow = { last_indexed_at?: string | null };
@@ -59,6 +68,14 @@ export function initializeSchema(db: AnchorDatabase): void {
   ensureColumn(db, "sync_state", "history_coverage", "TEXT");
   ensureColumn(db, "sync_state", "history_limit", "INTEGER");
   ensureColumn(db, "sync_state", "history_since", "TEXT");
+  ensureColumn(db, "sync_state", "graphql_cursor", "TEXT");
+  ensureColumn(db, "sync_state", "graphql_cursor_scope", "TEXT");
+  ensureColumn(db, "sync_state", "graphql_cursor_scanned_prs", "INTEGER");
+  ensureColumn(db, "sync_state", "graphql_cursor_matched_prs", "INTEGER");
+  ensureColumn(db, "sync_state", "graphql_cursor_page_size", "INTEGER");
+  ensureColumn(db, "sync_state", "graphql_cursor_reset_at", "TEXT");
+  ensureColumn(db, "sync_state", "graphql_cursor_reason", "TEXT");
+  ensureColumn(db, "sync_state", "graphql_cursor_updated_at", "TEXT");
 }
 
 function ensureColumn(
@@ -172,6 +189,107 @@ export function updateSyncState(
     metadata.historySince ?? null,
     now,
   );
+}
+
+export function graphQLFetchCheckpointScope(input: {
+  repo: string;
+  all?: boolean;
+  limit?: number;
+  since?: string;
+}): string {
+  const historyScope = input.all ? "all" : `limit:${input.limit ?? 200}`;
+  return `${input.repo}|${historyScope}|since:${input.since ?? ""}`;
+}
+
+export function getGraphQLFetchCheckpoint(
+  db: AnchorDatabase,
+  repo: string,
+  scope: string,
+): GitHubGraphQLFetchCheckpoint | undefined {
+  initializeSchema(db);
+  const row = db
+    .prepare(
+      `SELECT graphql_cursor, graphql_cursor_scope, graphql_cursor_scanned_prs,
+              graphql_cursor_matched_prs, graphql_cursor_page_size, graphql_cursor_reset_at,
+              graphql_cursor_reason, graphql_cursor_updated_at
+       FROM sync_state
+       WHERE repo = ?`,
+    )
+    .get(repo) as SyncRow | undefined;
+  if (!row?.graphql_cursor_scope || row.graphql_cursor_scope !== scope) return undefined;
+  return {
+    repo,
+    scope,
+    cursor: row.graphql_cursor ?? null,
+    scannedPullRequests: row.graphql_cursor_scanned_prs ?? 0,
+    matchedMergedPullRequests: row.graphql_cursor_matched_prs ?? 0,
+    pageSize: row.graphql_cursor_page_size ?? 50,
+    resetAt: row.graphql_cursor_reset_at ?? undefined,
+    reason: row.graphql_cursor_reason ?? "GraphQL budget checkpoint",
+    updatedAt: row.graphql_cursor_updated_at ?? new Date(0).toISOString(),
+  };
+}
+
+export function saveGraphQLFetchCheckpoint(
+  db: AnchorDatabase,
+  checkpoint: GitHubGraphQLFetchCheckpoint,
+): void {
+  initializeSchema(db);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO sync_state
+     (repo, last_sync_at, last_indexed_pr, history_coverage, history_limit, history_since,
+      graphql_cursor, graphql_cursor_scope, graphql_cursor_scanned_prs,
+      graphql_cursor_matched_prs, graphql_cursor_page_size, graphql_cursor_reset_at,
+      graphql_cursor_reason, graphql_cursor_updated_at, updated_at)
+     VALUES (?, NULL, NULL, 'unknown', NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(repo) DO UPDATE SET
+       graphql_cursor = excluded.graphql_cursor,
+       graphql_cursor_scope = excluded.graphql_cursor_scope,
+       graphql_cursor_scanned_prs = excluded.graphql_cursor_scanned_prs,
+       graphql_cursor_matched_prs = excluded.graphql_cursor_matched_prs,
+       graphql_cursor_page_size = excluded.graphql_cursor_page_size,
+       graphql_cursor_reset_at = excluded.graphql_cursor_reset_at,
+       graphql_cursor_reason = excluded.graphql_cursor_reason,
+       graphql_cursor_updated_at = excluded.graphql_cursor_updated_at,
+       updated_at = excluded.updated_at`,
+  ).run(
+    checkpoint.repo,
+    checkpoint.cursor ?? null,
+    checkpoint.scope,
+    checkpoint.scannedPullRequests,
+    checkpoint.matchedMergedPullRequests,
+    checkpoint.pageSize,
+    checkpoint.resetAt ?? null,
+    checkpoint.reason,
+    checkpoint.updatedAt,
+    now,
+  );
+}
+
+export function clearGraphQLFetchCheckpoint(
+  db: AnchorDatabase,
+  repo: string,
+  scope?: string,
+): void {
+  initializeSchema(db);
+  const row = db
+    .prepare("SELECT graphql_cursor_scope FROM sync_state WHERE repo = ?")
+    .get(repo) as SyncRow | undefined;
+  if (scope && row?.graphql_cursor_scope && row.graphql_cursor_scope !== scope) return;
+  db.prepare(
+    `UPDATE sync_state SET
+       graphql_cursor = NULL,
+       graphql_cursor_scope = NULL,
+       graphql_cursor_scanned_prs = NULL,
+       graphql_cursor_matched_prs = NULL,
+       graphql_cursor_page_size = NULL,
+       graphql_cursor_reset_at = NULL,
+       graphql_cursor_reason = NULL,
+       graphql_cursor_updated_at = NULL,
+       updated_at = ?
+     WHERE repo = ?`,
+  ).run(new Date().toISOString(), repo);
 }
 
 function deleteExistingPrData(db: AnchorDatabase, prId: number): void {

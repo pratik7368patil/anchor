@@ -92,6 +92,25 @@ export function printFetchProgress(progress: FetchPullRequestsProgress): void {
         `[anchor] GitHub GraphQL query was too expensive; reducing page size from ${progress.previousPageSize} to ${progress.nextPageSize}. ${progress.reason}.`,
       );
       return;
+    case "github_graphql_page_size_selected": {
+      const cost = progress.averageCostPerPr
+        ? ` Average observed cost: ${progress.averageCostPerPr.toFixed(2)} points/PR.`
+        : "";
+      console.error(
+        `[anchor] adjusted GraphQL PR page size from ${progress.previousPageSize} to ${progress.nextPageSize}.${cost}`,
+      );
+      return;
+    }
+    case "github_graphql_budget_deferred":
+      console.error(
+        `[anchor] GraphQL budget safety reserve reached (${progress.remaining ?? "unknown"} remaining, reserve ${progress.reserve}). Indexed ${progress.matchedMergedPullRequests} merged PRs so far; rerun the same command after ${progress.resetAt ?? "the GitHub reset"} to resume.`,
+      );
+      return;
+    case "github_graphql_checkpoint_resumed":
+      console.error(
+        `[anchor] resuming GraphQL PR fetch checkpoint after ${progress.matchedMergedPullRequests} merged PRs (page size ${progress.pageSize}).`,
+      );
+      return;
     case "github_rate_limited":
       console.error(
         `[anchor] GitHub rate limit hit while ${progress.request}. Waiting ${progress.waitSeconds}s until ${progress.retryAt}. ${progress.reason}.`,

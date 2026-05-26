@@ -82,7 +82,7 @@ export const commandGroups: CommandGroup[] = [
       {
         command: "anchor index-all",
         description:
-          "Indexes all merged PR history with GraphQL first and REST only for patch enrichment.",
+          "Indexes all merged PR history with adaptive GraphQL batching and local resume checkpoints.",
       },
       {
         command: "anchor index-code",
@@ -227,7 +227,7 @@ export const options: TableItem[] = [
   { name: "--repo owner/name", description: "Index a specific GitHub repo." },
   { name: "--limit 50", description: "Limit the number of PRs indexed." },
   { name: "--all", description: "Fetch all merged PRs." },
-  { name: "--concurrency 5", description: "Enrich PR patches and supplemental pages in parallel." },
+  { name: "--concurrency 5", description: "Enrich PR patches in parallel while GraphQL adapts page size." },
   { name: "--no-code", description: "Skip codebase indexing." },
   { name: "--since YYYY-MM-DD", description: "Index PRs updated since a date." },
   { name: "--force", description: "Rebuild the local index." },

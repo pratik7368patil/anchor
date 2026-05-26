@@ -1,5 +1,9 @@
 import type { Octokit } from "@octokit/rest";
-import type { FetchPullRequestsProgress, PullRequestRecord } from "../types.js";
+import type {
+  FetchPullRequestsProgress,
+  GitHubGraphQLFetchCheckpoint,
+  PullRequestRecord,
+} from "../types.js";
 import { createGitHubClient } from "./client.js";
 import { fetchPullRequestDetails } from "./fetch-pr-details.js";
 import { fetchMergedPullRequestsWithGraphQL } from "./fetch-prs-graphql.js";
@@ -17,6 +21,8 @@ export type FetchPullRequestsOptions = {
   onProgress?: (progress: FetchPullRequestsProgress) => void;
   fetchImpl?: GitHubGraphQLFetch;
   restClient?: Octokit;
+  graphQLCheckpoint?: GitHubGraphQLFetchCheckpoint;
+  onGraphQLCheckpoint?: (checkpoint: GitHubGraphQLFetchCheckpoint | null) => void;
 };
 
 export function resolvePullRequestFetchLimit(
@@ -215,6 +221,8 @@ export async function fetchMergedPullRequests(
       since: options.since,
       controller: graphqlRateLimitController,
       restController: restRateLimitController,
+      graphQLCheckpoint: options.graphQLCheckpoint,
+      onGraphQLCheckpoint: options.onGraphQLCheckpoint,
       onProgress: options.onProgress,
       fetchImpl: options.fetchImpl,
       restClient: options.restClient,
