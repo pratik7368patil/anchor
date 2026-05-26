@@ -460,10 +460,10 @@ function renderPlanningPage(): string {
       ${renderCodeBlock(
         "Planning commands",
         "planning-code",
-        `anchor plan "Add membership API integration" --file src/api/membership.ts --symbol createMembership
+        `anchor plan "Add resource API integration" --file src/api/resource.ts --symbol createResource
 anchor plan "Refactor auth cache" --file src/auth/cache.ts --strict --json
-anchor test-command src/services/membership.ts
-anchor test-command src/services/membership.test.ts --json`,
+anchor test-command src/services/resource.ts
+anchor test-command src/services/resource.test.ts --json`,
         true,
       )}
     </article>

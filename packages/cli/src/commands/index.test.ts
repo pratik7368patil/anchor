@@ -161,8 +161,8 @@ describe("rules commands", () => {
             {
               id: "api-contract",
               category: "api_contract",
-              text: "Keep `createMembership` backward compatible.",
-              symbols: ["createMembership"],
+              text: "Keep `createResource` backward compatible.",
+              symbols: ["createResource"],
               evidence: [
                 {
                   prNumber: 10,
@@ -189,8 +189,8 @@ describe("rules commands", () => {
     const added = runRulesAdd(cwd, {
       id: "api-contract",
       category: "api_contract",
-      text: "Keep `createMembership` backward compatible.",
-      symbols: ["createMembership"],
+      text: "Keep `createResource` backward compatible.",
+      symbols: ["createResource"],
       prNumber: 10,
       prUrl: "https://github.com/owner/repo/pull/10",
       sourceType: "pr_body",
