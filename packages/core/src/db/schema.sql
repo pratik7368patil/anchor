@@ -287,6 +287,14 @@ CREATE TABLE IF NOT EXISTS sync_state (
   history_coverage TEXT,
   history_limit INTEGER,
   history_since TEXT,
+  graphql_cursor TEXT,
+  graphql_cursor_scope TEXT,
+  graphql_cursor_scanned_prs INTEGER,
+  graphql_cursor_matched_prs INTEGER,
+  graphql_cursor_page_size INTEGER,
+  graphql_cursor_reset_at TEXT,
+  graphql_cursor_reason TEXT,
+  graphql_cursor_updated_at TEXT,
   updated_at TEXT NOT NULL
 );
 

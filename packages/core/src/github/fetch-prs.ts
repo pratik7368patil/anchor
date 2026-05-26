@@ -1,6 +1,13 @@
-import type { FetchPullRequestsProgress, PullRequestRecord } from "../types.js";
+import type { Octokit } from "@octokit/rest";
+import type {
+  FetchPullRequestsProgress,
+  GitHubGraphQLFetchCheckpoint,
+  PullRequestRecord,
+} from "../types.js";
 import { createGitHubClient } from "./client.js";
 import { fetchPullRequestDetails } from "./fetch-pr-details.js";
+import { fetchMergedPullRequestsWithGraphQL } from "./fetch-prs-graphql.js";
+import type { GitHubGraphQLFetch } from "./graphql-client.js";
 import type { GitHubRateLimitController } from "./rate-limit.js";
 import { requestWithGitHubRateLimit } from "./rate-limit.js";
 
@@ -12,6 +19,10 @@ export type FetchPullRequestsOptions = {
   detailConcurrency?: number;
   since?: string;
   onProgress?: (progress: FetchPullRequestsProgress) => void;
+  fetchImpl?: GitHubGraphQLFetch;
+  restClient?: Octokit;
+  graphQLCheckpoint?: GitHubGraphQLFetchCheckpoint;
+  onGraphQLCheckpoint?: (checkpoint: GitHubGraphQLFetchCheckpoint | null) => void;
 };
 
 export function resolvePullRequestFetchLimit(
@@ -26,6 +37,20 @@ export function resolvePullRequestDetailConcurrency(
   const value = options.detailConcurrency ?? 5;
   if (!Number.isFinite(value)) return 5;
   return Math.max(1, Math.min(Math.trunc(value), 10));
+}
+
+function createProgressRateLimitController(
+  repo: string,
+  onProgress?: (progress: FetchPullRequestsProgress) => void,
+): GitHubRateLimitController {
+  return {
+    onRateLimit: (progress) =>
+      onProgress?.({
+        stage: "github_rate_limited",
+        repo,
+        ...progress,
+      }),
+  };
 }
 
 async function fetchPullRequestDetailsConcurrently(options: {
@@ -83,23 +108,16 @@ async function fetchPullRequestDetailsConcurrently(options: {
   });
 }
 
-export async function fetchMergedPullRequests(
+async function fetchMergedPullRequestsWithRest(
   options: FetchPullRequestsOptions,
+  rateLimitController: GitHubRateLimitController,
 ): Promise<PullRequestRecord[]> {
   const [owner, repo] = options.repo.split("/");
   if (!owner || !repo) throw new Error(`Invalid repo '${options.repo}'. Expected owner/name.`);
 
-  const octokit = createGitHubClient(options.token);
+  const octokit = options.restClient ?? createGitHubClient(options.token);
   const limit = resolvePullRequestFetchLimit(options);
   const detailConcurrency = resolvePullRequestDetailConcurrency(options);
-  const rateLimitController: GitHubRateLimitController = {
-    onRateLimit: (progress) =>
-      options.onProgress?.({
-        stage: "github_rate_limited",
-        repo: options.repo,
-        ...progress,
-      }),
-  };
   const sinceTime = options.since ? Date.parse(options.since) : undefined;
   const pullNumbers: number[] = [];
   let scannedPullRequests = 0;
@@ -112,6 +130,7 @@ export async function fetchMergedPullRequests(
     all: limit === undefined,
     limit,
     since: options.since,
+    backend: "rest",
   });
 
   while (true) {
@@ -148,6 +167,7 @@ export async function fetchMergedPullRequests(
       limit,
       scannedPullRequests,
       matchedMergedPullRequests: pullNumbers.length,
+      backend: "rest",
     });
     const hasNextPage = String(response.headers.link ?? "").includes('rel="next"');
     if (
@@ -167,6 +187,7 @@ export async function fetchMergedPullRequests(
     total: pullNumbers.length,
     limit,
     detailConcurrency,
+    backend: "rest",
   });
 
   return fetchPullRequestDetailsConcurrently({
@@ -177,4 +198,43 @@ export async function fetchMergedPullRequests(
     controller: rateLimitController,
     onProgress: options.onProgress,
   });
+}
+
+export async function fetchMergedPullRequests(
+  options: FetchPullRequestsOptions,
+): Promise<PullRequestRecord[]> {
+  const limit = resolvePullRequestFetchLimit(options);
+  const detailConcurrency = resolvePullRequestDetailConcurrency(options);
+  const graphqlRateLimitController = createProgressRateLimitController(
+    options.repo,
+    options.onProgress,
+  );
+  const restRateLimitController = createProgressRateLimitController(options.repo, options.onProgress);
+
+  try {
+    return await fetchMergedPullRequestsWithGraphQL({
+      token: options.token,
+      repo: options.repo,
+      limit,
+      all: options.all,
+      detailConcurrency,
+      since: options.since,
+      controller: graphqlRateLimitController,
+      restController: restRateLimitController,
+      graphQLCheckpoint: options.graphQLCheckpoint,
+      onGraphQLCheckpoint: options.onGraphQLCheckpoint,
+      onProgress: options.onProgress,
+      fetchImpl: options.fetchImpl,
+      restClient: options.restClient,
+    });
+  } catch (error) {
+    options.onProgress?.({
+      stage: "github_fetch_backend_fallback",
+      repo: options.repo,
+      from: "graphql",
+      to: "rest",
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return fetchMergedPullRequestsWithRest(options, restRateLimitController);
+  }
 }

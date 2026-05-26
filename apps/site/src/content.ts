@@ -76,11 +76,13 @@ export const commandGroups: CommandGroup[] = [
     commands: [
       {
         command: "anchor index",
-        description: "Indexes recent merged GitHub PRs and the local codebase. Default: 200 PRs.",
+        description:
+          "Indexes recent merged GitHub PRs with GraphQL batching plus the local codebase. Default: 200 PRs.",
       },
       {
         command: "anchor index-all",
-        description: "Indexes all merged PR history. Useful when you want full repo memory.",
+        description:
+          "Indexes all merged PR history with adaptive GraphQL batching and local resume checkpoints.",
       },
       {
         command: "anchor index-code",
@@ -225,7 +227,7 @@ export const options: TableItem[] = [
   { name: "--repo owner/name", description: "Index a specific GitHub repo." },
   { name: "--limit 50", description: "Limit the number of PRs indexed." },
   { name: "--all", description: "Fetch all merged PRs." },
-  { name: "--concurrency 5", description: "Fetch PR details in parallel." },
+  { name: "--concurrency 5", description: "Enrich PR patches in parallel while GraphQL adapts page size." },
   { name: "--no-code", description: "Skip codebase indexing." },
   { name: "--since YYYY-MM-DD", description: "Index PRs updated since a date." },
   { name: "--force", description: "Rebuild the local index." },

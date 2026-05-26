@@ -4,6 +4,7 @@ import type { Octokit } from "@octokit/rest";
 import { checkSchema, defaultDatabasePath, openAnchorDatabase } from "./db/database.js";
 import type { DoctorCheck, DoctorReport } from "./types.js";
 import { createGitHubClient } from "./github/client.js";
+import { createGitHubGraphQLRequester } from "./github/graphql-client.js";
 import { githubAuthFixMessage, resolveGitHubToken } from "./utils/github-token.js";
 import { detectGitHubRepo, detectGitRoot } from "./utils/git.js";
 
@@ -11,6 +12,7 @@ export type DoctorOptions = {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   githubClientFactory?: (token: string) => Pick<Octokit, "repos">;
+  githubGraphQLCheck?: (token: string) => Promise<boolean> | boolean;
   mcpServerCheck?: () => Promise<boolean> | boolean;
 };
 
@@ -76,6 +78,57 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
         false,
         "Skipped because repo or token is missing.",
         `Fix the GitHub remote and authentication. ${githubAuthFixMessage()}`,
+      ),
+    );
+  }
+
+  if (token) {
+    try {
+      const graphqlOk =
+        options.githubGraphQLCheck !== undefined
+          ? Boolean(await options.githubGraphQLCheck(token))
+          : options.githubClientFactory !== undefined
+            ? true
+            : Boolean(
+                await createGitHubGraphQLRequester({ token })(
+                  `query AnchorDoctorGraphQL {
+                    viewer { login }
+                    rateLimit { cost remaining resetAt }
+                  }`,
+                  {},
+                  {
+                    controller: {},
+                    requestName: "GraphQL doctor reachability check",
+                  },
+                ),
+              );
+      checks.push(
+        check(
+          "GitHub GraphQL reachable",
+          graphqlOk,
+          graphqlOk
+            ? "GitHub GraphQL API is reachable."
+            : "GitHub GraphQL API check returned an unsuccessful result.",
+          "Check token scope, network access, and GraphQL rate limits. Use read-only repo access.",
+        ),
+      );
+    } catch (error) {
+      checks.push(
+        check(
+          "GitHub GraphQL reachable",
+          false,
+          `GitHub GraphQL check failed: ${error instanceof Error ? error.message : String(error)}`,
+          "Check token scope, network access, and GraphQL rate limits. Use read-only repo access.",
+        ),
+      );
+    }
+  } else {
+    checks.push(
+      check(
+        "GitHub GraphQL reachable",
+        false,
+        "Skipped because token is missing.",
+        githubAuthFixMessage(),
       ),
     );
   }
