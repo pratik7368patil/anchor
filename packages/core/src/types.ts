@@ -495,6 +495,37 @@ export type OrgStatus = {
   >;
 };
 
+export type OrgRunTimelineStepStatus = "active" | "done" | "skipped" | "warn" | "fail" | "wait";
+
+export type OrgRunTimelineStep = {
+  id: string;
+  label: string;
+  status: OrgRunTimelineStepStatus;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  current?: number;
+  total?: number;
+  detail?: string;
+};
+
+export type OrgRunTimelineRepoSummary = {
+  repo: string;
+  status: OrgRunTimelineStepStatus;
+  durationMs: number;
+  detail?: string;
+};
+
+export type OrgRunTimelineSnapshot = {
+  repo?: string;
+  repoIndex?: number;
+  repoTotal?: number;
+  activeStepId?: string;
+  steps: OrgRunTimelineStep[];
+  recentRepos: OrgRunTimelineRepoSummary[];
+};
+
 export type OrgRunHeartbeat = {
   pid: number;
   command: string;
@@ -503,6 +534,7 @@ export type OrgRunHeartbeat = {
   repoIndex?: number;
   repoTotal?: number;
   phase: string;
+  timeline?: OrgRunTimelineSnapshot;
   startedAt: string;
   updatedAt: string;
 };

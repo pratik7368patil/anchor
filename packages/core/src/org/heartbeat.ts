@@ -1,6 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { OrgRunHeartbeat, OrgRunHeartbeatStatus } from "../types.js";
+import type {
+  OrgRunHeartbeat,
+  OrgRunHeartbeatStatus,
+  OrgRunTimelineRepoSummary,
+  OrgRunTimelineSnapshot,
+  OrgRunTimelineStep,
+  OrgRunTimelineStepStatus,
+} from "../types.js";
 import { orgRoot, validateOrgName } from "./config.js";
 
 const HEARTBEAT_STALE_AFTER_MS = 2 * 60 * 1000;
@@ -47,8 +54,85 @@ function parseHeartbeat(value: unknown): OrgRunHeartbeat | undefined {
     repoIndex: typeof candidate.repoIndex === "number" ? candidate.repoIndex : undefined,
     repoTotal: typeof candidate.repoTotal === "number" ? candidate.repoTotal : undefined,
     phase: candidate.phase,
+    timeline: parseTimeline(candidate.timeline),
     startedAt: candidate.startedAt,
     updatedAt: candidate.updatedAt,
+  };
+}
+
+function parseTimelineStatus(value: unknown): OrgRunTimelineStepStatus | undefined {
+  if (
+    value === "active" ||
+    value === "done" ||
+    value === "skipped" ||
+    value === "warn" ||
+    value === "fail" ||
+    value === "wait"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function parseTimelineNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function parseTimelineStep(value: unknown): OrgRunTimelineStep | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<OrgRunTimelineStep>;
+  const status = parseTimelineStatus(candidate.status);
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.label !== "string" ||
+    !status ||
+    typeof candidate.startedAt !== "string" ||
+    typeof candidate.updatedAt !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    id: candidate.id,
+    label: candidate.label,
+    status,
+    startedAt: candidate.startedAt,
+    updatedAt: candidate.updatedAt,
+    completedAt: typeof candidate.completedAt === "string" ? candidate.completedAt : undefined,
+    durationMs: parseTimelineNumber(candidate.durationMs),
+    current: parseTimelineNumber(candidate.current),
+    total: parseTimelineNumber(candidate.total),
+    detail: typeof candidate.detail === "string" ? candidate.detail : undefined,
+  };
+}
+
+function parseTimelineRepoSummary(value: unknown): OrgRunTimelineRepoSummary | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<OrgRunTimelineRepoSummary>;
+  const status = parseTimelineStatus(candidate.status);
+  if (typeof candidate.repo !== "string" || !status) return undefined;
+  return {
+    repo: candidate.repo,
+    status,
+    durationMs: parseTimelineNumber(candidate.durationMs) ?? 0,
+    detail: typeof candidate.detail === "string" ? candidate.detail : undefined,
+  };
+}
+
+function parseTimeline(value: unknown): OrgRunTimelineSnapshot | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<OrgRunTimelineSnapshot>;
+  if (!Array.isArray(candidate.steps) || !Array.isArray(candidate.recentRepos)) return undefined;
+  const steps = candidate.steps.map(parseTimelineStep).filter((step) => step !== undefined);
+  const recentRepos = candidate.recentRepos
+    .map(parseTimelineRepoSummary)
+    .filter((repo) => repo !== undefined);
+  return {
+    repo: typeof candidate.repo === "string" ? candidate.repo : undefined,
+    repoIndex: parseTimelineNumber(candidate.repoIndex),
+    repoTotal: parseTimelineNumber(candidate.repoTotal),
+    activeStepId: typeof candidate.activeStepId === "string" ? candidate.activeStepId : undefined,
+    steps,
+    recentRepos,
   };
 }
 
