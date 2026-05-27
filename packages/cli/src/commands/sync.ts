@@ -15,7 +15,7 @@ import {
   saveGraphQLFetchCheckpoint,
   type GitHubGraphQLFetchCheckpoint,
 } from "@pratik7368patil/anchor-core";
-import { printIndexOutcome } from "./engagement.js";
+import { printIndexRunSummary, printRunHeader } from "./summary.js";
 import { resolveRepo, type IndexOptions } from "./index.js";
 import { createProgressReporter } from "./progress.js";
 
@@ -43,9 +43,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
     progress: options.progress,
     title: "Syncing repo memory",
   });
-  progress.log("Anchor sync started.");
-  progress.log(`Repository: ${repo}`);
-  progress.log(`Database path: ${databasePath}`);
+  if (progress.mode !== "off") printRunHeader({ command: "sync", repo, databasePath });
 
   const db = openAnchorDatabase(root, databasePath);
   const startedAt = new Date().toISOString();
@@ -102,27 +100,16 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
             onProgress: progress.onCodeProgress,
           });
     progress.close();
-    console.log("Anchor sync complete.");
-    console.log(`Repository: ${repo}`);
-    console.log(`Since: ${since ?? "full recent history"}`);
-    console.log(`Indexed PRs: ${summary.indexedPrs}`);
-    console.log(`Indexed files: ${summary.indexedFiles}`);
-    console.log(`Indexed comments: ${summary.indexedComments}`);
-    console.log(`Wisdom units created: ${summary.wisdomUnitsCreated}`);
-    console.log(`Skipped items: ${summary.skippedItems}`);
-    if (codeSummary) {
-      console.log(`Indexed code files: ${codeSummary.indexedFiles}`);
-      console.log(`Code chunks created: ${codeSummary.codeChunksCreated}`);
-      console.log(`Test files indexed: ${codeSummary.testFilesIndexed}`);
-      console.log(`Test links created: ${codeSummary.testLinksCreated}`);
-      console.log(`Architecture components indexed: ${codeSummary.architectureComponentsIndexed}`);
-      console.log(`Architecture patterns indexed: ${codeSummary.architecturePatternsIndexed}`);
-      console.log(`Architecture imports indexed: ${codeSummary.architectureImportsIndexed}`);
-      console.log(`Skipped code files: ${codeSummary.skippedFiles}`);
-    }
-    console.log(`Regression events created: ${summary.regressionEventsCreated}`);
-    console.log(`Database path: ${summary.databasePath}`);
-    printIndexOutcome(root, db, { history: summary, code: codeSummary });
+    printIndexRunSummary({
+      cwd: root,
+      db,
+      command: "sync",
+      repo,
+      durationMs: Date.now() - Date.parse(startedAt),
+      since,
+      history: summary,
+      code: codeSummary,
+    });
     recordIndexRun(db, {
       command: "sync",
       repo,

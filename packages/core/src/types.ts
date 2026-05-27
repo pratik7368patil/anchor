@@ -856,6 +856,8 @@ export type CodeIndexProgress =
   | {
       stage: "discovering_code_files";
       repo: string;
+      scanned?: number;
+      total?: number;
     }
   | {
       stage: "discovered_code_files";

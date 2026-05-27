@@ -15,7 +15,7 @@ import { sanitizeHistoricalText } from "../security/sanitize.js";
 import { uniqueStrings } from "../utils/text.js";
 
 const KNOWN_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
-const ARCHITECTURE_PROGRESS_INTERVAL = 250;
+const ARCHITECTURE_PROGRESS_INTERVAL = 100;
 
 type BuildArchitectureIndexOptions = {
   onProgress?: (progress: CodeIndexProgress) => void;

@@ -18,6 +18,8 @@ export function indexCodebase(
   options.onProgress?.({ stage: "discovering_code_files", repo: options.repo });
   const discovery = discoverCodeFiles(options.cwd, options.repo, {
     maxFileBytes: options.maxFileBytes,
+    onScan: (scanned, total) =>
+      options.onProgress?.({ stage: "discovering_code_files", repo: options.repo, scanned, total }),
   });
   options.onProgress?.({
     stage: "discovered_code_files",
