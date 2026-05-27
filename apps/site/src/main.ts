@@ -1,13 +1,15 @@
 import {
+  commandDetails,
   commandGroups,
   docsPages,
   features,
   installCommand,
   mcpTools,
-  options,
   repoUrl,
   useCases,
+  workflowRecipes,
   workflowCommand,
+  type CommandOption,
   type TableItem,
 } from "./content";
 import "./styles.css";
@@ -24,7 +26,7 @@ const legacyDocsHashes: Record<string, string> = {
   "#playbooks": "/docs/playbooks",
   "#org-memory": "/docs/org-memory",
   "#commands": "/docs/cli",
-  "#options": "/docs/options",
+  "#options": "/docs/cli",
   "#mcp": "/docs/mcp",
   "#rules": "/docs/rules",
   "#features": "/docs/features",
@@ -217,7 +219,7 @@ function renderHome(): string {
 }
 
 function renderDocsRoute(pathname: string): string {
-  const path = normalizePath(pathname);
+  const path = normalizePath(pathname) === "/docs/options" ? "/docs/cli" : normalizePath(pathname);
   const page = docsPages.find((item) => item.path === path) ?? docsPages[0];
   const content = page ? renderDocsPageContent(page.path) : renderDocsPageContent("/docs");
 
@@ -296,8 +298,6 @@ function renderDocsPageContent(path: string): string {
       return renderRulesPage();
     case "/docs/cli":
       return renderCliPage();
-    case "/docs/options":
-      return renderOptionsPage();
     case "/docs/mcp":
       return renderMcpPage();
     case "/docs/privacy":
@@ -320,6 +320,8 @@ function renderDocsOverview(): string {
       <div class="doc-divider"></div>
       <p class="doc-prose">It is built for maintainers who want AI edits grounded in local evidence instead of guesses. Anchor indexes repository history into SQLite, exposes that memory through a narrow Cursor MCP server, and returns cited context before risky edits.</p>
       <p class="doc-prose">Start with installation, then use the workflow and reference pages when you need exact commands, MCP tool names, or team rule behavior.</p>
+      <h3>Which command should I run?</h3>
+      ${renderWorkflowRecipes()}
       <h3>Recommended team rollout</h3>
       ${renderCodeBlock(
         "Rollout commands",
@@ -439,6 +441,8 @@ function renderWorkflowsPage(): string {
         </div>
       </div>
       ${renderCodeBlock("Common workflow commands", "workflow-code", workflowCommand, true)}
+      <h3>Quick command picker</h3>
+      ${renderWorkflowRecipes()}
     </article>
   `;
 }
@@ -733,6 +737,7 @@ function renderCliPage(): string {
         <div>
           <span class="section-label">Reference</span>
           <h2>CLI reference</h2>
+          <p class="section-intro">Options are documented next to the command that supports them, because the same flag can mean different tradeoffs depending on the workflow.</p>
         </div>
         <label class="command-search">
           <span class="sr-only">Filter commands</span>
@@ -740,16 +745,6 @@ function renderCliPage(): string {
         </label>
       </div>
       <div class="command-groups">${renderCommandGroups()}</div>
-    </article>
-  `;
-}
-
-function renderOptionsPage(): string {
-  return `
-    <article class="doc-card fade-up">
-      <span class="section-label">Reference</span>
-      <h2>Options</h2>
-      ${renderTable(options, "Useful Anchor options")}
     </article>
   `;
 }
@@ -944,7 +939,6 @@ function renderDocIcon(path: string): string {
     "/docs/org-memory": `<path d="M4 7h6v6H4z"></path><path d="M14 4h6v6h-6z"></path><path d="M14 14h6v6h-6z"></path><path d="M10 10h4"></path><path d="M10 13l4 4"></path>`,
     "/docs/rules": `<path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 6.5 2.1 2.1"></path><path d="m17.1 15.4 2.1 2.1"></path><circle cx="12" cy="12" r="4"></circle>`,
     "/docs/cli": `<path d="M5 7h14"></path><path d="M7 12h4"></path><path d="M7 17h10"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect>`,
-    "/docs/options": `<path d="M6 8h12"></path><path d="M6 16h12"></path><circle cx="9" cy="8" r="2"></circle><circle cx="15" cy="16" r="2"></circle>`,
     "/docs/mcp": `<path d="M7 8h10v8H7z"></path><path d="M12 4v4"></path><path d="M12 16v4"></path><path d="M4 12h3"></path><path d="M17 12h3"></path>`,
     "/docs/privacy": `<path d="M12 3 5 6v6c0 4.8 2.8 7.6 7 9 4.2-1.4 7-4.2 7-9V6l-7-3Z"></path><path d="m9 12 2 2 4-5"></path>`,
     "/docs/features": `<path d="M5 12h14"></path><path d="M12 5v14"></path><path d="m7 7 10 10"></path><path d="m17 7-10 10"></path>`,
@@ -954,15 +948,69 @@ function renderDocIcon(path: string): string {
   return `<svg viewBox="0 0 24 24" fill="none">${icons[path] ?? icons["/docs"]}</svg>`;
 }
 
+function renderWorkflowRecipes(): string {
+  return `<div class="recipe-grid">
+    ${workflowRecipes
+      .map(
+        (recipe) => `<div class="recipe-card">
+          <strong>${escapeHtml(recipe.title)}</strong>
+          <p>${escapeHtml(recipe.useWhen)}</p>
+          <pre><code>${escapeHtml(recipe.commands.join("\n"))}</code></pre>
+          <small>${escapeHtml(recipe.notes)}</small>
+        </div>`,
+      )
+      .join("")}
+  </div>`;
+}
+
+function renderCommandOptions(command: string, options: CommandOption[] | undefined): string {
+  if (!options?.length) return "";
+
+  return `<div class="command-options">
+    <strong>Options for <code>${escapeHtml(command)}</code></strong>
+    <ul>
+      ${options
+        .map(
+          (option) => `<li>
+            <code>${escapeHtml(option.name)}</code>
+            <span>${escapeHtml(option.description)}</span>
+            <small><b>Use when:</b> ${escapeHtml(option.useWhen)}</small>
+            <small><b>Example:</b> <code>${escapeHtml(option.example)}</code></small>
+          </li>`,
+        )
+        .join("")}
+    </ul>
+  </div>`;
+}
+
 function renderCommandGroups(): string {
   return commandGroups
     .map((group) => {
       const rows = group.commands
         .map((item) => {
-          const search = `${group.title} ${item.command} ${item.description}`.toLowerCase();
+          const detail = commandDetails[item.command];
+          const optionsText = detail?.options
+            ?.map(
+              (option) =>
+                `${option.name} ${option.description} ${option.useWhen} ${option.example}`,
+            )
+            .join(" ");
+          const search =
+            `${group.title} ${item.command} ${item.description} ${detail?.recommendedUse ?? ""} ${detail?.example ?? ""} ${optionsText ?? ""}`.toLowerCase();
           return `<tr data-command-row data-search="${escapeHtml(search)}">
             <td><code>${escapeHtml(item.command)}</code></td>
-            <td>${escapeHtml(item.description)}</td>
+            <td>
+              <p>${escapeHtml(item.description)}</p>
+              ${
+                detail
+                  ? `<div class="command-detail">
+                    <div><strong>Use when</strong><span>${escapeHtml(detail.recommendedUse)}</span></div>
+                    <div><strong>Example</strong><code>${escapeHtml(detail.example)}</code></div>
+                    ${renderCommandOptions(item.command, detail.options)}
+                  </div>`
+                  : ""
+              }
+            </td>
             <td><button class="tiny-copy" type="button" data-copy-value="${escapeHtml(item.command)}">Copy</button></td>
           </tr>`;
         })
@@ -1071,6 +1119,9 @@ function render(): void {
   const legacyRoute = legacyDocsHashes[window.location.hash];
   if (normalizePath(window.location.pathname) === "/" && legacyRoute) {
     window.history.replaceState({}, "", legacyRoute);
+  }
+  if (normalizePath(window.location.pathname) === "/docs/options") {
+    window.history.replaceState({}, "", "/docs/cli");
   }
 
   const path = normalizePath(window.location.pathname);

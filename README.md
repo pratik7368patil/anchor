@@ -101,6 +101,68 @@ It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor
 
 `anchor init` adds `.anchor/` to `.git/info/exclude` as a local-only exclude rule. That keeps `.anchor/index.sqlite` out of `git status` without adding or changing a committed `.gitignore` file.
 
+## Which Command Should I Run?
+
+First-time setup in one repo:
+
+```bash
+anchor init
+anchor index --limit 200
+anchor doctor
+```
+
+Code-only context without GitHub auth:
+
+```bash
+anchor index-code
+anchor architecture
+anchor health
+```
+
+Full PR history without wasting rate limit:
+
+```bash
+anchor index-all --concurrency 2
+anchor health
+```
+
+Daily refresh after the first index:
+
+```bash
+anchor sync
+anchor health
+```
+
+Before editing with Cursor:
+
+```bash
+anchor plan "Add API integration" --file src/api/routes.ts
+anchor test-command src/api/routes.ts
+anchor explain src/api/routes.ts
+```
+
+Before API, auth, access, schema, SDK, or shared-package changes:
+
+```bash
+anchor org sync --org my-org
+anchor org impact --org my-org --repo my-org/backend-api --strict
+```
+
+Share context with teammates:
+
+```bash
+anchor explain src/api/routes.ts --share
+anchor review --share
+```
+
+Measure whether Anchor is reliable enough for CI:
+
+```bash
+anchor health
+anchor eval run
+anchor ci --strict --min-coverage 70
+```
+
 ## Index PR History
 
 ```bash
@@ -115,15 +177,25 @@ export GITHUB_TOKEN=your_read_only_token
 anchor index
 ```
 
-Options:
+Command-specific usage:
 
 ```bash
-anchor index --repo owner/name --limit 10
-anchor index --repo owner/name --all
-anchor index-all --repo owner/name --concurrency 6
+# Fast first index. Best default for most repos.
+anchor index --repo owner/name --limit 200
+
+# Full history. Use lower concurrency for large repos or tight rate limits.
+anchor index-all --repo owner/name --concurrency 2
+
+# PR-only refresh. Use when code index is already fresh.
 anchor index --repo owner/name --no-code
+
+# Code-only refresh. No GitHub token required.
 anchor index-code --repo owner/name
-anchor index --repo owner/name --since 2024-01-01
+
+# Targeted backfill from a known date.
+anchor index --repo owner/name --since 2026-01-01
+
+# Rebuild local derived records after stale/corrupt health warnings.
 anchor index --repo owner/name --force
 ```
 
@@ -144,6 +216,20 @@ The local database is written to:
 ```text
 .anchor/index.sqlite
 ```
+
+### Indexing Option Guide
+
+`anchor index`:
+Use this as the normal first command. Add `--repo owner/name` when git remote detection is unavailable, `--limit 50` for a fast first pass, `--since YYYY-MM-DD` for a targeted backfill, `--no-code` to skip code indexing, `--force` to rebuild local derived records, and `--concurrency 1-10` to tune supplemental patch enrichment. Use `--all` only when you intentionally want all merged PRs through the `index` command.
+
+`anchor index-all`:
+Use this for complete merged PR history. Prefer `--concurrency 1` or `--concurrency 2` on large repositories. Use `--no-code` if the code index is already fresh, and rerun the same command after a GitHub reset if Anchor saved a resume checkpoint.
+
+`anchor index-code`:
+Use this when you do not have GitHub auth or only need current-code context. It refreshes code chunks, test links, test commands, and Architecture Memory. Use `--force` when `anchor health` reports stale or inconsistent code records.
+
+`anchor sync`:
+Use this after the first index. It is incremental and safe to run repeatedly. Add `--all` to catch up from an old cursor, `--since YYYY-MM-DD` to override the cursor, `--no-code` for PR-only sync, and `--concurrency 1-10` to tune patch enrichment pressure.
 
 ## Sync
 
@@ -193,6 +279,28 @@ anchor org map --org my-org --format mermaid
 anchor org impact --org my-org --repo my-org/backend-api --diff-file change.diff --strict
 anchor org ci --org my-org --strict --min-coverage 70
 ```
+
+### Org Option Guide
+
+Use `--org my-org` on every org command to select the local namespace under `~/.anchor/orgs/<org>`.
+
+`anchor org add-repo <owner/name>`:
+Use `--group backend|frontend|shared|infra|docs|unknown` so org maps and impact reports are easier to scan. Use `--alias name` when the full repo name is long or similar to another repo.
+
+`anchor org clone`:
+Use `--repo owner/name` to retry one allowlisted repo. Use `--concurrency 1-3` to control local/network pressure while cloning or pulling multiple repos.
+
+`anchor org index`:
+Use `--repo owner/name` to refresh one repo, `--code-only` when GitHub auth is unavailable or PR history is already fresh, `--prs-only` when clones are already fresh, and `--force` after stale index warnings.
+
+`anchor org sync`:
+Use this as the daily org command. Add `--repo owner/name` for a focused retry, `--since YYYY-MM-DD` for targeted PR catch-up, `--concurrency 1-3` for large allowlists, and `--force` when status reports stale org data.
+
+`anchor org impact`:
+Use `--repo owner/name` to identify the repo being checked, `--diff-file change.diff` in CI or saved-diff review, `--strict` for API/auth/access/shared-package changes, and `--json` for automation.
+
+`anchor org ci`:
+Use `--strict` to fail on blocker/high anomalies and `--min-coverage 70` to enforce an org coverage threshold.
 
 Org Memory indexes current code and, when GitHub auth is available, PR history for each allowlisted repo into one local SQLite database. Re-runs are idempotent: unchanged code indexes are skipped, changed repos replace their current-code records, PRs are upserted by repo and number, and successful repos stay intact when another repo fails.
 
@@ -294,6 +402,26 @@ anchor review --share
 anchor health
 anchor prompts
 ```
+
+### Context And Review Option Guide
+
+`anchor plan "<task>"`:
+Use `--file path` when you know the likely target file, `--symbol name` when the task is tied to a function/class/component/API contract, `--strict` for risky work, and `--json` for tooling.
+
+`anchor test-command <file>`:
+Use `--json` when Cursor, CI, or another local script should parse the command list.
+
+`anchor explain <file>`:
+Use `--share` to produce compact Markdown for Slack or PR comments. Use `--json` when another tool should consume the file briefing.
+
+`anchor review`:
+By default it reads the current `git diff`. Use `--base main` before opening a PR from a branch, `--diff-file change.diff` for saved diffs or CI, `--strict` for high-risk changes, `--share` for PR/Slack summaries, and `--json` for automation.
+
+`anchor architecture`:
+Use `--file path` for file-level guidance, `--area api` for one architecture area, `--check` for the current diff, `--diff-file change.diff` for saved diffs, `--map --format mermaid` for docs, `--map --format json` for tooling, `--write-doc` only when you intentionally want `ANCHOR_ARCHITECTURE.md`, and `--json` for automation.
+
+`anchor onboarding`:
+Use `--file path` for a narrow file brief, `--area api` for an area brief, and `--json` for automation.
 
 `anchor plan "<task>"` turns the same local evidence into a deterministic edit plan: target files, likely symbols, implementation steps, risks, exact checks, and PR/rule/code evidence.
 
@@ -398,6 +526,26 @@ anchor eval init
 anchor rules suggest
 anchor ci
 ```
+
+### Reliability Option Guide
+
+`anchor eval add`:
+Use `--task`, `--file`, and `--expect-pr` to pin a realistic task to evidence that should keep ranking highly.
+
+`anchor eval run`:
+Use `--json` in CI or scripts that need pass/fail details.
+
+`anchor watch`:
+Use `--interval 30` for normal development. Increase the interval for very large repos. Add `--repo owner/name` only when git remote detection is unavailable.
+
+`anchor ci`:
+Use `--strict` when CI should fail closed on weak/stale context and `--min-coverage 70` when your team has agreed on a coverage threshold.
+
+`anchor rules suggest`:
+Use `--category api_contract` for focused suggestions, `--min-confidence strong` for low-noise adoption, and `--json` for tooling.
+
+`anchor playbooks suggest`:
+Use `--json` when reviewing draft playbooks through another local tool.
 
 Optional GitHub Actions check:
 
