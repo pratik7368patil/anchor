@@ -6,6 +6,7 @@ import type {
   ArchitectureIndexData,
   CodeChunk,
   CodeFileRecord,
+  CodeIndexProgress,
   CodeIndexSummary,
   IndexRunRecord,
   IndexStatus,
@@ -47,6 +48,15 @@ type CodeIndexStateRow = { last_indexed_at?: string | null };
 type ArchitectureIndexStateRow = { last_indexed_at?: string | null };
 type WisdomFilePathsRow = { file_paths_json: string };
 type LastRunRow = { finished_at?: string | null; failures_json?: string | null };
+const CODE_WRITE_PROGRESS_INTERVAL = 500;
+
+type CodeIndexWriteOptions = {
+  onProgress?: (progress: CodeIndexProgress) => void;
+};
+
+function shouldEmitCodeWriteProgress(current: number, total: number): boolean {
+  return current === 0 || current === 1 || current === total || current % CODE_WRITE_PROGRESS_INTERVAL === 0;
+}
 
 export function defaultDatabasePath(cwd: string): string {
   return path.join(cwd, ".anchor", "index.sqlite");
@@ -530,11 +540,14 @@ export function replaceCodeIndex(
   skippedFiles: number,
   cwd: string,
   architecture: ArchitectureIndexData = { components: [], patterns: [], imports: [] },
+  options: CodeIndexWriteOptions = {},
 ): CodeIndexSummary {
   initializeSchema(db);
   const repoId = ensureRepository(db, repo);
   const now = new Date().toISOString();
+  options.onProgress?.({ stage: "writing_code_index", repo, phase: "Inferring test awareness" });
   const testAwareness = inferTestAwareness(repo, codeFiles, codeChunks);
+  options.onProgress?.({ stage: "writing_code_index", repo, phase: "Writing code index" });
 
   const transaction = db.transaction(() => {
     const existingChunks = db
@@ -542,6 +555,15 @@ export function replaceCodeIndex(
       .all(repoId) as Array<{
       id: string;
     }>;
+    const existingPatternCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM architecture_patterns WHERE repo_id = ?").get(repoId) as CountRow
+    ).count;
+    options.onProgress?.({
+      stage: "deleting_existing_code_index",
+      repo,
+      chunks: existingChunks.length,
+      patterns: existingPatternCount,
+    });
     const deleteFts = db.prepare("DELETE FROM code_chunks_fts WHERE chunkId = ?");
     for (const row of existingChunks) deleteFts.run(row.id);
     db.prepare("DELETE FROM code_chunks WHERE repo_id = ?").run(repoId);
@@ -555,7 +577,13 @@ export function replaceCodeIndex(
        (repo_id, path, language, size_bytes, content_hash, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     );
-    for (const file of codeFiles) {
+    options.onProgress?.({
+      stage: "writing_code_files",
+      repo,
+      current: 0,
+      total: codeFiles.length,
+    });
+    for (const [index, file] of codeFiles.entries()) {
       insertFile.run(
         repoId,
         file.path,
@@ -564,6 +592,16 @@ export function replaceCodeIndex(
         file.contentHash,
         file.updatedAt,
       );
+      const current = index + 1;
+      if (shouldEmitCodeWriteProgress(current, codeFiles.length)) {
+        options.onProgress?.({
+          stage: "writing_code_files",
+          repo,
+          current,
+          total: codeFiles.length,
+          filePath: file.path,
+        });
+      }
     }
 
     const fileRows = db
@@ -583,7 +621,15 @@ export function replaceCodeIndex(
        VALUES (?, ?, ?, ?, ?)`,
     );
 
-    for (const chunk of codeChunks) {
+    options.onProgress?.({
+      stage: "writing_code_chunks",
+      repo,
+      current: 0,
+      total: codeChunks.length,
+      chunks: 0,
+    });
+    let writtenChunks = 0;
+    for (const [index, chunk] of codeChunks.entries()) {
       const fileId = fileIds.get(chunk.filePath);
       if (!fileId) continue;
       insertChunk.run(
@@ -607,12 +653,25 @@ export function replaceCodeIndex(
         chunk.symbols.join(" "),
         chunk.language ?? "",
       );
+      writtenChunks += 1;
+      const current = index + 1;
+      if (shouldEmitCodeWriteProgress(current, codeChunks.length)) {
+        options.onProgress?.({
+          stage: "writing_code_chunks",
+          repo,
+          current,
+          total: codeChunks.length,
+          filePath: chunk.filePath,
+          chunks: writtenChunks,
+        });
+      }
     }
 
-    insertTestAwareness(db, repoId, testAwareness.testFiles, testAwareness.testLinks);
-    insertArchitectureData(db, repoId, architecture);
-    insertArchitectureMapEdges(db, repoId, repo, architecture, testAwareness.testLinks);
+    insertTestAwareness(db, repoId, repo, testAwareness.testFiles, testAwareness.testLinks, options);
+    insertArchitectureData(db, repoId, repo, architecture, options);
+    insertArchitectureMapEdges(db, repoId, repo, architecture, testAwareness.testLinks, options);
 
+    options.onProgress?.({ stage: "writing_code_index", repo, phase: "Updating index state" });
     db.prepare(
       `INSERT INTO code_index_state (repo, last_indexed_at, indexed_files, code_chunks, skipped_files)
        VALUES (?, ?, ?, ?, ?)
@@ -670,14 +729,23 @@ function deleteExistingArchitectureData(db: AnchorDatabase, repoId: number): voi
 function insertArchitectureData(
   db: AnchorDatabase,
   repoId: number,
+  repo: string,
   architecture: ArchitectureIndexData,
+  options: CodeIndexWriteOptions = {},
 ): void {
   const insertImport = db.prepare(
     `INSERT INTO code_imports
      (repo_id, source_path, specifier, imported_path, imported_symbols_json, kind)
      VALUES (?, ?, ?, ?, ?, ?)`,
   );
-  for (const item of architecture.imports) {
+  options.onProgress?.({
+    stage: "writing_architecture_data",
+    repo,
+    current: 0,
+    total: architecture.imports.length,
+    kind: "imports",
+  });
+  for (const [index, item] of architecture.imports.entries()) {
     insertImport.run(
       repoId,
       item.sourcePath,
@@ -686,6 +754,16 @@ function insertArchitectureData(
       JSON.stringify(item.importedSymbols),
       item.kind,
     );
+    const current = index + 1;
+    if (shouldEmitCodeWriteProgress(current, architecture.imports.length)) {
+      options.onProgress?.({
+        stage: "writing_architecture_data",
+        repo,
+        current,
+        total: architecture.imports.length,
+        kind: "imports",
+      });
+    }
   }
 
   const insertComponent = db.prepare(
@@ -694,7 +772,14 @@ function insertArchitectureData(
       confidence, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  for (const component of architecture.components) {
+  options.onProgress?.({
+    stage: "writing_architecture_data",
+    repo,
+    current: 0,
+    total: architecture.components.length,
+    kind: "components",
+  });
+  for (const [index, component] of architecture.components.entries()) {
     insertComponent.run(
       repoId,
       component.path,
@@ -707,6 +792,16 @@ function insertArchitectureData(
       component.confidence,
       component.updatedAt,
     );
+    const current = index + 1;
+    if (shouldEmitCodeWriteProgress(current, architecture.components.length)) {
+      options.onProgress?.({
+        stage: "writing_architecture_data",
+        repo,
+        current,
+        total: architecture.components.length,
+        kind: "components",
+      });
+    }
   }
 
   const insertPattern = db.prepare(
@@ -719,7 +814,14 @@ function insertArchitectureData(
     `INSERT INTO architecture_patterns_fts (patternId, summary, area, sourceFiles, symbols)
      VALUES (?, ?, ?, ?, ?)`,
   );
-  for (const pattern of architecture.patterns) {
+  options.onProgress?.({
+    stage: "writing_architecture_data",
+    repo,
+    current: 0,
+    total: architecture.patterns.length,
+    kind: "patterns",
+  });
+  for (const [index, pattern] of architecture.patterns.entries()) {
     insertPattern.run(
       pattern.id,
       repoId,
@@ -740,6 +842,16 @@ function insertArchitectureData(
       pattern.sourceFiles.join(" "),
       pattern.symbols.join(" "),
     );
+    const current = index + 1;
+    if (shouldEmitCodeWriteProgress(current, architecture.patterns.length)) {
+      options.onProgress?.({
+        stage: "writing_architecture_data",
+        repo,
+        current,
+        total: architecture.patterns.length,
+        kind: "patterns",
+      });
+    }
   }
 }
 
@@ -749,6 +861,7 @@ function insertArchitectureMapEdges(
   repo: string,
   architecture: ArchitectureIndexData,
   testLinks: TestLink[],
+  options: CodeIndexWriteOptions = {},
 ): void {
   const now = new Date().toISOString();
   const insert = db.prepare(
@@ -770,11 +883,40 @@ function insertArchitectureMapEdges(
     insert.run(id, repoId, repo, sourcePath, targetPath, relationship, weight, now);
   };
 
+  const total = architecture.imports.length + testLinks.length;
+  let current = 0;
+  options.onProgress?.({
+    stage: "writing_architecture_map_edges",
+    repo,
+    current,
+    total,
+    edges: 0,
+  });
   for (const item of architecture.imports) {
     if (item.importedPath) addEdge(item.sourcePath, item.importedPath, "imports", 0.9);
+    current += 1;
+    if (shouldEmitCodeWriteProgress(current, total)) {
+      options.onProgress?.({
+        stage: "writing_architecture_map_edges",
+        repo,
+        current,
+        total,
+        edges: seen.size,
+      });
+    }
   }
   for (const link of testLinks) {
     addEdge(link.sourcePath, link.testPath, "tested_by", link.strength);
+    current += 1;
+    if (shouldEmitCodeWriteProgress(current, total)) {
+      options.onProgress?.({
+        stage: "writing_architecture_map_edges",
+        repo,
+        current,
+        total,
+        edges: seen.size,
+      });
+    }
   }
 }
 
@@ -795,15 +937,24 @@ function insertPrCochangeTestLinks(db: AnchorDatabase, repoId: number, filePaths
 function insertTestAwareness(
   db: AnchorDatabase,
   repoId: number,
+  repo: string,
   testFiles: TestFileRecord[],
   testLinks: TestLink[],
+  options: CodeIndexWriteOptions = {},
 ): void {
   const insertTestFile = db.prepare(
     `INSERT INTO test_files
      (repo_id, path, language, size_bytes, content_hash, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
   );
-  for (const file of testFiles) {
+  options.onProgress?.({
+    stage: "writing_test_awareness",
+    repo,
+    current: 0,
+    total: testFiles.length,
+    kind: "test_files",
+  });
+  for (const [index, file] of testFiles.entries()) {
     insertTestFile.run(
       repoId,
       file.path,
@@ -812,14 +963,41 @@ function insertTestAwareness(
       file.contentHash,
       file.updatedAt,
     );
+    const current = index + 1;
+    if (shouldEmitCodeWriteProgress(current, testFiles.length)) {
+      options.onProgress?.({
+        stage: "writing_test_awareness",
+        repo,
+        current,
+        total: testFiles.length,
+        kind: "test_files",
+      });
+    }
   }
 
   const insertTestLink = db.prepare(
     `INSERT INTO test_links (repo_id, source_path, test_path, reason, strength)
      VALUES (?, ?, ?, ?, ?)`,
   );
-  for (const link of testLinks) {
+  options.onProgress?.({
+    stage: "writing_test_awareness",
+    repo,
+    current: 0,
+    total: testLinks.length,
+    kind: "test_links",
+  });
+  for (const [index, link] of testLinks.entries()) {
     insertTestLink.run(repoId, link.sourcePath, link.testPath, link.reason, link.strength);
+    const current = index + 1;
+    if (shouldEmitCodeWriteProgress(current, testLinks.length)) {
+      options.onProgress?.({
+        stage: "writing_test_awareness",
+        repo,
+        current,
+        total: testLinks.length,
+        kind: "test_links",
+      });
+    }
   }
 }
 

@@ -365,17 +365,22 @@ export function createProgressReporter(input?: {
         updatedAt: new Date().toISOString(),
       }
     : undefined;
+  let lastHeartbeatWriteAt = 0;
   const updateHeartbeat = (
     patch: Partial<Pick<OrgRunHeartbeat, "repo" | "repoIndex" | "repoTotal" | "phase">>,
+    inputOptions: { force?: boolean } = {},
   ): void => {
     if (!heartbeat) return;
+    const nowMs = Date.now();
     heartbeat = {
       ...heartbeat,
       ...patch,
       updatedAt: new Date().toISOString(),
     };
+    if (!inputOptions.force && nowMs - lastHeartbeatWriteAt < 1000) return;
     try {
       writeOrgHeartbeat(heartbeat);
+      lastHeartbeatWriteAt = nowMs;
     } catch {
       // Heartbeat is best-effort status metadata; progress must not fail commands.
     }
@@ -393,11 +398,12 @@ export function createProgressReporter(input?: {
     mode,
     log,
     close: () => {
+      if (heartbeat) updateHeartbeat({ phase: "completed" }, { force: true });
       pretty?.close();
       if (input?.heartbeat) clearOrgHeartbeat(input.heartbeat.org);
     },
     onOrgProgress: (progress) => {
-      updateHeartbeat(heartbeatPatchFromOrgProgress(progress));
+      updateHeartbeat(heartbeatPatchFromOrgProgress(progress), { force: true });
       if (mode === "plain") printOrgLifecycleProgress(progress);
       else render(orgLifecycleTask(progress));
     },
@@ -550,8 +556,30 @@ function heartbeatPatchFromCodeProgress(
     case "indexing_code_file":
     case "indexed_code_file":
       return { repo: progress.repo, phase: "Indexing code files" };
+    case "building_architecture_imports":
+      return { repo: progress.repo, phase: "Building architecture imports" };
+    case "building_architecture_components":
+      return { repo: progress.repo, phase: "Building architecture components" };
+    case "building_architecture_patterns":
+      return { repo: progress.repo, phase: "Building architecture patterns" };
     case "indexed_architecture":
       return { repo: progress.repo, phase: "Indexing architecture memory" };
+    case "writing_code_index":
+      return { repo: progress.repo, phase: progress.phase };
+    case "deleting_existing_code_index":
+      return { repo: progress.repo, phase: "Deleting old code index" };
+    case "writing_code_files":
+      return { repo: progress.repo, phase: "Writing code files" };
+    case "writing_code_chunks":
+      return { repo: progress.repo, phase: "Writing code chunks" };
+    case "writing_test_awareness":
+      return { repo: progress.repo, phase: "Writing test awareness" };
+    case "writing_architecture_data":
+      return { repo: progress.repo, phase: `Writing architecture ${progress.kind}` };
+    case "writing_architecture_map_edges":
+      return { repo: progress.repo, phase: "Writing architecture map edges" };
+    case "refreshing_test_commands":
+      return { repo: progress.repo, phase: "Refreshing test commands" };
     case "completed_code_index":
       return { repo: progress.repo, phase: "Code index completed" };
   }
@@ -784,9 +812,71 @@ export function printCodeIndexProgress(progress: CodeIndexProgress): void {
         `[anchor] indexed code file ${progress.current}/${progress.total}: ${progress.filePath} (${progress.chunks} chunks)`,
       );
       return;
+    case "building_architecture_imports":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] building architecture imports ${progress.current}/${progress.total}: ${progress.imports} import(s) found${progress.filePath ? ` (${progress.filePath})` : ""}`,
+      );
+      return;
+    case "building_architecture_components":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] building architecture components ${progress.current}/${progress.total}: ${progress.components} component(s)${progress.filePath ? ` (${progress.filePath})` : ""}`,
+      );
+      return;
+    case "building_architecture_patterns":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] building architecture patterns ${progress.current}/${progress.total}: ${progress.patterns} pattern(s)${progress.area ? ` (${progress.area})` : ""}`,
+      );
+      return;
     case "indexed_architecture":
       console.error(
         `[anchor] indexed architecture memory: ${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports.`,
+      );
+      return;
+    case "writing_code_index":
+      console.error(`[anchor] ${progress.repo}: ${progress.phase}...`);
+      return;
+    case "deleting_existing_code_index":
+      console.error(
+        `[anchor] deleting existing code index for ${progress.repo}: ${progress.chunks} chunks, ${progress.patterns} architecture patterns...`,
+      );
+      return;
+    case "writing_code_files":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing code files ${progress.current}/${progress.total}${progress.filePath ? `: ${progress.filePath}` : ""}`,
+      );
+      return;
+    case "writing_code_chunks":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing code chunks ${progress.current}/${progress.total}: ${progress.chunks} chunk(s)${progress.filePath ? ` (${progress.filePath})` : ""}`,
+      );
+      return;
+    case "writing_test_awareness":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing ${progress.kind.replace("_", " ")} ${progress.current}/${progress.total}`,
+      );
+      return;
+    case "writing_architecture_data":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing architecture ${progress.kind} ${progress.current}/${progress.total}`,
+      );
+      return;
+    case "writing_architecture_map_edges":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing architecture map edges ${progress.current}/${progress.total}: ${progress.edges} edge(s)`,
+      );
+      return;
+    case "refreshing_test_commands":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] ${progress.phase === "detecting" ? "detecting" : "writing"} test commands ${progress.current}/${progress.total}: ${progress.commands} command(s)`,
       );
       return;
     case "completed_code_index":
@@ -1198,6 +1288,33 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.filePath} (${progress.chunks} chunks)`,
       };
+    case "building_architecture_imports":
+      return {
+        key: `architecture-build:${progress.repo}`,
+        phase: "Architecture",
+        label: "Building imports",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.imports} imports${progress.filePath ? ` · ${progress.filePath}` : ""}`,
+      };
+    case "building_architecture_components":
+      return {
+        key: `architecture-build:${progress.repo}`,
+        phase: "Architecture",
+        label: "Building components",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.components} components${progress.filePath ? ` · ${progress.filePath}` : ""}`,
+      };
+    case "building_architecture_patterns":
+      return {
+        key: `architecture-build:${progress.repo}`,
+        phase: "Architecture",
+        label: "Building patterns",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.patterns} patterns${progress.area ? ` · ${progress.area}` : ""}`,
+      };
     case "indexed_architecture":
       return {
         key: `architecture:${progress.repo}`,
@@ -1205,6 +1322,72 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         label: "Indexed architecture memory",
         state: "done",
         detail: `${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports`,
+      };
+    case "writing_code_index":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: progress.phase,
+      };
+    case "deleting_existing_code_index":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Deleting old code index",
+        state: "active",
+        detail: `${progress.chunks} chunks, ${progress.patterns} patterns`,
+      };
+    case "writing_code_files":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Writing code files",
+        current: progress.current,
+        total: progress.total,
+        detail: progress.filePath,
+      };
+    case "writing_code_chunks":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Writing code chunks",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.chunks} chunks${progress.filePath ? ` · ${progress.filePath}` : ""}`,
+      };
+    case "writing_test_awareness":
+      return {
+        key: `test-awareness:${progress.repo}:${progress.kind}`,
+        phase: "Tests",
+        label: `Writing ${progress.kind.replace("_", " ")}`,
+        current: progress.current,
+        total: progress.total,
+      };
+    case "writing_architecture_data":
+      return {
+        key: `architecture-write:${progress.repo}:${progress.kind}`,
+        phase: "SQLite",
+        label: `Writing architecture ${progress.kind}`,
+        current: progress.current,
+        total: progress.total,
+      };
+    case "writing_architecture_map_edges":
+      return {
+        key: `architecture-map:${progress.repo}`,
+        phase: "SQLite",
+        label: "Writing architecture map",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.edges} edges`,
+      };
+    case "refreshing_test_commands":
+      return {
+        key: `test-commands:${progress.repo}`,
+        phase: "Tests",
+        label: progress.phase === "detecting" ? "Detecting test commands" : "Writing test commands",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.commands} commands`,
       };
     case "completed_code_index":
       return {

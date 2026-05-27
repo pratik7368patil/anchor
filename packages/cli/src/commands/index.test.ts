@@ -324,6 +324,14 @@ describe("progress reporter", () => {
       filePath: "src/index.ts",
       chunks: 1,
     });
+    reporter.onCodeProgress({
+      stage: "writing_code_chunks",
+      repo: "owner/repo",
+      current: 500,
+      total: 1000,
+      filePath: "src/api/client.ts",
+      chunks: 500,
+    });
     reporter.log("[anchor] done");
     reporter.close();
 
@@ -331,6 +339,7 @@ describe("progress reporter", () => {
     expect(output).toContain("Indexing repo memory");
     expect(output).toContain("last update");
     expect(output).toContain("Indexed code");
+    expect(output).toContain("Writing code chunks");
     expect(output).toContain("1/2");
     expect(output).toContain("done");
     expect(output).not.toMatch(/\u001b\[[0-9;]*m/);
@@ -398,6 +407,37 @@ describe("progress reporter", () => {
       expect(heartbeat?.repoIndex).toBe(2);
       expect(heartbeat?.repoTotal).toBe(5);
       expect(heartbeat?.phase).toBe("Indexing code and architecture");
+      reporter.close();
+      expect(readOrgHeartbeat("acme")).toBeUndefined();
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+
+  it("writes granular code progress into org heartbeat metadata", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    const stream = new PassThrough() as PassThrough & { isTTY: boolean; columns: number };
+    stream.isTTY = false;
+    stream.columns = 80;
+    try {
+      const reporter = createProgressReporter({
+        stream,
+        heartbeat: { org: "acme", command: "org sync" },
+      });
+      reporter.onCodeProgress({
+        stage: "writing_architecture_data",
+        repo: "acme/backend-api",
+        current: 500,
+        total: 1000,
+        kind: "components",
+      });
+      const heartbeat = readOrgHeartbeat("acme");
+      expect(heartbeat?.command).toBe("org sync");
+      expect(heartbeat?.repo).toBe("acme/backend-api");
+      expect(heartbeat?.phase).toBe("Writing architecture components");
       reporter.close();
       expect(readOrgHeartbeat("acme")).toBeUndefined();
     } finally {
