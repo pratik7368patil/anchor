@@ -46,6 +46,7 @@ import {
   runOrgAddRepo,
   runOrgCi,
   runOrgClone,
+  runOrgGraph,
   runOrgImpact,
   runOrgIndex,
   runOrgInit,
@@ -54,6 +55,7 @@ import {
   runOrgRemoveRepo,
   runOrgStatus,
 } from "./commands/org.js";
+import { parseProgressMode } from "./commands/progress.js";
 import {
   printRulesAdd,
   printRulesEvidenceCheck,
@@ -217,6 +219,7 @@ program
   )
   .option("--since <YYYY-MM-DD>", "Fetch PRs updated since this date")
   .option("--force", "Rebuild the local database before indexing")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
   .action(async (options) => {
     await runIndex(process.cwd(), options);
   });
@@ -233,6 +236,7 @@ program
   )
   .option("--since <YYYY-MM-DD>", "Fetch PRs updated since this date")
   .option("--force", "Rebuild the local database before indexing")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
   .action(async (options) => {
     await runIndex(process.cwd(), { ...options, all: true });
   });
@@ -242,6 +246,7 @@ program
   .description("Index the local codebase without fetching GitHub PR history")
   .option("--repo <owner/name>", "GitHub repository to associate with this code index")
   .option("--force", "Rebuild the local database before indexing code")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
   .action(async (options) => {
     await runIndexCode(process.cwd(), options);
   });
@@ -338,6 +343,7 @@ program
   )
   .option("--since <YYYY-MM-DD>", "Override the sync cursor")
   .option("--force", "Rebuild the local database before syncing")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
   .action(async (options) => {
     await runSync(process.cwd(), options);
   });
@@ -557,6 +563,7 @@ org
   .option("--repo <owner/name>", "Only clone or pull one repo")
   .option("--concurrency <number>", "Concurrent clone/pull workers", parseIntegerOption, 3)
   .option("--json", "Print results as JSON")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
   .action(async (options) => {
     printJsonOrMarkdown(await runOrgClone(options), options);
   });
@@ -568,9 +575,11 @@ org
   .option("--repo <owner/name>", "Only index one repo")
   .option("--code-only", "Index code only without GitHub PR history")
   .option("--prs-only", "Index PR history only without code")
+  .option("--no-graph", "Skip cross-repo graph rebuild after indexing")
   .option("--force", "Refresh unchanged code indexes")
   .option("--concurrency <number>", "Concurrent GitHub detail fetches", parseIntegerOption, 3)
   .option("--json", "Print results as JSON")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
   .action(async (options) => {
     printJsonOrMarkdown(await runOrgIndex({ ...options, command: "org index" }), options);
   });
@@ -587,11 +596,28 @@ org
     3,
   )
   .option("--since <YYYY-MM-DD>", "Override PR sync cursor")
+  .option("--no-graph", "Skip cross-repo graph rebuild after syncing")
   .option("--force", "Refresh unchanged code indexes")
   .option("--json", "Print results as JSON")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
   .action(async (options) => {
     await runOrgClone(options);
     printJsonOrMarkdown(await runOrgIndex({ ...options, command: "org sync" }), options);
+  });
+
+org
+  .command("graph")
+  .description("Rebuild the local org cross-repo graph without refetching or reindexing repos")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--repo <owner/name>", "Reserved for future scoped graph rebuilds")
+  .option("--force", "Accepted for compatibility; org graph always rebuilds")
+  .option("--html", "Write an interactive standalone HTML graph")
+  .option("--open", "Write the HTML graph and open it in the default browser")
+  .option("--output <path>", "Path for the generated HTML graph")
+  .option("--json", "Print graph rebuild result as JSON")
+  .option("--progress <mode>", "Progress output: pretty, plain, or off", parseProgressMode)
+  .action((options) => {
+    printJsonOrMarkdown(runOrgGraph(options), options);
   });
 
 org

@@ -21,6 +21,25 @@ export type OrgCloneResult = {
   error?: string;
 };
 
+export type OrgCloneProgress =
+  | {
+      stage: "cloning_or_pulling_repo";
+      org: string;
+      repo: string;
+      current: number;
+      total: number;
+    }
+  | {
+      stage: "cloned_or_pulled_repo";
+      org: string;
+      repo: string;
+      current: number;
+      total: number;
+      cloned: boolean;
+      pulled: boolean;
+      error?: string;
+    };
+
 export function defaultGitCommandRunner(
   command: string,
   args: string[],
@@ -133,7 +152,7 @@ export async function cloneOrgRepos(input: {
   concurrency?: number;
   baseDir?: string;
   runner?: GitCommandRunner;
-  onProgress?: (message: string) => void;
+  onProgress?: (progress: OrgCloneProgress) => void;
 }): Promise<OrgCloneResult[]> {
   if (input.db) syncOrgConfigToDatabase(input.db, input.config, input.baseDir);
   const repos = input.config.repos.filter(
@@ -147,16 +166,32 @@ export async function cloneOrgRepos(input: {
       const repo = repos[next];
       next += 1;
       if (!repo) continue;
-      input.onProgress?.(`cloning or pulling ${repo.fullName}`);
-      results.push(
-        cloneOrPullOrgRepo({
-          org: input.config.org,
-          repo,
-          db: input.db,
-          baseDir: input.baseDir,
-          runner: input.runner,
-        }),
-      );
+      const current = next;
+      input.onProgress?.({
+        stage: "cloning_or_pulling_repo",
+        org: input.config.org,
+        repo: repo.fullName,
+        current,
+        total: repos.length,
+      });
+      const result = cloneOrPullOrgRepo({
+        org: input.config.org,
+        repo,
+        db: input.db,
+        baseDir: input.baseDir,
+        runner: input.runner,
+      });
+      results.push(result);
+      input.onProgress?.({
+        stage: "cloned_or_pulled_repo",
+        org: input.config.org,
+        repo: repo.fullName,
+        current,
+        total: repos.length,
+        cloned: result.cloned,
+        pulled: result.pulled,
+        error: result.error,
+      });
     }
   }
   await Promise.all(Array.from({ length: Math.min(limit, repos.length) }, () => worker()));

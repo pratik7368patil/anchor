@@ -25,9 +25,13 @@ export async function handleAnchorOrgIndexStatus(input: unknown) {
         `Code chunks: ${status.codeChunkCount}`,
         `Wisdom units: ${status.wisdomUnitCount}`,
         `Cross-repo edges: ${status.crossRepoEdgeCount}`,
+        `API contracts: ${status.apiContractCount}`,
         `API consumers: ${status.apiConsumerCount}`,
+        `Graph: ${status.graphLastStatus ?? "unknown"}`,
+        `Last graph build: ${status.graphLastBuiltAt ?? "never"}`,
         `Coverage: ${status.coverageScore}% (${status.coverageGrade})`,
       ];
+      if (status.graphLastError) lines.push(`Graph error: ${status.graphLastError}`);
       return {
         content: [{ type: "text" as const, text: lines.join("\n") }],
         structuredContent: status,

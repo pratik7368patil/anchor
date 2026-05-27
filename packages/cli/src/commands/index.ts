@@ -17,7 +17,7 @@ import {
   type GitHubGraphQLFetchCheckpoint,
 } from "@pratik7368patil/anchor-core";
 import { printIndexOutcome } from "./engagement.js";
-import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
+import { createProgressReporter, type ProgressMode } from "./progress.js";
 
 export type IndexOptions = {
   repo?: string;
@@ -28,6 +28,7 @@ export type IndexOptions = {
   since?: string;
   force?: boolean;
   token?: string;
+  progress?: ProgressMode;
 };
 
 function removeDatabaseFiles(databasePath: string): void {
@@ -62,9 +63,10 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
-  console.error("Anchor index started.");
-  console.error(`Repository: ${repo}`);
-  console.error(`Database path: ${databasePath}`);
+  const progress = createProgressReporter({ progress: options.progress });
+  progress.log("Anchor index started.");
+  progress.log(`Repository: ${repo}`);
+  progress.log(`Database path: ${databasePath}`);
 
   const db = openAnchorDatabase(root, databasePath);
   const startedAt = new Date().toISOString();
@@ -91,9 +93,9 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
       onGraphQLCheckpoint: (checkpoint) => {
         pendingGraphQLCheckpoint = checkpoint;
       },
-      onProgress: printFetchProgress,
+      onProgress: progress.onFetchProgress,
     });
-    console.error(`[anchor] writing ${pullRequests.length} PRs to SQLite...`);
+    progress.log(`[anchor] writing ${pullRequests.length} PRs to SQLite...`);
     const historyCoverage = options.all && !pendingGraphQLCheckpoint ? "all" : "limited";
     const summary = indexPullRequests(db, pullRequests, {
       cwd: root,
@@ -101,7 +103,7 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
       historyCoverage,
       historyLimit: options.all ? undefined : (options.limit ?? 200),
       historySince: options.since,
-      onProgress: printIndexProgress,
+      onProgress: progress.onPrIndexProgress,
     });
     if (checkpointScope && pendingGraphQLCheckpoint) {
       saveGraphQLFetchCheckpoint(db, pendingGraphQLCheckpoint);
@@ -117,8 +119,9 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
         : indexCodebase(db, {
             cwd: root,
             repo,
-            onProgress: printCodeIndexProgress,
+            onProgress: progress.onCodeProgress,
           });
+    progress.close();
     console.log("Anchor index complete.");
     console.log(`Repository: ${repo}`);
     console.log(`Indexed PRs: ${summary.indexedPrs}`);
@@ -166,6 +169,7 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
     });
     throw error;
   } finally {
+    progress.close();
     db.close();
   }
 }
@@ -175,9 +179,10 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
-  console.error("Anchor code index started.");
-  console.error(`Repository: ${repo}`);
-  console.error(`Database path: ${databasePath}`);
+  const progress = createProgressReporter({ progress: options.progress });
+  progress.log("Anchor code index started.");
+  progress.log(`Repository: ${repo}`);
+  progress.log(`Database path: ${databasePath}`);
 
   const db = openAnchorDatabase(root, databasePath);
   const startedAt = new Date().toISOString();
@@ -185,8 +190,9 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
     const summary = indexCodebase(db, {
       cwd: root,
       repo,
-      onProgress: printCodeIndexProgress,
+      onProgress: progress.onCodeProgress,
     });
+    progress.close();
     console.log("Anchor code index complete.");
     console.log(`Repository: ${repo}`);
     console.log(`Indexed code files: ${summary.indexedFiles}`);
@@ -219,6 +225,7 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
     });
     throw error;
   } finally {
+    progress.close();
     db.close();
   }
 }

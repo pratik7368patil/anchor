@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { getIndexStatus } from "@pratik7368patil/anchor-core";
@@ -16,6 +17,7 @@ import { runTestCommand } from "./test-command.js";
 import { runOnboarding } from "./onboarding.js";
 import { runCi } from "./ci.js";
 import { runEvalAdd, runEvalInit, runEvalRun } from "./eval.js";
+import { runOrgGraph, runOrgInit } from "./org.js";
 import { runPlaybooksInit, runPlaybooksSuggest } from "./playbooks.js";
 import {
   runRulesAdd,
@@ -25,6 +27,7 @@ import {
   runRulesSuggest,
   runRulesValidate,
 } from "./rules.js";
+import { createProgressReporter } from "./progress.js";
 
 const tempDirs: string[] = [];
 
@@ -293,5 +296,64 @@ describe("developer value commands", () => {
     expect(runPlaybooksInit(cwd).created).toBe(true);
     expect(Array.isArray(runPlaybooksSuggest(cwd))).toBe(true);
     expect(runCi(cwd, { minCoverage: 1 }).markdown).toContain("# Anchor CI");
+  });
+});
+
+describe("progress reporter", () => {
+  it("renders pretty progress to stderr-like streams and can be turned off", () => {
+    const stream = new PassThrough() as PassThrough & { isTTY: boolean; columns: number };
+    stream.isTTY = true;
+    stream.columns = 120;
+    let output = "";
+    stream.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    });
+
+    const reporter = createProgressReporter({ progress: "pretty", stream });
+    reporter.onCodeProgress({
+      stage: "indexed_code_file",
+      repo: "owner/repo",
+      current: 1,
+      total: 2,
+      filePath: "src/index.ts",
+      chunks: 1,
+    });
+    reporter.log("[anchor] done");
+    reporter.close();
+
+    expect(output).toContain("[anchor]");
+    expect(output).toContain("1/2");
+    expect(output).toContain("done");
+
+    output = "";
+    const quiet = createProgressReporter({ progress: "off", stream });
+    quiet.log("[anchor] hidden");
+    quiet.onCodeProgress({
+      stage: "discovering_code_files",
+      repo: "owner/repo",
+    });
+    quiet.close();
+    expect(output).toBe("");
+  });
+});
+
+describe("org graph command", () => {
+  it("rebuilds an empty org graph without fetching or indexing repos", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    try {
+      runOrgInit({ org: "acme" });
+      const htmlPath = path.join(orgHome, "graph.html");
+      const result = runOrgGraph({ org: "acme", progress: "off", html: true, output: htmlPath });
+      expect(result.markdown).toContain("# Anchor Org Graph");
+      expect(result.metadata.edges).toBe(0);
+      expect(result.metadata.apiConsumers).toBe(0);
+      expect(result.metadata.htmlPath).toBe(htmlPath);
+      expect(fs.existsSync(htmlPath)).toBe(true);
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
   });
 });

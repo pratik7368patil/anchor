@@ -17,6 +17,7 @@ import {
   orgRepoLocalPath,
   plannedOrgCloneCommands,
   removeOrgRepoConfig,
+  rebuildOrgGraph,
 } from "../index.js";
 
 function tempDir(): string {
@@ -57,6 +58,8 @@ function createBackendRepo(root: string): string {
       "export function getUserAccess() {",
       "  return { allowed: true };",
       "}",
+      ...Array.from({ length: 90 }, (_, index) => `export const filler${index} = ${index};`),
+      'export const USER_ACCESS_ROUTE_ALIAS = "/api/user-access";',
     ].join("\n"),
   );
   writeFile(
@@ -183,7 +186,13 @@ describe("org memory", () => {
       expect(cloneResults.every((result) => !result.error)).toBe(true);
       expect(fs.existsSync(orgRepoLocalPath("acme", config.repos[0]!, baseDir))).toBe(true);
 
-      const first = await indexOrgRepos(db, config, { codeOnly: true, force: true, baseDir });
+      const graphProgressStages: string[] = [];
+      const first = await indexOrgRepos(db, config, {
+        codeOnly: true,
+        force: true,
+        baseDir,
+        onGraphProgress: (progress) => graphProgressStages.push(progress.stage),
+      });
       const firstChunkCount = (
         db.prepare("SELECT COUNT(*) AS count FROM code_chunks").get() as { count: number }
       ).count;
@@ -192,13 +201,40 @@ describe("org memory", () => {
         db.prepare("SELECT COUNT(*) AS count FROM code_chunks").get() as { count: number }
       ).count;
       expect(first.graph.apiConsumers).toBeGreaterThan(0);
+      expect(graphProgressStages).toContain("matching_api_consumers");
+      expect(graphProgressStages).toContain("completed_org_graph");
       expect(second.repos).toHaveLength(2);
       expect(secondChunkCount).toBe(firstChunkCount);
 
       const status = getOrgStatus(db, config, baseDir);
       expect(status.enabledRepoCount).toBe(2);
       expect(status.crossRepoEdgeCount).toBeGreaterThan(0);
+      expect(status.apiContractCount).toBeGreaterThan(0);
       expect(status.apiConsumerCount).toBeGreaterThan(0);
+      expect(status.graphLastStatus).toBe("success");
+      expect(status.graphLastDurationMs).toBeGreaterThanOrEqual(0);
+      expect(
+        (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS count
+               FROM org_api_contracts
+               WHERE org = ? AND repo = ? AND file_path = ? AND contract = ?`,
+            )
+            .get("acme", "acme/backend-api", "src/api/user-access.ts", "/api/user-access") as {
+            count: number;
+          }
+        ).count,
+      ).toBe(1);
+
+      const noGraph = await indexOrgRepos(db, config, { codeOnly: true, noGraph: true, baseDir });
+      expect(noGraph.graph.skipped).toBe(true);
+      const skippedStatus = getOrgStatus(db, config, baseDir);
+      expect(skippedStatus.crossRepoEdgeCount).toBe(status.crossRepoEdgeCount);
+      expect(skippedStatus.graphLastStatus).toBe("skipped");
+
+      const rebuilt = rebuildOrgGraph(db, config, { baseDir });
+      expect(rebuilt.apiConsumers.length).toBeGreaterThan(0);
 
       const consumers = findOrgApiConsumers(db, config, {
         repo: "acme/backend-api",

@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   addOrgRepoConfig,
   buildOrgContextResult,
@@ -14,13 +16,15 @@ import {
   orgConfigPath,
   openOrgDatabase,
   orgDatabasePath,
+  rebuildOrgGraph,
   removeOrgRepoConfig,
   resolveGitHubToken,
   syncOrgConfigToDatabase,
   validateOrgRepoFullName,
   validateOrgRepoGroup,
 } from "@pratik7368patil/anchor-core";
-import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
+import { createProgressReporter, type ProgressMode } from "./progress.js";
+import { writeOrgGraphHtml } from "./org-graph-html.js";
 
 type OrgOptions = {
   org?: string;
@@ -30,9 +34,14 @@ type OrgOptions = {
   concurrency?: number;
   codeOnly?: boolean;
   prsOnly?: boolean;
+  graph?: boolean;
   force?: boolean;
   since?: string;
   json?: boolean;
+  progress?: ProgressMode;
+  html?: boolean;
+  open?: boolean;
+  output?: string;
   format?: "mermaid" | "json";
   diffFile?: string;
   strict?: boolean;
@@ -143,16 +152,18 @@ export function runOrgList(options: OrgOptions) {
 export async function runOrgClone(options: OrgOptions) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
+  const progress = createProgressReporter(options);
   try {
     const results = await cloneOrgRepos({
       config,
       db,
       repo: options.repo,
       concurrency: options.concurrency,
-      onProgress: (message) => console.error(`[anchor] ${message}`),
+      onProgress: progress.onCloneProgress,
     });
     return { org: config.org, results };
   } finally {
+    progress.close();
     db.close();
   }
 }
@@ -160,26 +171,98 @@ export async function runOrgClone(options: OrgOptions) {
 export async function runOrgIndex(options: OrgOptions & { command?: "org index" | "org sync" }) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
+  const progress = createProgressReporter(options);
   try {
     return await indexOrgRepos(db, config, {
       repo: options.repo,
       codeOnly: options.codeOnly,
       prsOnly: options.prsOnly,
+      noGraph: options.graph === false,
       force: options.force,
       since: options.since,
       concurrency: options.concurrency,
       command: options.command ?? "org index",
-      onFetchProgress: printFetchProgress,
-      onPrIndexProgress: printIndexProgress,
-      onCodeProgress: printCodeIndexProgress,
+      onFetchProgress: progress.onFetchProgress,
+      onPrIndexProgress: progress.onPrIndexProgress,
+      onCodeProgress: progress.onCodeProgress,
+      onGraphProgress: progress.onGraphProgress,
     });
   } finally {
+    progress.close();
     db.close();
   }
 }
 
 export function runOrgStatus(options: OrgOptions) {
   return runOrgList(options);
+}
+
+export function runOrgGraph(options: OrgOptions) {
+  const config = loadOrgConfig(requireOrg(options));
+  const db = openOrgDatabase(config.org);
+  const progress = createProgressReporter(options);
+  try {
+    const graph = rebuildOrgGraph(db, config, {
+      onProgress: progress.onGraphProgress,
+    });
+    const metadata = {
+      org: config.org,
+      edges: graph.edges.length,
+      apiContracts: graph.apiContracts.length,
+      apiConsumers: graph.apiConsumers.length,
+      durationMs: graph.durationMs,
+      databasePath: orgDatabasePath(config.org),
+    };
+    const htmlPath =
+      options.html || options.open
+        ? (options.output ?? path.join(path.dirname(orgDatabasePath(config.org)), "org-graph.html"))
+        : undefined;
+    const htmlResult = htmlPath ? writeOrgGraphHtml(config, graph, htmlPath) : undefined;
+    if (htmlResult && options.open) openLocalFile(htmlResult.filePath);
+    return {
+      markdown: [
+        "# Anchor Org Graph",
+        "",
+        `Org: ${metadata.org}`,
+        `Cross-repo edges: ${metadata.edges}`,
+        `API contracts: ${metadata.apiContracts}`,
+        `API consumers: ${metadata.apiConsumers}`,
+        `Duration: ${(metadata.durationMs / 1000).toFixed(1)}s`,
+        `Database: ${metadata.databasePath}`,
+        ...(htmlResult
+          ? [
+              `HTML graph: ${htmlResult.filePath}`,
+              options.open ? "Opened in your default browser." : "Open this file in a browser.",
+            ]
+          : []),
+      ].join("\n"),
+      metadata: { ...metadata, htmlPath: htmlResult?.filePath, opened: Boolean(options.open) },
+    };
+  } finally {
+    progress.close();
+    db.close();
+  }
+}
+
+function openLocalFile(filePath: string): void {
+  const url = pathToFileURL(filePath).href;
+  try {
+    if (process.platform === "darwin") {
+      execFileSync("open", [url], { stdio: "ignore" });
+      return;
+    }
+    if (process.platform === "win32") {
+      execFileSync("cmd", ["/c", "start", "", url], { stdio: "ignore" });
+      return;
+    }
+    execFileSync("xdg-open", [url], { stdio: "ignore" });
+  } catch (error) {
+    throw new Error(
+      `Wrote graph HTML to ${filePath}, but could not open it automatically: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 export function runOrgMap(options: OrgOptions) {
@@ -297,7 +380,12 @@ export function printJsonOrMarkdown(
       coverageScore: number;
       coverageGrade: string;
       crossRepoEdgeCount: number;
+      apiContractCount: number;
       apiConsumerCount: number;
+      graphLastBuiltAt?: string;
+      graphLastStatus?: string;
+      graphLastDurationMs?: number;
+      graphLastError?: string;
       repos: Array<{ fullName: string; group: string; cloned: boolean; enabled: boolean }>;
     };
     console.log(`# Anchor Org Status`);
@@ -306,7 +394,15 @@ export function printJsonOrMarkdown(
     console.log(`Cloned repos: ${status.clonedRepoCount}`);
     console.log(`Coverage: ${status.coverageScore}% (${status.coverageGrade})`);
     console.log(`Cross-repo edges: ${status.crossRepoEdgeCount}`);
+    console.log(`API contracts: ${status.apiContractCount}`);
     console.log(`API consumers: ${status.apiConsumerCount}`);
+    console.log(
+      `Graph: ${status.graphLastStatus ?? "unknown"}${status.graphLastBuiltAt ? ` at ${status.graphLastBuiltAt}` : ""}`,
+    );
+    if (status.graphLastDurationMs !== undefined) {
+      console.log(`Graph duration: ${(status.graphLastDurationMs / 1000).toFixed(1)}s`);
+    }
+    if (status.graphLastError) console.log(`Graph error: ${status.graphLastError}`);
     console.log("");
     console.log("## Repos");
     for (const repo of status.repos) {

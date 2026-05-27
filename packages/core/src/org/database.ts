@@ -17,6 +17,16 @@ type RepoStateRow = {
   last_pr_sync_at?: string | null;
   last_error?: string | null;
 };
+type OrgGraphStateRow = {
+  org: string;
+  last_built_at?: string | null;
+  last_status?: "success" | "failed" | "skipped" | "unknown" | null;
+  last_duration_ms?: number | null;
+  edge_count?: number | null;
+  api_contract_count?: number | null;
+  api_consumer_count?: number | null;
+  last_error?: string | null;
+};
 
 export function openOrgDatabase(org: string, baseDir?: string): AnchorDatabase {
   const root = orgRoot(org, baseDir);
@@ -166,11 +176,65 @@ export function recordOrgIndexRun(
   );
 }
 
+export function recordOrgGraphState(
+  db: AnchorDatabase,
+  input: {
+    org: string;
+    status: "success" | "failed" | "skipped" | "unknown";
+    builtAt?: string;
+    durationMs?: number;
+    edgeCount?: number;
+    apiContractCount?: number;
+    apiConsumerCount?: number;
+    error?: string;
+  },
+): void {
+  initializeSchema(db);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO org_graph_state
+     (org, last_built_at, last_status, last_duration_ms, edge_count, api_contract_count,
+      api_consumer_count, last_error, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(org) DO UPDATE SET
+       last_built_at = COALESCE(excluded.last_built_at, org_graph_state.last_built_at),
+       last_status = excluded.last_status,
+       last_duration_ms = COALESCE(excluded.last_duration_ms, org_graph_state.last_duration_ms),
+       edge_count = excluded.edge_count,
+       api_contract_count = excluded.api_contract_count,
+       api_consumer_count = excluded.api_consumer_count,
+       last_error = excluded.last_error,
+       updated_at = excluded.updated_at`,
+  ).run(
+    input.org,
+    input.builtAt ?? null,
+    input.status,
+    input.durationMs ?? null,
+    input.edgeCount ?? 0,
+    input.apiContractCount ?? 0,
+    input.apiConsumerCount ?? 0,
+    input.error ?? null,
+    now,
+  );
+}
+
 function count(db: AnchorDatabase, table: string, where = "", params: unknown[] = []): number {
   const row = db
     .prepare(`SELECT COUNT(*) AS count FROM ${table} ${where}`)
     .get(...params) as CountRow;
   return row.count;
+}
+
+export function getOrgGraphCounts(
+  db: AnchorDatabase,
+  org: string,
+): { edges: number; apiContracts: number; apiConsumers: number } {
+  initializeSchema(db);
+  return {
+    edges: count(db, "org_cross_repo_edges", "WHERE org = ?", [org]),
+    apiContracts: count(db, "org_api_contracts", "WHERE org = ?", [org]),
+    apiConsumers: count(db, "org_api_consumers", "WHERE org = ?", [org]),
+  };
 }
 
 function grade(score: number): CoverageGrade {
@@ -201,8 +265,12 @@ export function getOrgStatus(
   const codeChunkCount = count(db, "code_chunks");
   const wisdomUnitCount = count(db, "wisdom_units");
   const crossRepoEdgeCount = count(db, "org_cross_repo_edges", "WHERE org = ?", [config.org]);
+  const apiContractCount = count(db, "org_api_contracts", "WHERE org = ?", [config.org]);
   const apiConsumerCount = count(db, "org_api_consumers", "WHERE org = ?", [config.org]);
   const anomalyCount = count(db, "org_anomaly_events", "WHERE org = ?", [config.org]);
+  const graphState = db.prepare("SELECT * FROM org_graph_state WHERE org = ?").get(config.org) as
+    | OrgGraphStateRow
+    | undefined;
   let score = 0;
   const reasons: string[] = [];
   if (enabledRepos.length > 0) {
@@ -242,8 +310,13 @@ export function getOrgStatus(
     codeChunkCount,
     wisdomUnitCount,
     crossRepoEdgeCount,
+    apiContractCount,
     apiConsumerCount,
     anomalyCount,
+    graphLastBuiltAt: graphState?.last_built_at ?? undefined,
+    graphLastStatus: graphState?.last_status ?? undefined,
+    graphLastDurationMs: graphState?.last_duration_ms ?? undefined,
+    graphLastError: graphState?.last_error ?? undefined,
     coverageScore: score,
     coverageGrade: grade(score),
     coverageReasons: reasons,

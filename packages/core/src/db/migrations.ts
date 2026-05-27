@@ -392,6 +392,18 @@ CREATE TABLE IF NOT EXISTS org_anomaly_events (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS org_graph_state (
+  org TEXT PRIMARY KEY,
+  last_built_at TEXT,
+  last_status TEXT NOT NULL DEFAULT 'unknown',
+  last_duration_ms INTEGER,
+  edge_count INTEGER NOT NULL DEFAULT 0,
+  api_contract_count INTEGER NOT NULL DEFAULT 0,
+  api_consumer_count INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS org_sync_checkpoints (
   org TEXT NOT NULL,
   repo TEXT NOT NULL,
@@ -429,4 +441,5 @@ CREATE INDEX IF NOT EXISTS idx_org_edges_target ON org_cross_repo_edges(org, tar
 CREATE INDEX IF NOT EXISTS idx_org_consumers_provider ON org_api_consumers(org, provider_repo);
 CREATE INDEX IF NOT EXISTS idx_org_consumers_consumer ON org_api_consumers(org, consumer_repo);
 CREATE INDEX IF NOT EXISTS idx_org_anomalies_org ON org_anomaly_events(org, severity);
+CREATE INDEX IF NOT EXISTS idx_org_graph_state_status ON org_graph_state(org, last_status);
 `;

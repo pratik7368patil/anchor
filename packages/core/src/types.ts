@@ -470,8 +470,13 @@ export type OrgStatus = {
   codeChunkCount: number;
   wisdomUnitCount: number;
   crossRepoEdgeCount: number;
+  apiContractCount: number;
   apiConsumerCount: number;
   anomalyCount: number;
+  graphLastBuiltAt?: string;
+  graphLastStatus?: "success" | "failed" | "skipped" | "unknown";
+  graphLastDurationMs?: number;
+  graphLastError?: string;
   coverageScore: number;
   coverageGrade: CoverageGrade;
   coverageReasons: string[];
@@ -487,6 +492,74 @@ export type OrgStatus = {
     }
   >;
 };
+
+export type OrgGraphProgress =
+  | {
+      stage: "loading_package_manifests";
+      org: string;
+      totalRepos: number;
+    }
+  | {
+      stage: "loaded_package_manifests";
+      org: string;
+      repos: number;
+      packageNames: number;
+    }
+  | {
+      stage: "building_package_edges";
+      org: string;
+      current: number;
+      total: number;
+      repo: string;
+      edges: number;
+    }
+  | {
+      stage: "loading_imports";
+      org: string;
+    }
+  | {
+      stage: "building_import_edges";
+      org: string;
+      current: number;
+      total: number;
+      sourcePath: string;
+      edges: number;
+    }
+  | {
+      stage: "loading_code_chunks";
+      org: string;
+    }
+  | {
+      stage: "extracting_api_contracts";
+      org: string;
+      current: number;
+      total: number;
+      filePath: string;
+      contracts: number;
+    }
+  | {
+      stage: "matching_api_consumers";
+      org: string;
+      current: number;
+      total: number;
+      filePath: string;
+      matches: number;
+    }
+  | {
+      stage: "writing_org_graph";
+      org: string;
+      edges: number;
+      apiContracts: number;
+      apiConsumers: number;
+    }
+  | {
+      stage: "completed_org_graph";
+      org: string;
+      edges: number;
+      apiContracts: number;
+      apiConsumers: number;
+      durationMs: number;
+    };
 
 export type FetchPullRequestsProgress =
   | {

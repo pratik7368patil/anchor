@@ -6,6 +6,7 @@ import type {
   FetchPullRequestsProgress,
   IndexPullRequestsProgress,
   CodeIndexProgress,
+  OrgGraphProgress,
 } from "../types.js";
 import type { AnchorDatabase } from "../db/database.js";
 import { getLastSyncTime, initializeSchema } from "../db/database.js";
@@ -15,7 +16,9 @@ import { orgRepoLocalPath } from "./config.js";
 import { defaultGitCommandRunner, type GitCommandRunner } from "./clone.js";
 import {
   getOrgRepoState,
+  getOrgGraphCounts,
   recordOrgIndexRun,
+  recordOrgGraphState,
   syncOrgConfigToDatabase,
   updateOrgRepoState,
 } from "./database.js";
@@ -37,6 +40,8 @@ export type OrgIndexResult = {
     edges: number;
     apiConsumers: number;
     apiContracts: number;
+    skipped?: boolean;
+    error?: string;
   };
 };
 
@@ -45,6 +50,7 @@ export type OrgIndexOptions = {
   codeOnly?: boolean;
   prsOnly?: boolean;
   force?: boolean;
+  noGraph?: boolean;
   since?: string;
   concurrency?: number;
   token?: string;
@@ -54,6 +60,7 @@ export type OrgIndexOptions = {
   onFetchProgress?: (progress: FetchPullRequestsProgress) => void;
   onPrIndexProgress?: (progress: IndexPullRequestsProgress) => void;
   onCodeProgress?: (progress: CodeIndexProgress) => void;
+  onGraphProgress?: (progress: OrgGraphProgress) => void;
 };
 
 function readCommit(runner: GitCommandRunner, cwd: string): string | undefined {
@@ -217,27 +224,51 @@ export async function indexOrgRepos(
     }
   }
 
-  const graph = rebuildOrgGraph(db, config, options.baseDir);
+  let graph: OrgIndexResult["graph"];
+  if (options.noGraph) {
+    const counts = getOrgGraphCounts(db, config.org);
+    recordOrgGraphState(db, {
+      org: config.org,
+      status: "skipped",
+      edgeCount: counts.edges,
+      apiContractCount: counts.apiContracts,
+      apiConsumerCount: counts.apiConsumers,
+    });
+    graph = { ...counts, skipped: true };
+  } else {
+    try {
+      const rebuiltGraph = rebuildOrgGraph(db, config, {
+        baseDir: options.baseDir,
+        onProgress: options.onGraphProgress,
+      });
+      graph = {
+        edges: rebuiltGraph.edges.length,
+        apiConsumers: rebuiltGraph.apiConsumers.length,
+        apiContracts: rebuiltGraph.apiContracts.length,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const counts = getOrgGraphCounts(db, config.org);
+      graph = { ...counts, error: message };
+    }
+  }
   recordOrgIndexRun(db, {
     org: config.org,
     command: options.command ?? "org index",
     startedAt,
     finishedAt: new Date().toISOString(),
-    status: results.some((result) => result.error) ? "partial" : "success",
+    status: results.some((result) => result.error) || graph.error ? "partial" : "success",
     prsIndexed: results.reduce((sum, result) => sum + (result.history?.indexedPrs ?? 0), 0),
     codeFilesIndexed: results.reduce((sum, result) => sum + (result.code?.indexedFiles ?? 0), 0),
     failures: results
       .map((result) => result.error)
+      .concat(graph.error ? [graph.error] : [])
       .filter((error): error is string => Boolean(error)),
   });
 
   return {
     org: config.org,
     repos: results.sort((a, b) => a.repo.localeCompare(b.repo)),
-    graph: {
-      edges: graph.edges.length,
-      apiConsumers: graph.apiConsumers.length,
-      apiContracts: graph.apiContracts.length,
-    },
+    graph,
   };
 }
