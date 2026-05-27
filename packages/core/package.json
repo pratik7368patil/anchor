@@ -1,6 +1,6 @@
 {
   "name": "@pratik7368patil/anchor-core",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Core local indexing, sanitization, and retrieval engine for Anchor.",
   "license": "MIT",
   "type": "module",
