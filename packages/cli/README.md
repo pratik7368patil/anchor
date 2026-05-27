@@ -39,6 +39,77 @@ anchor rules check-evidence
 anchor doctor
 ```
 
+## Which command should I run?
+
+First-time setup:
+
+```bash
+anchor init
+anchor index --limit 200
+anchor doctor
+```
+
+Current-code context only, no GitHub auth:
+
+```bash
+anchor index-code
+anchor architecture
+anchor health
+```
+
+Full PR history:
+
+```bash
+anchor index-all --concurrency 2
+```
+
+Daily refresh:
+
+```bash
+anchor sync
+```
+
+Before Cursor edits:
+
+```bash
+anchor plan "Add API integration" --file src/api/routes.ts
+anchor test-command src/api/routes.ts
+anchor explain src/api/routes.ts
+```
+
+Before API, auth, access, schema, SDK, shared-package, or cross-repo work:
+
+```bash
+anchor org sync --org my-org
+anchor org impact --org my-org --repo my-org/backend-api --strict
+```
+
+## Command-specific options
+
+`anchor index`:
+Use `--repo owner/name` when git remote detection is unavailable, `--limit 50` for a fast first pass, `--all` for full history through the normal command, `--since YYYY-MM-DD` for targeted backfill, `--force` to rebuild local derived records, `--no-code` to skip code indexing, and `--concurrency 1-10` to tune patch enrichment pressure.
+
+`anchor index-all`:
+Use for complete merged PR history. Prefer `--concurrency 1` or `--concurrency 2` on large repos. Use `--no-code` when code context is already fresh.
+
+`anchor sync`:
+Use after the first index. It is incremental and safe to rerun. Add `--all` for a full catch-up from the sync cursor, `--since YYYY-MM-DD` for a specific window, `--no-code` for PR-only refresh, and `--concurrency 1-10` when tuning rate-limit pressure.
+
+`anchor index-code`:
+Use when you only need current-code context or do not have GitHub auth. Add `--force` when `anchor health` reports stale code records.
+
+`anchor plan`:
+Use `--file path` for a likely target file, `--symbol name` for a likely contract or implementation point, `--strict` for high-risk work, and `--json` for automation.
+
+`anchor explain` and `anchor review`:
+Use `--share` for Slack or PR-comment Markdown. Use `--diff-file change.diff` on review when checking a saved diff. Use `--strict` for risky diffs and `--json` for tooling.
+
+`anchor architecture`:
+Use `--file path` for file-level guidance, `--area api` for one architecture area, `--check` for the current diff, `--diff-file change.diff` for saved diffs, `--map --format mermaid` for docs, `--map --format json` for tooling, and `--write-doc` only when you intentionally want `ANCHOR_ARCHITECTURE.md`.
+
+`anchor org ...`:
+Use `--org my-org` on every org command. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--concurrency 1-3` with `org clone` and `org sync`, `--diff-file` and `--strict` with `org impact`, and `--min-coverage` with `org ci`.
+
 Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`.
 
 Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, comments, reviews, commits, labels, and changed files. Anchor uses REST only to enrich PR file patches, caps GraphQL page size below GitHub's nested node ceiling, adapts GraphQL page size from live rate-limit cost, and saves a local resume checkpoint for full-history runs, so `anchor index`, `anchor index-all`, and `anchor sync` are more efficient without adding another command. If GraphQL itself is rate-limited or returns HTML/non-JSON output, Anchor defers or fails clearly instead of falling back to the older REST PR-detail crawler.
