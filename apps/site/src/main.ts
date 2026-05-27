@@ -1217,6 +1217,7 @@ function navigate(href: string): void {
 }
 
 function revealVisibleElements(): void {
+  const elements = Array.from(document.querySelectorAll(".fade-up"));
   const observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
@@ -1226,10 +1227,17 @@ function revealVisibleElements(): void {
         }
       });
     },
-    { threshold: 0.14 },
+    { threshold: 0 },
   );
 
-  document.querySelectorAll(".fade-up").forEach((element) => observer.observe(element));
+  elements.forEach((element) => {
+    const rect = element.getBoundingClientRect();
+    if (rect.top < window.innerHeight && rect.bottom > 0) {
+      element.classList.add("is-visible");
+      return;
+    }
+    observer.observe(element);
+  });
 }
 
 async function copyWithFeedback(button: HTMLButtonElement, text: string): Promise<void> {
