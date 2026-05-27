@@ -4,7 +4,7 @@ import path from "node:path";
 import { PassThrough } from "node:stream";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { getIndexStatus } from "@pratik7368patil/anchor-core";
+import { getIndexStatus, readOrgHeartbeat } from "@pratik7368patil/anchor-core";
 import { runArchitecture } from "./architecture.js";
 import { runDemo } from "./demo.js";
 import { runExplain } from "./explain.js";
@@ -329,6 +329,7 @@ describe("progress reporter", () => {
 
     expect(output).toContain("Anchor");
     expect(output).toContain("Indexing repo memory");
+    expect(output).toContain("last update");
     expect(output).toContain("Indexed code");
     expect(output).toContain("1/2");
     expect(output).toContain("done");
@@ -368,6 +369,41 @@ describe("progress reporter", () => {
     else process.env.CI = previousCi;
     if (previousProgress === undefined) delete process.env.ANCHOR_PROGRESS;
     else process.env.ANCHOR_PROGRESS = previousProgress;
+  });
+
+  it("writes org heartbeat metadata while org progress is active", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    const stream = new PassThrough() as PassThrough & { isTTY: boolean; columns: number };
+    stream.isTTY = false;
+    stream.columns = 80;
+    try {
+      const reporter = createProgressReporter({
+        stream,
+        heartbeat: { org: "acme", command: "org sync" },
+      });
+      reporter.onOrgProgress({
+        stage: "org_repo_phase",
+        org: "acme",
+        command: "org sync",
+        repo: "acme/backend-api",
+        current: 2,
+        total: 5,
+        phase: "Indexing code and architecture",
+      });
+      const heartbeat = readOrgHeartbeat("acme");
+      expect(heartbeat?.command).toBe("org sync");
+      expect(heartbeat?.repo).toBe("acme/backend-api");
+      expect(heartbeat?.repoIndex).toBe(2);
+      expect(heartbeat?.repoTotal).toBe(5);
+      expect(heartbeat?.phase).toBe("Indexing code and architecture");
+      reporter.close();
+      expect(readOrgHeartbeat("acme")).toBeUndefined();
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
   });
 });
 

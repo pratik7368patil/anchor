@@ -593,7 +593,7 @@ org
   .option("--force", "Refresh unchanged code indexes")
   .option("--json", "Print results as JSON")
   .action(async (options) => {
-    await runOrgClone(options);
+    await runOrgClone({ ...options, command: "org sync" });
     printJsonOrMarkdown(await runOrgIndex({ ...options, command: "org sync" }), options);
   });
 

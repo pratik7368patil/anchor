@@ -101,7 +101,7 @@ Use after the first index. It is incremental and safe to rerun. Add `--all` for 
 `anchor index-code`:
 Use when you only need current-code context or do not have GitHub auth. Add `--force` when `anchor health` reports stale code records.
 
-Anchor automatically chooses progress output: modern live progress in interactive terminals, plain line logs in CI/non-TTY shells, and no progress for JSON output.
+Anchor automatically chooses progress output: modern live progress in interactive terminals, plain line logs in CI/non-TTY shells, and no progress for JSON output. Org commands show the active repo, phase, counts, elapsed time, and last update age across GitHub fetches, PR SQLite indexing, code indexing, architecture indexing, and graph creation.
 
 `anchor plan`:
 Use `--file path` for a likely target file, `--symbol name` for a likely contract or implementation point, `--strict` for high-risk work, and `--json` for automation.
@@ -117,7 +117,7 @@ Use `--org my-org` on every org command. Use `--group` and `--alias` with `org a
 
 Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`.
 
-Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, comments, reviews, commits, labels, and changed files. Anchor uses REST only to enrich PR file patches, caps GraphQL page size below GitHub's nested node ceiling, adapts GraphQL page size from live rate-limit cost, and saves a local resume checkpoint for full-history runs, so `anchor index`, `anchor index-all`, and `anchor sync` are more efficient without adding another command. If GraphQL itself is rate-limited or returns HTML/non-JSON output, Anchor defers or fails clearly instead of falling back to the older REST PR-detail crawler.
+Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, comments, reviews, commits, labels, and changed files. Anchor uses REST only to enrich PR file patches, caps GraphQL page size below GitHub's nested node ceiling, adapts GraphQL page size from live rate-limit cost, and saves a local resume checkpoint for full-history runs, so `anchor index`, `anchor index-all`, and `anchor sync` are more efficient without adding another command. Transient GraphQL network/HTML gateway failures retry before Anchor falls back or fails clearly; GraphQL rate/resource limits reduce page size or defer instead of using the older REST PR-detail crawler.
 
 Use `anchor_get_context` with `strict: true` when Cursor should only receive non-stale, high-confidence evidence.
 
@@ -125,7 +125,7 @@ Anchor indexes PR history, local code chunks, likely related tests, regression m
 
 Org Memory is opt-in. `anchor org ...` commands store allowlisted repo clones and one org SQLite database under `~/.anchor/orgs/<org>/`, then expose cross-repo context through `anchor_get_org_context`, `anchor_check_cross_repo_impact`, `anchor_find_api_consumers`, `anchor_get_org_architecture`, and `anchor_org_index_status`.
 
-Cross-repo edges and API consumers are created during the org graph phase. If a large `anchor org sync` is taking too long after repo indexing completes, run `anchor org sync --org my-org --no-graph` first, then `anchor org graph --org my-org --open` as a separate, visible progress step with an interactive local graph page. If a recent sync is interrupted after PR/code indexing but before graph completion, rerunning `anchor org sync` resumes graph work and skips redundant PR fetches for repos that already completed PR sync.
+Cross-repo edges and API consumers are created during the org graph phase. If a large `anchor org sync` is taking too long after repo indexing completes, run `anchor org status --org my-org` in another terminal to see the heartbeat, then split future runs with `anchor org sync --org my-org --no-graph` and `anchor org graph --org my-org --open`. If a recent sync is interrupted after PR/code indexing but before graph completion, rerunning `anchor org sync` resumes graph work and skips redundant PR fetches for repos that already completed PR sync.
 
 Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor sync`, and `anchor index-code`. It gives Cursor deterministic current-code guidance about file areas, import direction, symbols, repeated folder patterns, and nearby test conventions before adding APIs, services, components, hooks, tests, or refactors.
 

@@ -694,6 +694,49 @@ describe("GitHub GraphQL PR fetching", () => {
     expect(records[0]?.files[0]?.patch).toContain("export");
   });
 
+  it("retries transient GraphQL fetch failures before falling back to REST", async () => {
+    let fetchCalls = 0;
+    const progress: string[] = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      fetchCalls += 1;
+      if (fetchCalls === 1) throw new TypeError("fetch failed");
+      const body = parseGraphQLRequest(init);
+      if (body.query?.includes("AnchorGraphQLRateLimit")) {
+        return jsonResponse({
+          data: {
+            rateLimit: { cost: 1, remaining: 4999, resetAt: "2024-01-04T00:00:00Z" },
+          },
+        });
+      }
+      return jsonResponse({
+        data: {
+          repository: {
+            pullRequests: {
+              nodes: [pullNode()],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+          rateLimit: { cost: 1, remaining: 4998, resetAt: "2024-01-04T00:00:00Z" },
+        },
+      });
+    };
+
+    const records = await fetchMergedPullRequestsWithGraphQL({
+      token: "token",
+      repo: "acme/widgets",
+      limit: 1,
+      detailConcurrency: 1,
+      controller: {},
+      fetchImpl,
+      restClient: { pulls: { listFiles: async () => ({ data: [], headers: {} }) } } as never,
+      onProgress: (item) => progress.push(item.stage),
+    });
+
+    expect(records).toHaveLength(1);
+    expect(fetchCalls).toBeGreaterThan(1);
+    expect(progress).toContain("github_graphql_retry");
+  });
+
   it("treats GraphQL rate-limit errors as GitHub rate limits", () => {
     expect(
       isGitHubRateLimitError(

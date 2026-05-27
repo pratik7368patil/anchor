@@ -116,7 +116,7 @@ export const workflowRecipes: WorkflowRecipe[] = [
       "anchor org impact --org my-org --repo my-org/backend-api --strict",
     ],
     notes:
-      "Org Memory is explicit allowlist only. If a recent sync is interrupted after PR/code indexing, rerunning sync resumes unfinished graph work without redundant PR fetches for completed repos.",
+      "Org Memory is explicit allowlist only. Long runs show live repo/phase progress and `anchor org status` can read the heartbeat while sync is running. If a recent sync is interrupted after PR/code indexing, rerunning sync resumes unfinished graph work without redundant PR fetches for completed repos.",
   },
   {
     title: "Share context with the team",
@@ -1039,7 +1039,7 @@ export const commandDetails: Record<string, CommandDetail> = {
         name: "--no-graph",
         description: "Skip the final cross-repo graph rebuild.",
         useWhen:
-          "Use it when many repos are syncing and you want to run `anchor org graph` as its own visible step.",
+          "Use it when many repos are syncing and you want to run `anchor org graph` as its own visible step. Use `anchor org status` in another terminal to inspect the active sync heartbeat.",
         example: "anchor org sync --org my-org --no-graph --concurrency 2",
       },
       {

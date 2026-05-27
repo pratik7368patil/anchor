@@ -6,6 +6,7 @@ import type {
   FetchPullRequestsProgress,
   IndexPullRequestsProgress,
   CodeIndexProgress,
+  OrgLifecycleProgress,
   OrgGraphProgress,
 } from "../types.js";
 import type { AnchorDatabase } from "../db/database.js";
@@ -67,6 +68,7 @@ export type OrgIndexOptions = {
   onPrIndexProgress?: (progress: IndexPullRequestsProgress) => void;
   onCodeProgress?: (progress: CodeIndexProgress) => void;
   onGraphProgress?: (progress: OrgGraphProgress) => void;
+  onLifecycleProgress?: (progress: OrgLifecycleProgress) => void;
 };
 
 function readCommit(runner: GitCommandRunner, cwd: string): string | undefined {
@@ -135,15 +137,44 @@ export async function indexOrgRepos(
   const auth = options.token ? { token: options.token } : resolveGitHubToken();
   const results: OrgRepoIndexResult[] = [];
   const startedAt = new Date().toISOString();
+  const startedAtMs = Date.now();
   const graphState = getOrgGraphState(db, config.org);
+  const command = options.command ?? "org index";
+  const emit = (progress: OrgLifecycleProgress): void => options.onLifecycleProgress?.(progress);
 
-  for (const repo of repos) {
+  emit({
+    stage: "org_sync_started",
+    org: config.org,
+    command,
+    totalRepos: repos.length,
+  });
+
+  for (const [repoIndex, repo] of repos.entries()) {
+    const repoPosition = repoIndex + 1;
     const localPath = orgRepoLocalPath(config.org, repo, options.baseDir);
     const repoStartedAt = new Date().toISOString();
+    const repoStartedAtMs = Date.now();
     let prsIndexed = 0;
     let codeFilesIndexed = 0;
     try {
+      emit({
+        stage: "org_repo_started",
+        org: config.org,
+        command,
+        repo: repo.fullName,
+        current: repoPosition,
+        total: repos.length,
+      });
       if (!fs.existsSync(localPath)) throw new Error(missingCloneError(repo.fullName, localPath));
+      emit({
+        stage: "org_repo_phase",
+        org: config.org,
+        command,
+        repo: repo.fullName,
+        current: repoPosition,
+        total: repos.length,
+        phase: "Reading current commit",
+      });
       const currentCommit = readCommit(runner, localPath);
       const state = getOrgRepoState(db, config.org, repo.fullName);
       let history: IndexSummary | undefined;
@@ -165,6 +196,15 @@ export async function indexOrgRepos(
           skippedHistory = true;
           historySkippedReason =
             "PR history already synced; resuming unfinished org graph/index work.";
+          emit({
+            stage: "org_repo_skipped_history",
+            org: config.org,
+            command,
+            repo: repo.fullName,
+            current: repoPosition,
+            total: repos.length,
+            reason: historySkippedReason,
+          });
           options.onFetchProgress?.({
             stage: "skipped_pull_request_fetch",
             repo: repo.fullName,
@@ -176,6 +216,15 @@ export async function indexOrgRepos(
           );
         } else {
           try {
+            emit({
+              stage: "org_repo_phase",
+              org: config.org,
+              command,
+              repo: repo.fullName,
+              current: repoPosition,
+              total: repos.length,
+              phase: "Fetching PR history",
+            });
             const since =
               options.since ??
               (options.command === "org sync"
@@ -188,6 +237,16 @@ export async function indexOrgRepos(
               since,
               detailConcurrency: options.concurrency,
               onProgress: options.onFetchProgress,
+            });
+            emit({
+              stage: "org_repo_phase",
+              org: config.org,
+              command,
+              repo: repo.fullName,
+              current: repoPosition,
+              total: repos.length,
+              phase: "Indexing PR history into SQLite",
+              detail: `${pullRequests.length} PR(s)`,
             });
             history = indexPullRequests(db, pullRequests, {
               cwd: localPath,
@@ -218,6 +277,15 @@ export async function indexOrgRepos(
         state?.lastCodeIndexedCommit &&
         currentCommit === state.lastCodeIndexedCommit;
       if (!options.prsOnly && !codeUnchanged) {
+        emit({
+          stage: "org_repo_phase",
+          org: config.org,
+          command,
+          repo: repo.fullName,
+          current: repoPosition,
+          total: repos.length,
+          phase: "Indexing code and architecture",
+        });
         code = indexCodebase(db, {
           cwd: localPath,
           repo: repo.fullName,
@@ -233,6 +301,26 @@ export async function indexOrgRepos(
           lastCodeIndexedCommit: currentCommit,
           lastCodeIndexedAt: new Date().toISOString(),
         });
+      } else if (!options.prsOnly && codeUnchanged) {
+        emit({
+          stage: "org_repo_skipped_code",
+          org: config.org,
+          command,
+          repo: repo.fullName,
+          current: repoPosition,
+          total: repos.length,
+          reason: "Code skipped: current commit already indexed.",
+        });
+      } else if (options.prsOnly) {
+        emit({
+          stage: "org_repo_skipped_code",
+          org: config.org,
+          command,
+          repo: repo.fullName,
+          current: repoPosition,
+          total: repos.length,
+          reason: "Code skipped because --prs-only was passed.",
+        });
       }
       if (repoFailures.length > 0) {
         updateOrgRepoState(db, {
@@ -245,6 +333,14 @@ export async function indexOrgRepos(
         });
       }
 
+      emit({
+        stage: "org_repo_finalizing",
+        org: config.org,
+        command,
+        repo: repo.fullName,
+        current: repoPosition,
+        total: repos.length,
+      });
       results.push({
         repo: repo.fullName,
         skippedCode: Boolean(codeUnchanged || options.prsOnly),
@@ -258,13 +354,27 @@ export async function indexOrgRepos(
       recordOrgIndexRun(db, {
         org: config.org,
         repo: repo.fullName,
-        command: options.command ?? "org index",
+        command,
         startedAt: repoStartedAt,
         finishedAt: new Date().toISOString(),
         status: repoFailures.length > 0 ? "partial" : "success",
         prsIndexed,
         codeFilesIndexed,
         failures: repoFailures,
+      });
+      emit({
+        stage: "org_repo_completed",
+        org: config.org,
+        command,
+        repo: repo.fullName,
+        current: repoPosition,
+        total: repos.length,
+        skippedHistory,
+        skippedCode: Boolean(codeUnchanged || options.prsOnly),
+        prsIndexed,
+        codeFilesIndexed,
+        durationMs: Date.now() - repoStartedAtMs,
+        error: repoFailures.join("; ") || undefined,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -278,7 +388,7 @@ export async function indexOrgRepos(
       recordOrgIndexRun(db, {
         org: config.org,
         repo: repo.fullName,
-        command: options.command ?? "org index",
+        command,
         startedAt: repoStartedAt,
         finishedAt: new Date().toISOString(),
         status: "failed",
@@ -287,6 +397,20 @@ export async function indexOrgRepos(
       results.push({
         repo: repo.fullName,
         skippedCode: false,
+        error: message,
+      });
+      emit({
+        stage: "org_repo_completed",
+        org: config.org,
+        command,
+        repo: repo.fullName,
+        current: repoPosition,
+        total: repos.length,
+        skippedHistory: false,
+        skippedCode: false,
+        prsIndexed,
+        codeFilesIndexed,
+        durationMs: Date.now() - repoStartedAtMs,
         error: message,
       });
     }
@@ -301,6 +425,12 @@ export async function indexOrgRepos(
       edgeCount: counts.edges,
       apiContractCount: counts.apiContracts,
       apiConsumerCount: counts.apiConsumers,
+    });
+    emit({
+      stage: "org_graph_skipped",
+      org: config.org,
+      command,
+      reason: "Graph skipped because --no-graph was passed.",
     });
     graph = { ...counts, skipped: true };
   } else {
@@ -322,7 +452,7 @@ export async function indexOrgRepos(
   }
   recordOrgIndexRun(db, {
     org: config.org,
-    command: options.command ?? "org index",
+    command,
     startedAt,
     finishedAt: new Date().toISOString(),
     status: results.some((result) => result.error) || graph.error ? "partial" : "success",
@@ -332,6 +462,15 @@ export async function indexOrgRepos(
       .map((result) => result.error)
       .concat(graph.error ? [graph.error] : [])
       .filter((error): error is string => Boolean(error)),
+  });
+  emit({
+    stage: "org_sync_completed",
+    org: config.org,
+    command,
+    totalRepos: repos.length,
+    succeededRepos: results.filter((result) => !result.error).length,
+    failedRepos: results.filter((result) => result.error).length,
+    durationMs: Date.now() - startedAtMs,
   });
 
   return {

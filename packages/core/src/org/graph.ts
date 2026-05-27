@@ -401,7 +401,11 @@ export function rebuildOrgGraph(
       const insertEdge = db.prepare(
         `INSERT INTO org_cross_repo_edges
          (id, org, source_repo, source_path, target_repo, target_path, relationship, evidence_json, confidence, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           evidence_json = excluded.evidence_json,
+           confidence = excluded.confidence,
+           created_at = excluded.created_at`,
       );
       for (const edge of edges) {
         insertEdge.run(
@@ -420,7 +424,12 @@ export function rebuildOrgGraph(
       const insertContract = db.prepare(
         `INSERT INTO org_api_contracts
          (id, org, repo, file_path, contract, evidence_json, confidence, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           contract = excluded.contract,
+           evidence_json = excluded.evidence_json,
+           confidence = excluded.confidence,
+           created_at = excluded.created_at`,
       );
       for (const contract of apiContracts) {
         insertContract.run(
@@ -437,7 +446,12 @@ export function rebuildOrgGraph(
       const insertConsumer = db.prepare(
         `INSERT INTO org_api_consumers
          (id, org, provider_repo, provider_path, consumer_repo, consumer_path, contract, evidence_json, confidence, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           contract = excluded.contract,
+           evidence_json = excluded.evidence_json,
+           confidence = excluded.confidence,
+           created_at = excluded.created_at`,
       );
       for (const consumer of apiConsumers) {
         insertConsumer.run(
