@@ -188,11 +188,17 @@ describe("org memory", () => {
       expect(fs.existsSync(orgRepoLocalPath("acme", config.repos[0]!, baseDir))).toBe(true);
 
       const graphProgressStages: string[] = [];
+      const graphWriteKinds: string[] = [];
       const first = await indexOrgRepos(db, config, {
         codeOnly: true,
         force: true,
         baseDir,
-        onGraphProgress: (progress) => graphProgressStages.push(progress.stage),
+        onGraphProgress: (progress) => {
+          graphProgressStages.push(progress.stage);
+          if (progress.stage === "writing_org_graph" && progress.kind) {
+            graphWriteKinds.push(progress.kind);
+          }
+        },
       });
       const firstChunkCount = (
         db.prepare("SELECT COUNT(*) AS count FROM code_chunks").get() as { count: number }
@@ -203,6 +209,7 @@ describe("org memory", () => {
       ).count;
       expect(first.graph.apiConsumers).toBeGreaterThan(0);
       expect(graphProgressStages).toContain("matching_api_consumers");
+      expect(graphWriteKinds).toEqual(expect.arrayContaining(["edges", "contracts", "consumers"]));
       expect(graphProgressStages).toContain("completed_org_graph");
       expect(second.repos).toHaveLength(2);
       expect(secondChunkCount).toBe(firstChunkCount);

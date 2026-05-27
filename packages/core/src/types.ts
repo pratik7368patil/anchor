@@ -691,6 +691,9 @@ export type OrgGraphProgress =
       edges: number;
       apiContracts: number;
       apiConsumers: number;
+      current?: number;
+      total?: number;
+      kind?: "edges" | "contracts" | "consumers";
     }
   | {
       stage: "completed_org_graph";

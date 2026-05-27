@@ -1396,7 +1396,9 @@ export function printOrgGraphProgress(progress: OrgGraphProgress): void {
       return;
     case "writing_org_graph":
       console.error(
-        `[anchor] writing org graph: ${progress.edges} edges, ${progress.apiContracts} API contracts, ${progress.apiConsumers} API consumers...`,
+        progress.current !== undefined && progress.total !== undefined && progress.kind
+          ? `[anchor] writing org graph ${progress.kind} ${progress.current}/${progress.total}: ${progress.edges} edges, ${progress.apiContracts} API contracts, ${progress.apiConsumers} API consumers...`
+          : `[anchor] writing org graph: ${progress.edges} edges, ${progress.apiContracts} API contracts, ${progress.apiConsumers} API consumers...`,
       );
       return;
     case "completed_org_graph":
@@ -2114,6 +2116,8 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         key: `graph:write:${progress.org}`,
         phase: "Org graph",
         label: "Writing graph",
+        current: progress.current,
+        total: progress.total,
         detail: `${progress.edges} edges, ${progress.apiContracts} contracts, ${progress.apiConsumers} consumers`,
         timelineStepId: "graph_write",
         timelineLabel: "Write org graph",
