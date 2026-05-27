@@ -546,7 +546,9 @@ export function replaceCodeIndex(
   const repoId = ensureRepository(db, repo);
   const now = new Date().toISOString();
   options.onProgress?.({ stage: "writing_code_index", repo, phase: "Inferring test awareness" });
-  const testAwareness = inferTestAwareness(repo, codeFiles, codeChunks);
+  const testAwareness = inferTestAwareness(repo, codeFiles, codeChunks, {
+    onProgress: options.onProgress,
+  });
   options.onProgress?.({ stage: "writing_code_index", repo, phase: "Writing code index" });
 
   const transaction = db.transaction(() => {

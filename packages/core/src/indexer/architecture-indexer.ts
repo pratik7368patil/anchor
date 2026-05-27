@@ -177,22 +177,57 @@ export function extractCodeImports(
   });
 }
 
-function relatedTestsFor(filePath: string, allPaths: string[]): string[] {
+type RelatedTestIndex = {
+  testPaths: string[];
+  byBase: Map<string, string[]>;
+  byDirectory: Map<string, string[]>;
+};
+
+function addToStringMap(map: Map<string, string[]>, key: string, value: string): void {
+  const values = map.get(key) ?? [];
+  values.push(value);
+  map.set(key, values);
+}
+
+function testBaseFor(filePath: string): string {
+  return path.posix.parse(filePath).name.replace(/\.(test|spec)$/i, "");
+}
+
+function buildRelatedTestIndex(allPaths: string[]): RelatedTestIndex {
+  const testPaths = allPaths.filter((candidate) => isTestFilePath(candidate));
+  const byBase = new Map<string, string[]>();
+  const byDirectory = new Map<string, string[]>();
+  for (const testPath of testPaths) {
+    addToStringMap(byBase, testBaseFor(testPath), testPath);
+    const segments = path.posix.dirname(testPath).split("/").filter(Boolean);
+    for (let index = 1; index <= segments.length; index += 1) {
+      addToStringMap(byDirectory, segments.slice(0, index).join("/"), testPath);
+    }
+  }
+  return { testPaths, byBase, byDirectory };
+}
+
+function relatedTestsFor(filePath: string, index: RelatedTestIndex): string[] {
   if (isTestFilePath(filePath)) return [];
   const parsed = path.posix.parse(filePath);
   const basename = parsed.name.replace(/\.(test|spec)$/i, "");
-  return allPaths
-    .filter((candidate) => isTestFilePath(candidate))
-    .filter((candidate) => {
-      const candidateParsed = path.posix.parse(candidate);
-      const candidateBase = candidateParsed.name.replace(/\.(test|spec)$/i, "");
-      return (
-        candidateBase === basename ||
-        candidate.startsWith(`${parsed.dir}/`) ||
-        candidate.includes(`/${basename}.`)
-      );
-    })
-    .slice(0, 8);
+  const related: string[] = [];
+  const seen = new Set<string>();
+  const add = (testPath: string) => {
+    if (seen.has(testPath)) return;
+    seen.add(testPath);
+    related.push(testPath);
+  };
+
+  for (const testPath of index.byBase.get(basename) ?? []) add(testPath);
+  if (parsed.dir) {
+    for (const testPath of index.byDirectory.get(parsed.dir) ?? []) add(testPath);
+  }
+  for (const testPath of index.testPaths) {
+    if (testPath.includes(`/${basename}.`)) add(testPath);
+    if (related.length >= 8) break;
+  }
+  return related.slice(0, 8);
 }
 
 function directoryLabel(filePath: string): string {
@@ -246,10 +281,15 @@ export function buildArchitectureIndex(
 ): ArchitectureIndexData {
   const allPaths = files.map((file) => file.path);
   const codePaths = new Set(allPaths);
-  const symbolsByPath = new Map<string, string[]>();
+  const relatedTestIndex = buildRelatedTestIndex(allPaths);
+  const symbolSetsByPath = new Map<string, Set<string>>();
   for (const chunk of chunks) {
-    const existing = symbolsByPath.get(chunk.filePath) ?? [];
-    symbolsByPath.set(chunk.filePath, uniqueStrings([...existing, ...chunk.symbols]).slice(0, 40));
+    const existing = symbolSetsByPath.get(chunk.filePath) ?? new Set<string>();
+    for (const symbol of chunk.symbols) {
+      if (existing.size >= 40) break;
+      existing.add(symbol);
+    }
+    symbolSetsByPath.set(chunk.filePath, existing);
   }
 
   const imports: CodeImport[] = [];
@@ -292,7 +332,7 @@ export function buildArchitectureIndex(
   for (const [index, file] of files.entries()) {
     const area = classifyArchitectureArea(file.path, file.language, file.content);
     const fileImports = importsByPath.get(file.path) ?? [];
-    const symbols = symbolsByPath.get(file.path) ?? [];
+    const symbols = [...(symbolSetsByPath.get(file.path) ?? [])];
     components.push({
       repo,
       path: file.path,
@@ -303,7 +343,7 @@ export function buildArchitectureIndex(
       imports: uniqueStrings(
         fileImports.map((item) => item.importedPath ?? item.specifier).filter(Boolean),
       ).slice(0, 20),
-      relatedTests: relatedTestsFor(file.path, allPaths),
+      relatedTests: relatedTestsFor(file.path, relatedTestIndex),
       confidence: area === "unknown" ? 0.45 : 0.82,
       updatedAt: file.updatedAt,
     });
