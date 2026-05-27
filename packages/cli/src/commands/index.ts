@@ -16,7 +16,7 @@ import {
   saveGraphQLFetchCheckpoint,
   type GitHubGraphQLFetchCheckpoint,
 } from "@pratik7368patil/anchor-core";
-import { printIndexOutcome } from "./engagement.js";
+import { printIndexRunSummary, printRunHeader } from "./summary.js";
 import { createProgressReporter, type ProgressMode } from "./progress.js";
 
 export type IndexOptions = {
@@ -63,13 +63,12 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
+  const command = options.all ? "index-all" : "index";
   const progress = createProgressReporter({
     progress: options.progress,
     title: options.all ? "Indexing complete repo history" : "Indexing repo memory",
   });
-  progress.log("Anchor index started.");
-  progress.log(`Repository: ${repo}`);
-  progress.log(`Database path: ${databasePath}`);
+  if (progress.mode !== "off") printRunHeader({ command, repo, databasePath });
 
   const db = openAnchorDatabase(root, databasePath);
   const startedAt = new Date().toISOString();
@@ -125,28 +124,18 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
             onProgress: progress.onCodeProgress,
           });
     progress.close();
-    console.log("Anchor index complete.");
-    console.log(`Repository: ${repo}`);
-    console.log(`Indexed PRs: ${summary.indexedPrs}`);
-    console.log(`Indexed files: ${summary.indexedFiles}`);
-    console.log(`Indexed comments: ${summary.indexedComments}`);
-    console.log(`Wisdom units created: ${summary.wisdomUnitsCreated}`);
-    console.log(`Skipped items: ${summary.skippedItems}`);
-    if (codeSummary) {
-      console.log(`Indexed code files: ${codeSummary.indexedFiles}`);
-      console.log(`Code chunks created: ${codeSummary.codeChunksCreated}`);
-      console.log(`Test files indexed: ${codeSummary.testFilesIndexed}`);
-      console.log(`Test links created: ${codeSummary.testLinksCreated}`);
-      console.log(`Architecture components indexed: ${codeSummary.architectureComponentsIndexed}`);
-      console.log(`Architecture patterns indexed: ${codeSummary.architecturePatternsIndexed}`);
-      console.log(`Architecture imports indexed: ${codeSummary.architectureImportsIndexed}`);
-      console.log(`Skipped code files: ${codeSummary.skippedFiles}`);
-    }
-    console.log(`Regression events created: ${summary.regressionEventsCreated}`);
-    console.log(`Database path: ${summary.databasePath}`);
-    printIndexOutcome(root, db, { history: summary, code: codeSummary });
+    printIndexRunSummary({
+      cwd: root,
+      db,
+      command,
+      repo,
+      durationMs: Date.now() - Date.parse(startedAt),
+      since: options.since,
+      history: summary,
+      code: codeSummary,
+    });
     recordIndexRun(db, {
-      command: options.all ? "index-all" : "index",
+      command,
       repo,
       startedAt,
       finishedAt: new Date().toISOString(),
@@ -186,9 +175,7 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
     progress: options.progress,
     title: "Indexing codebase",
   });
-  progress.log("Anchor code index started.");
-  progress.log(`Repository: ${repo}`);
-  progress.log(`Database path: ${databasePath}`);
+  if (progress.mode !== "off") printRunHeader({ command: "index-code", repo, databasePath });
 
   const db = openAnchorDatabase(root, databasePath);
   const startedAt = new Date().toISOString();
@@ -199,18 +186,14 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
       onProgress: progress.onCodeProgress,
     });
     progress.close();
-    console.log("Anchor code index complete.");
-    console.log(`Repository: ${repo}`);
-    console.log(`Indexed code files: ${summary.indexedFiles}`);
-    console.log(`Code chunks created: ${summary.codeChunksCreated}`);
-    console.log(`Test files indexed: ${summary.testFilesIndexed}`);
-    console.log(`Test links created: ${summary.testLinksCreated}`);
-    console.log(`Architecture components indexed: ${summary.architectureComponentsIndexed}`);
-    console.log(`Architecture patterns indexed: ${summary.architecturePatternsIndexed}`);
-    console.log(`Architecture imports indexed: ${summary.architectureImportsIndexed}`);
-    console.log(`Skipped code files: ${summary.skippedFiles}`);
-    console.log(`Database path: ${summary.databasePath}`);
-    printIndexOutcome(root, db, { code: summary });
+    printIndexRunSummary({
+      cwd: root,
+      db,
+      command: "index-code",
+      repo,
+      durationMs: Date.now() - Date.parse(startedAt),
+      code: summary,
+    });
     recordIndexRun(db, {
       command: "index-code",
       repo,

@@ -48,7 +48,7 @@ type CodeIndexStateRow = { last_indexed_at?: string | null };
 type ArchitectureIndexStateRow = { last_indexed_at?: string | null };
 type WisdomFilePathsRow = { file_paths_json: string };
 type LastRunRow = { finished_at?: string | null; failures_json?: string | null };
-const CODE_WRITE_PROGRESS_INTERVAL = 500;
+const CODE_WRITE_PROGRESS_INTERVAL = 150;
 
 type CodeIndexWriteOptions = {
   onProgress?: (progress: CodeIndexProgress) => void;

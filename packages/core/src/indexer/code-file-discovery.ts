@@ -111,17 +111,25 @@ function discoverGitFiles(cwd: string): string[] {
     .filter(Boolean);
 }
 
+const DISCOVERY_SCAN_INTERVAL = 200;
+
 export function discoverCodeFiles(
   cwd: string,
   repo: string,
-  options: { maxFileBytes?: number } = {},
+  options: { maxFileBytes?: number; onScan?: (scanned: number, total: number) => void } = {},
 ): CodeFileDiscoveryResult {
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_CODE_FILE_BYTES;
   const rootPath = path.resolve(cwd);
   const files: DiscoveredCodeFile[] = [];
   let skippedFiles = 0;
 
-  for (const filePath of discoverGitFiles(cwd)) {
+  const gitFiles = discoverGitFiles(cwd);
+  const total = gitFiles.length;
+  for (const [scanIndex, filePath] of gitFiles.entries()) {
+    const scanned = scanIndex + 1;
+    if (scanned % DISCOVERY_SCAN_INTERVAL === 0 || scanned === total) {
+      options.onScan?.(scanned, total);
+    }
     if (isHardExcludedCodePath(filePath)) {
       skippedFiles += 1;
       continue;

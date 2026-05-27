@@ -109,7 +109,7 @@ function formatElapsed(startedAt: number): string {
   return `${minutes}:${remainder.toString().padStart(2, "0")}`;
 }
 
-function formatDurationMs(durationMs: number): string {
+export function formatDurationMs(durationMs: number): string {
   if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`;
   const seconds = durationMs / 1000;
   if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
@@ -127,19 +127,19 @@ function sanitizeTimelineDetail(value: string | undefined): string | undefined {
   return redactSecrets(value.replace(/\s+/g, " ")).slice(0, 220);
 }
 
-function supportsColor(stream: ProgressStream): boolean {
+export function supportsColor(stream: ProgressStream): boolean {
   if (process.env.NO_COLOR) return false;
   if (process.env.FORCE_COLOR && process.env.FORCE_COLOR !== "0") return true;
   return Boolean(stream.isTTY);
 }
 
-function supportsUnicode(): boolean {
+export function supportsUnicode(): boolean {
   if (process.env.ANCHOR_ASCII_PROGRESS === "1") return false;
   if (process.env.TERM === "dumb") return false;
   return process.platform !== "win32" || Boolean(process.env.WT_SESSION || process.env.CI);
 }
 
-function colorize(enabled: boolean, code: string, text: string): string {
+export function colorize(enabled: boolean, code: string, text: string): string {
   return enabled ? `\u001b[${code}m${text}\u001b[0m` : text;
 }
 
@@ -442,6 +442,10 @@ function formatTimelineCount(task: ProgressTask): string {
   return "";
 }
 
+const PAINT_THROTTLE_MS = 80;
+const SPINNER_INTERVAL_MS = 80;
+const REPAINT_TIMER_MS = 100;
+
 class LiveProgressRenderer {
   private readonly startedAt = Date.now();
   private readonly color: boolean;
@@ -451,7 +455,10 @@ class LiveProgressRenderer {
   private timeline: TimelineSnapshot | undefined;
   private active = false;
   private renderedLines = 0;
-  private spinnerIndex = 0;
+  private lastPaintAt = 0;
+  private lastActiveStepId: string | undefined;
+  private lastStepCount = 0;
+  private lastCompleted = false;
   private repaintTimer: NodeJS.Timeout | undefined;
 
   constructor(
@@ -466,23 +473,40 @@ class LiveProgressRenderer {
   render(task: ProgressTask): void {
     this.timeline = undefined;
     const previous = this.tasks.get(task.key);
+    const isNewTask = !previous;
+    const state = task.state ?? "active";
     this.tasks.set(task.key, {
       ...previous,
       ...task,
-      state: task.state ?? "active",
+      state,
       startedAt: previous?.startedAt ?? Date.now(),
       updatedAt: Date.now(),
     });
-    this.paint();
+    const force = isNewTask || isTerminalTimelineState(state) || state === "wait";
+    this.requestPaint(force);
     this.startRepaintTimer();
     this.active = true;
   }
 
   renderTimeline(timeline: TimelineSnapshot): void {
     this.timeline = timeline;
-    this.paint();
+    const force =
+      timeline.activeStepId !== this.lastActiveStepId ||
+      timeline.steps.length !== this.lastStepCount ||
+      timeline.completed !== this.lastCompleted;
+    this.lastActiveStepId = timeline.activeStepId;
+    this.lastStepCount = timeline.steps.length;
+    this.lastCompleted = timeline.completed;
+    this.requestPaint(force);
     this.startRepaintTimer();
     this.active = true;
+  }
+
+  private requestPaint(force: boolean): void {
+    const now = Date.now();
+    if (!force && now - this.lastPaintAt < PAINT_THROTTLE_MS) return;
+    this.lastPaintAt = now;
+    this.paint();
   }
 
   log(message: string): void {
@@ -501,8 +525,8 @@ class LiveProgressRenderer {
   private startRepaintTimer(): void {
     if (this.repaintTimer) return;
     this.repaintTimer = setInterval(() => {
-      if (this.tasks.size > 0) this.paint();
-    }, 1000);
+      if (this.tasks.size > 0 || this.timeline) this.requestPaint(false);
+    }, REPAINT_TIMER_MS);
     this.repaintTimer.unref?.();
   }
 
@@ -513,7 +537,6 @@ class LiveProgressRenderer {
     this.stream.write(`${lines.join("\n")}\n`);
     this.renderedLines = lines.length;
     this.active = true;
-    this.spinnerIndex = (this.spinnerIndex + 1) % this.spinnerFrames.length;
   }
 
   private buildLines(): string[] {
@@ -604,13 +627,13 @@ class LiveProgressRenderer {
 
   private renderTimelineLines(timeline: TimelineSnapshot, width: number): string[] {
     const lines: string[] = [];
-    const repoLabel =
-      timeline.repo && timeline.repoIndex && timeline.repoTotal
-        ? `Repo ${timeline.repoIndex}/${timeline.repoTotal}  ${timeline.repo}`
-        : timeline.repo
-          ? `Repo  ${timeline.repo}`
-          : `${timeline.command}  ${timeline.org}`;
-    lines.push(colorize(this.color, "1", repoLabel));
+    // Multi-repo org runs show which repo is active; single-repo runs rely on the persistent banner.
+    if (timeline.repo && timeline.repoIndex && timeline.repoTotal && timeline.repoTotal > 1) {
+      lines.push(
+        colorize(this.color, "1", `Repo ${timeline.repoIndex}/${timeline.repoTotal}  ${timeline.repo}`),
+      );
+      lines.push(colorize(this.color, "2", (this.unicode ? "─" : "-").repeat(Math.min(width, 48))));
+    }
 
     const visibleSteps = timeline.steps.slice(-12);
     for (const step of visibleSteps) {
@@ -649,33 +672,40 @@ class LiveProgressRenderer {
 
   private renderTimelineStep(step: TimelineStep, width: number): string {
     const state = step.status;
+    const expanded = state === "active" || state === "wait";
     const symbol = this.statusSymbol(state);
     const connector = colorize(this.color, "2", this.unicode ? "│" : "|");
-    const label = colorize(this.color, state === "active" || state === "wait" ? "0" : "2", step.label);
+    const label = colorize(this.color, expanded ? "0" : "2", step.label);
     const count =
       typeof step.current === "number" && typeof step.total === "number"
         ? `${step.current}/${step.total}`
         : typeof step.current === "number"
           ? `${step.current}`
           : "";
-    const percent = formatPercent(step.current, step.total);
-    const rate = this.formatTimelineRate(step);
-    const eta = this.formatTimelineEta(step);
-    const duration =
-      step.completedAt || isTerminalTimelineState(state)
-        ? formatDurationMs(step.durationMs ?? Math.max(0, Date.now() - step.startedAt))
-        : formatDurationMs(Math.max(0, Date.now() - step.startedAt));
-    const metrics = [count, percent, rate, eta, duration].filter(Boolean).join(" ");
+    const duration = formatDurationMs(
+      step.completedAt
+        ? step.durationMs ?? step.completedAt - step.startedAt
+        : Math.max(0, Date.now() - step.startedAt),
+    );
+    // Active steps expand with bar + live metrics; completed steps collapse to count + duration.
+    const metrics = expanded
+      ? [count, formatPercent(step.current, step.total), this.formatTimelineRate(step), this.formatTimelineEta(step), duration]
+          .filter(Boolean)
+          .join(" ")
+      : [count, duration].filter(Boolean).join(" ");
     const barWidth = width >= 96 ? 18 : width >= 72 ? 12 : 8;
-    const bar = progressBar(step.current, step.total, barWidth, {
-      unicode: this.unicode,
-      color: this.color,
-      state,
-    });
-    const detailBudget = Math.max(12, width - 58 - barWidth);
-    const detail = step.detail
-      ? colorize(this.color, "2", truncateMiddle(step.detail, detailBudget))
+    const bar = expanded
+      ? progressBar(step.current, step.total, barWidth, {
+          unicode: this.unicode,
+          color: this.color,
+          state,
+        })
       : "";
+    const detailBudget = Math.max(12, width - 58 - barWidth);
+    const detail =
+      expanded && step.detail
+        ? colorize(this.color, "2", truncateMiddle(step.detail, detailBudget))
+        : "";
     return [" ", connector, symbol, label, bar, colorize(this.color, "2", metrics), detail]
       .filter(Boolean)
       .join(" ")
@@ -709,7 +739,13 @@ class LiveProgressRenderer {
   }
 
   private statusSymbol(state: ProgressTaskState): string {
-    if (state === "active") return colorize(this.color, "36", this.spinnerFrames[this.spinnerIndex] ?? "*");
+    if (state === "active") {
+      const frame =
+        this.spinnerFrames[
+          Math.floor(Date.now() / SPINNER_INTERVAL_MS) % this.spinnerFrames.length
+        ] ?? "*";
+      return colorize(this.color, "36", frame);
+    }
     if (state === "done") return colorize(this.color, "32", this.unicode ? "✓" : "ok");
     if (state === "skip") return colorize(this.color, "2", this.unicode ? "◇" : "-");
     if (state === "warn") return colorize(this.color, "33", this.unicode ? "!" : "warn");
@@ -753,9 +789,13 @@ export function createProgressReporter(input?: {
   const stream = input?.stream ?? process.stderr;
   const mode = resolveProgressMode({ ...input, stream });
   const pretty = mode === "pretty" ? new LiveProgressRenderer(stream, input?.title) : undefined;
-  const timeline = input?.heartbeat
-    ? new ProgressTimelineTracker(input.heartbeat.command, input.heartbeat.org)
-    : undefined;
+  // Every command renders through the timeline stepper. Heartbeat-file writes and
+  // plain-mode timeline logs stay org-only to preserve single-repo CI output.
+  const emitTimelinePlainLogs = Boolean(input?.heartbeat);
+  const timeline = new ProgressTimelineTracker(
+    input?.heartbeat?.command ?? input?.title ?? "anchor",
+    input?.heartbeat?.org ?? "",
+  );
   let heartbeat: OrgRunHeartbeat | undefined = input?.heartbeat
     ? {
         pid: process.pid,
@@ -805,16 +845,19 @@ export function createProgressReporter(input?: {
     pretty?.render(task);
   };
   const writeTimelinePlainLogs = (logs: string[]): void => {
-    if (!timeline || mode !== "plain") return;
+    if (!emitTimelinePlainLogs || mode !== "plain") return;
     for (const line of logs) stream.write(`${line}\n`);
   };
+  let closed = false;
   return {
     mode,
     log,
     close: () => {
+      if (closed) return;
+      closed = true;
       if (heartbeat) updateHeartbeat({ phase: "completed" }, { force: true });
       pretty?.close();
-      if (timeline && mode !== "off") {
+      if (input?.heartbeat && mode !== "off") {
         for (const line of timeline.finalSummaryLines()) stream.write(`${line}\n`);
       }
       if (input?.heartbeat) clearOrgHeartbeat(input.heartbeat.org);
@@ -1234,6 +1277,14 @@ function shouldPrintCodeProgress(progress: CodeIndexProgress): boolean {
 export function printCodeIndexProgress(progress: CodeIndexProgress): void {
   switch (progress.stage) {
     case "discovering_code_files":
+      if (typeof progress.scanned === "number" && typeof progress.total === "number") {
+        if (progress.scanned % 1000 === 0 || progress.scanned === progress.total) {
+          console.error(
+            `[anchor] scanning code files ${progress.scanned}/${progress.total} in ${progress.repo}...`,
+          );
+        }
+        return;
+      }
       console.error(
         `[anchor] discovering git-tracked and non-ignored code files in ${progress.repo}...`,
       );
@@ -1796,7 +1847,12 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         key: `code:${progress.repo}`,
         phase: "Code",
         label: "Discovering code files",
-        detail: progress.repo,
+        current: progress.scanned,
+        total: progress.total,
+        detail:
+          typeof progress.scanned === "number" && typeof progress.total === "number"
+            ? `scanned ${progress.scanned}/${progress.total}`
+            : progress.repo,
         timelineStepId: "code_discovery",
         timelineLabel: "Discover code files",
         timelineRepo: progress.repo,

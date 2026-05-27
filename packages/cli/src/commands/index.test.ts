@@ -338,8 +338,8 @@ describe("progress reporter", () => {
     expect(output).toContain("Anchor");
     expect(output).toContain("Indexing repo memory");
     expect(output).toContain("last update");
-    expect(output).toContain("Indexed code");
-    expect(output).toContain("Writing code chunks");
+    expect(output).toContain("Build code chunks");
+    expect(output).toContain("Write code chunks");
     expect(output).toContain("1/2");
     expect(output).toContain("done");
     expect(output).not.toMatch(/\u001b\[[0-9;]*m/);
