@@ -1132,6 +1132,7 @@ describe("SQLite indexing and retrieval", () => {
       expect(stages).toContain("building_architecture_imports");
       expect(stages).toContain("building_architecture_components");
       expect(stages).toContain("building_architecture_patterns");
+      expect(stages).toContain("inferring_test_awareness");
       expect(stages).toContain("deleting_existing_code_index");
       expect(stages).toContain("writing_code_files");
       expect(stages).toContain("writing_code_chunks");

@@ -101,6 +101,14 @@ function dependenciesFor(manifest: PackageManifest | undefined): string[] {
   ]);
 }
 
+function packageRootForSpecifier(specifier: string): string {
+  const normalized = specifier.trim();
+  if (!normalized) return "";
+  const parts = normalized.split("/");
+  if (normalized.startsWith("@") && parts.length >= 2) return `${parts[0]}/${parts[1]}`;
+  return parts[0] ?? "";
+}
+
 function parseJsonArray(value: string): string[] {
   try {
     const parsed = JSON.parse(value) as unknown;
@@ -239,34 +247,28 @@ export function rebuildOrgGraph(
          JOIN repositories r ON r.id = ci.repo_id`,
       )
       .all() as ImportRow[];
-    const packageMatchers = [...packageNames.entries()]
-      .flatMap(([repo, names]) => names.map((name) => ({ repo, name })))
-      .sort((a, b) => b.name.length - a.name.length);
     imports.forEach((item, index) => {
       const sourceRepo = repoByName.get(item.repo);
       if (!sourceRepo) return;
-      for (const candidate of packageMatchers) {
-        if (candidate.repo === item.repo) continue;
-        const matched =
-          item.specifier === candidate.name || item.specifier.startsWith(`${candidate.name}/`);
-        if (!matched) continue;
+      const rootSpecifier = packageRootForSpecifier(item.specifier);
+      const targetRepo = packageToRepo.get(rootSpecifier) ?? packageToRepo.get(item.specifier);
+      if (targetRepo && targetRepo !== item.repo) {
         addEdge({
           org: config.org,
           sourceRepo: item.repo,
           sourcePath: item.source_path,
-          targetRepo: candidate.repo,
+          targetRepo,
           targetPath: item.imported_path ?? undefined,
           relationship: "imports",
           evidence: [
             fileEvidence(
               item.repo,
               item.source_path,
-              `imports ${sanitizeHistoricalText(candidate.name)}`,
+              `imports ${sanitizeHistoricalText(rootSpecifier || item.specifier)}`,
             ),
           ],
           confidence: parseJsonArray(item.imported_symbols_json).length > 0 ? 0.88 : 0.76,
         });
-        break;
       }
       if (shouldEmitProgress(index + 1, imports.length)) {
         options.onProgress?.({
@@ -407,7 +409,7 @@ export function rebuildOrgGraph(
            confidence = excluded.confidence,
            created_at = excluded.created_at`,
       );
-      for (const edge of edges) {
+      for (const [index, edge] of edges.entries()) {
         insertEdge.run(
           `oge_${stableId([edge.org, edge.sourceRepo, edge.sourcePath, edge.targetRepo, edge.targetPath ?? "", edge.relationship])}`,
           edge.org,
@@ -420,6 +422,19 @@ export function rebuildOrgGraph(
           edge.confidence,
           now,
         );
+        const current = index + 1;
+        if (shouldEmitProgress(current, edges.length, 500)) {
+          options.onProgress?.({
+            stage: "writing_org_graph",
+            org: config.org,
+            edges: current,
+            apiContracts: apiContracts.length,
+            apiConsumers: apiConsumers.length,
+            current,
+            total: edges.length,
+            kind: "edges",
+          });
+        }
       }
       const insertContract = db.prepare(
         `INSERT INTO org_api_contracts
@@ -431,7 +446,7 @@ export function rebuildOrgGraph(
            confidence = excluded.confidence,
            created_at = excluded.created_at`,
       );
-      for (const contract of apiContracts) {
+      for (const [index, contract] of apiContracts.entries()) {
         insertContract.run(
           `oac_${stableId([config.org, contract.repo, contract.filePath, contract.contract])}`,
           config.org,
@@ -442,6 +457,19 @@ export function rebuildOrgGraph(
           contract.confidence,
           now,
         );
+        const current = index + 1;
+        if (shouldEmitProgress(current, apiContracts.length, 500)) {
+          options.onProgress?.({
+            stage: "writing_org_graph",
+            org: config.org,
+            edges: edges.length,
+            apiContracts: current,
+            apiConsumers: apiConsumers.length,
+            current,
+            total: apiContracts.length,
+            kind: "contracts",
+          });
+        }
       }
       const insertConsumer = db.prepare(
         `INSERT INTO org_api_consumers
@@ -453,7 +481,7 @@ export function rebuildOrgGraph(
            confidence = excluded.confidence,
            created_at = excluded.created_at`,
       );
-      for (const consumer of apiConsumers) {
+      for (const [index, consumer] of apiConsumers.entries()) {
         insertConsumer.run(
           `oap_${stableId([
             consumer.org,
@@ -473,6 +501,19 @@ export function rebuildOrgGraph(
           consumer.confidence,
           now,
         );
+        const current = index + 1;
+        if (shouldEmitProgress(current, apiConsumers.length, 500)) {
+          options.onProgress?.({
+            stage: "writing_org_graph",
+            org: config.org,
+            edges: edges.length,
+            apiContracts: apiContracts.length,
+            apiConsumers: current,
+            current,
+            total: apiConsumers.length,
+            kind: "consumers",
+          });
+        }
       }
     });
     transaction();
