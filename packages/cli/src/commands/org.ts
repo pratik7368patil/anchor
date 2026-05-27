@@ -15,7 +15,9 @@ import {
   loadOrgConfig,
   orgConfigPath,
   openOrgDatabase,
+  openOrgDatabaseReadOnly,
   orgDatabasePath,
+  readOrgHeartbeat,
   rebuildOrgGraph,
   removeOrgRepoConfig,
   resolveGitHubToken,
@@ -46,6 +48,7 @@ type OrgOptions = {
   diffFile?: string;
   strict?: boolean;
   minCoverage?: number;
+  command?: "org index" | "org sync" | "org clone" | "org graph";
 };
 
 type GitHubRepoMetadata = {
@@ -152,7 +155,11 @@ export function runOrgList(options: OrgOptions) {
 export async function runOrgClone(options: OrgOptions) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
-  const progress = createProgressReporter({ ...options, title: "Cloning org repos" });
+  const progress = createProgressReporter({
+    ...options,
+    title: "Cloning org repos",
+    heartbeat: { org: config.org, command: options.command ?? "org clone" },
+  });
   try {
     const results = await cloneOrgRepos({
       config,
@@ -171,9 +178,11 @@ export async function runOrgClone(options: OrgOptions) {
 export async function runOrgIndex(options: OrgOptions & { command?: "org index" | "org sync" }) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
+  const command = options.command ?? "org index";
   const progress = createProgressReporter({
     ...options,
-    title: options.command === "org sync" ? "Syncing org memory" : "Indexing org memory",
+    title: command === "org sync" ? "Syncing org memory" : "Indexing org memory",
+    heartbeat: { org: config.org, command },
   });
   try {
     return await indexOrgRepos(db, config, {
@@ -184,7 +193,8 @@ export async function runOrgIndex(options: OrgOptions & { command?: "org index" 
       force: options.force,
       since: options.since,
       concurrency: options.concurrency,
-      command: options.command ?? "org index",
+      command,
+      onLifecycleProgress: progress.onOrgProgress,
       onFetchProgress: progress.onFetchProgress,
       onPrIndexProgress: progress.onPrIndexProgress,
       onCodeProgress: progress.onCodeProgress,
@@ -197,13 +207,58 @@ export async function runOrgIndex(options: OrgOptions & { command?: "org index" 
 }
 
 export function runOrgStatus(options: OrgOptions) {
-  return runOrgList(options);
+  const config = loadOrgConfig(requireOrg(options));
+  const activeRun = readOrgHeartbeat(config.org);
+  try {
+    const db = openOrgDatabaseReadOnly(config.org);
+    try {
+      return getOrgStatus(db, config, undefined, { syncConfig: false, activeRun });
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const enabledRepos = config.repos.filter((repo) => repo.enabled);
+    return {
+      org: config.org,
+      root: path.dirname(orgDatabasePath(config.org)),
+      databasePath: orgDatabasePath(config.org),
+      statusReadError: message,
+      activeRun,
+      repoCount: config.repos.length,
+      enabledRepoCount: enabledRepos.length,
+      clonedRepoCount: 0,
+      codeFileCount: 0,
+      codeChunkCount: 0,
+      wisdomUnitCount: 0,
+      crossRepoEdgeCount: 0,
+      apiContractCount: 0,
+      apiConsumerCount: 0,
+      anomalyCount: 0,
+      coverageScore: 0,
+      coverageGrade: "empty" as const,
+      coverageReasons: [
+        activeRun
+          ? "Status database is locked or unavailable, but an Anchor org command heartbeat is active."
+          : "Status database is locked or unavailable.",
+      ],
+      repos: config.repos.map((repo) => ({
+        ...repo,
+        localPath: "",
+        cloned: false,
+      })),
+    };
+  }
 }
 
 export function runOrgGraph(options: OrgOptions) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
-  const progress = createProgressReporter({ ...options, title: "Building org graph" });
+  const progress = createProgressReporter({
+    ...options,
+    title: "Building org graph",
+    heartbeat: { org: config.org, command: "org graph" },
+  });
   try {
     const graph = rebuildOrgGraph(db, config, {
       onProgress: progress.onGraphProgress,
@@ -389,6 +444,19 @@ export function printJsonOrMarkdown(
       graphLastStatus?: string;
       graphLastDurationMs?: number;
       graphLastError?: string;
+      statusReadError?: string;
+      activeRun?: {
+        pid: number;
+        command: string;
+        repo?: string;
+        repoIndex?: number;
+        repoTotal?: number;
+        phase: string;
+        pidRunning: boolean;
+        stale: boolean;
+        elapsedSeconds: number;
+        lastUpdateAgeSeconds: number;
+      };
       repos: Array<{ fullName: string; group: string; cloned: boolean; enabled: boolean }>;
     };
     console.log(`# Anchor Org Status`);
@@ -406,6 +474,26 @@ export function printJsonOrMarkdown(
       console.log(`Graph duration: ${(status.graphLastDurationMs / 1000).toFixed(1)}s`);
     }
     if (status.graphLastError) console.log(`Graph error: ${status.graphLastError}`);
+    if (status.statusReadError) console.log(`Status warning: ${status.statusReadError}`);
+    if (status.activeRun) {
+      const state = status.activeRun.stale
+        ? "stale"
+        : status.activeRun.pidRunning
+          ? "running"
+          : "not running";
+      const repo =
+        status.activeRun.repo && status.activeRun.repoIndex && status.activeRun.repoTotal
+          ? `, repo ${status.activeRun.repoIndex}/${status.activeRun.repoTotal}: ${status.activeRun.repo}`
+          : status.activeRun.repo
+            ? `, repo: ${status.activeRun.repo}`
+            : "";
+      console.log(
+        `Active run: ${status.activeRun.command} (${state}, pid ${status.activeRun.pid})${repo}`,
+      );
+      console.log(
+        `Active phase: ${status.activeRun.phase}, elapsed ${status.activeRun.elapsedSeconds}s, last update ${status.activeRun.lastUpdateAgeSeconds}s ago`,
+      );
+    }
     console.log("");
     console.log("## Repos");
     for (const repo of status.repos) {

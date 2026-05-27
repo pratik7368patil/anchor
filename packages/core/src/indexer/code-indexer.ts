@@ -66,6 +66,18 @@ export function indexCodebase(
     architecture,
   );
   refreshTestCommands(db, options.cwd, options.repo);
+  options.onProgress?.({
+    stage: "completed_code_index",
+    repo: options.repo,
+    files: summary.indexedFiles,
+    chunks: summary.codeChunksCreated,
+    skippedFiles: summary.skippedFiles,
+    testFiles: summary.testFilesIndexed,
+    testLinks: summary.testLinksCreated,
+    architectureComponents: summary.architectureComponentsIndexed,
+    architecturePatterns: summary.architecturePatternsIndexed,
+    architectureImports: summary.architectureImportsIndexed,
+  });
   return summary;
 }
 

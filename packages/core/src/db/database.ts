@@ -58,7 +58,15 @@ export function openAnchorDatabase(
 ): AnchorDatabase {
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
   const db = new Database(databasePath);
+  db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  return db;
+}
+
+export function openAnchorDatabaseReadOnly(databasePath: string): AnchorDatabase {
+  const db = new Database(databasePath, { readonly: true, fileMustExist: true });
+  db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
   return db;
 }

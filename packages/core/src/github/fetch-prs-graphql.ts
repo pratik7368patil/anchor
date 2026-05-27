@@ -11,6 +11,7 @@ import {
   createGitHubGraphQLRequester,
   type GitHubGraphQLFetch,
   type GitHubGraphQLResponse,
+  type GitHubGraphQLTransientRetry,
 } from "./graphql-client.js";
 import type { GitHubRateLimitController, GitHubGraphQLRateLimitState } from "./rate-limit.js";
 import {
@@ -209,6 +210,21 @@ class GraphQLBudget {
   }
 }
 
+function graphqlRetryProgress(
+  repo: string,
+  onProgress: ((progress: FetchPullRequestsProgress) => void) | undefined,
+): (retry: GitHubGraphQLTransientRetry) => void {
+  return (retry) =>
+    onProgress?.({
+      stage: "github_graphql_retry",
+      repo,
+      attempt: retry.attempt,
+      maxAttempts: retry.maxAttempts,
+      waitMs: retry.waitMs,
+      reason: retry.reason,
+    });
+}
+
 const PULL_REQUEST_FIELDS = `
   number
   url
@@ -360,11 +376,13 @@ async function requestGraphQLWithBudget<T extends { rateLimit?: GitHubGraphQLRat
     controller: GitHubRateLimitController;
     requestName: string;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<GitHubGraphQLResponse<T>> {
   const response = await requestGraphQL<T>(query, variables, {
     controller: options.controller,
     requestName: options.requestName,
+    onTransientRetry: options.onTransientRetry,
   });
   options.budget.observe(response.data.rateLimit);
   return response;
@@ -448,6 +466,7 @@ async function requestConnection<TConnectionName extends string, TNode>(
     controller: GitHubRateLimitController;
     requestName: string;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<GraphQLConnection<TNode> | null | undefined> {
   const response: GitHubGraphQLResponse<PullRequestConnectionQueryData<TConnectionName, TNode>> =
@@ -464,6 +483,7 @@ async function appendAdditionalFiles(
     name: string;
     controller: GitHubRateLimitController;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<void> {
   let info = pageInfo(initialConnection);
@@ -483,6 +503,7 @@ async function appendAdditionalFiles(
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/pulls/${record.number}/files`,
         budget: options.budget,
+        onTransientRetry: options.onTransientRetry,
       },
     );
     record.files.push(
@@ -503,6 +524,7 @@ async function appendAdditionalIssueComments(
     name: string;
     controller: GitHubRateLimitController;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<void> {
   let info = pageInfo(initialConnection);
@@ -522,6 +544,7 @@ async function appendAdditionalIssueComments(
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/issues/${record.number}/comments`,
         budget: options.budget,
+        onTransientRetry: options.onTransientRetry,
       },
     );
     record.issueComments?.push(...connectionNodes(connection).map(mapIssueComment));
@@ -538,6 +561,7 @@ async function appendAdditionalCommits(
     name: string;
     controller: GitHubRateLimitController;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<void> {
   let info = pageInfo(initialConnection);
@@ -557,6 +581,7 @@ async function appendAdditionalCommits(
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/pulls/${record.number}/commits`,
         budget: options.budget,
+        onTransientRetry: options.onTransientRetry,
       },
     );
     record.commits?.push(
@@ -575,6 +600,7 @@ async function appendAdditionalReviewComments(
   options: {
     controller: GitHubRateLimitController;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<void> {
   let info = pageInfo(review.comments);
@@ -592,6 +618,7 @@ async function appendAdditionalReviewComments(
           controller: options.controller,
           requestName: `GraphQL /pull-request-reviews/${review.id}/comments`,
           budget: options.budget,
+          onTransientRetry: options.onTransientRetry,
         },
       );
     const connection = response.data.node?.comments;
@@ -609,6 +636,7 @@ async function appendAdditionalReviews(
     name: string;
     controller: GitHubRateLimitController;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<void> {
   const reviewsToHydrate = [...connectionNodes(initialConnection)];
@@ -629,6 +657,7 @@ async function appendAdditionalReviews(
         controller: options.controller,
         requestName: `GraphQL /repos/${record.repo}/pulls/${record.number}/reviews`,
         budget: options.budget,
+        onTransientRetry: options.onTransientRetry,
       },
     );
     const reviewNodes = connectionNodes(connection);
@@ -644,6 +673,7 @@ async function appendAdditionalReviews(
     await appendAdditionalReviewComments(requestGraphQL, record, review, {
       controller: options.controller,
       budget: options.budget,
+      onTransientRetry: options.onTransientRetry,
     });
   }
 }
@@ -657,6 +687,7 @@ async function hydratePullRequestNestedConnections(
     name: string;
     controller: GitHubRateLimitController;
     budget: GraphQLBudget;
+    onTransientRetry?: (retry: GitHubGraphQLTransientRetry) => void;
   },
 ): Promise<void> {
   await appendAdditionalFiles(requestGraphQL, record, pull.files, options);
@@ -845,6 +876,7 @@ export async function fetchMergedPullRequestsWithGraphQL(
     checkpoint?.pageSize ?? Math.min(INITIAL_PULL_REQUEST_PAGE_SIZE, options.limit ?? INITIAL_PULL_REQUEST_PAGE_SIZE),
   );
   const budget = new GraphQLBudget(GRAPHQL_RATE_LIMIT_RESERVE);
+  const onTransientRetry = graphqlRetryProgress(options.repo, options.onProgress);
   const checkpointScope =
     checkpoint?.scope ??
     `${options.repo}|${options.limit === undefined ? "all" : `limit:${options.limit}`}|since:${options.since ?? ""}`;
@@ -875,6 +907,7 @@ export async function fetchMergedPullRequestsWithGraphQL(
       controller: options.controller,
       requestName: "GraphQL rate limit preflight",
       budget,
+      onTransientRetry,
     },
   );
   const preflightRateLimit = budget.rateLimit();
@@ -938,6 +971,7 @@ export async function fetchMergedPullRequestsWithGraphQL(
           controller: options.controller,
           requestName: `GraphQL /repos/${options.repo}/pullRequests`,
           budget,
+          onTransientRetry,
         },
       );
     } catch (error) {
@@ -972,6 +1006,7 @@ export async function fetchMergedPullRequestsWithGraphQL(
         name,
         controller: options.controller,
         budget,
+        onTransientRetry,
       });
       records.push(record);
       if (options.limit !== undefined && records.length >= options.limit) break;

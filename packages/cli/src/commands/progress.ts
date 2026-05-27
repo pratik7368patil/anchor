@@ -1,10 +1,13 @@
 import readline from "node:readline";
+import { clearOrgHeartbeat, writeOrgHeartbeat } from "@pratik7368patil/anchor-core";
 import type {
   CodeIndexProgress,
   FetchPullRequestsProgress,
   IndexPullRequestsProgress,
   OrgGraphProgress,
   OrgCloneProgress,
+  OrgLifecycleProgress,
+  OrgRunHeartbeat,
 } from "@pratik7368patil/anchor-core";
 
 export type ProgressMode = "pretty" | "plain" | "off";
@@ -25,6 +28,7 @@ type ProgressTask = {
   total?: number;
   detail?: string;
   state?: ProgressTaskState;
+  pinned?: boolean;
 };
 
 type RenderedProgressTask = ProgressTask & {
@@ -170,6 +174,7 @@ class LiveProgressRenderer {
   private active = false;
   private renderedLines = 0;
   private spinnerIndex = 0;
+  private repaintTimer: NodeJS.Timeout | undefined;
 
   constructor(
     private readonly stream: ProgressStream,
@@ -190,6 +195,7 @@ class LiveProgressRenderer {
       updatedAt: Date.now(),
     });
     this.paint();
+    this.startRepaintTimer();
     this.active = true;
   }
 
@@ -199,7 +205,19 @@ class LiveProgressRenderer {
   }
 
   close(): void {
+    if (this.repaintTimer) {
+      clearInterval(this.repaintTimer);
+      this.repaintTimer = undefined;
+    }
     this.clear();
+  }
+
+  private startRepaintTimer(): void {
+    if (this.repaintTimer) return;
+    this.repaintTimer = setInterval(() => {
+      if (this.tasks.size > 0) this.paint();
+    }, 1000);
+    this.repaintTimer.unref?.();
   }
 
   private paint(): void {
@@ -224,21 +242,40 @@ class LiveProgressRenderer {
   private renderHeader(width: number): string {
     const title = colorize(this.color, "1;36", "Anchor");
     const elapsed = colorize(this.color, "2", `elapsed ${formatElapsed(this.startedAt)}`);
+    const latestUpdate = Math.max(
+      this.startedAt,
+      ...[...this.tasks.values()].map((task) => task.updatedAt),
+    );
+    const updateAge = Math.max(0, Math.floor((Date.now() - latestUpdate) / 1000));
+    const lastUpdate = colorize(this.color, "2", `last update ${updateAge}s ago`);
     const label = colorize(this.color, "1", this.title);
-    return truncateEnd(`${title} ${colorize(this.color, "2", "›")} ${label} ${elapsed}`, width);
+    return truncateEnd(
+      `${title} ${colorize(this.color, "2", "›")} ${label} ${elapsed} ${colorize(this.color, "2", "·")} ${lastUpdate}`,
+      width,
+    );
   }
 
   private visibleTasks(): RenderedProgressTask[] {
-    const tasks = [...this.tasks.values()].sort((a, b) => {
-      const weight = (task: RenderedProgressTask) =>
-        task.state === "active" || task.state === "wait"
-          ? 0
-          : task.state === "warn" || task.state === "fail"
-            ? 1
-            : 2;
-      const byWeight = weight(a) - weight(b);
-      return byWeight || b.updatedAt - a.updatedAt;
-    });
+    const now = Date.now();
+    const tasks = [...this.tasks.values()]
+      .filter((task) => {
+        if (task.pinned) return true;
+        if (task.state === "active" || task.state === "wait") return true;
+        if (task.state === "warn" || task.state === "fail") return now - task.updatedAt <= 30_000;
+        return now - task.updatedAt <= 12_000;
+      })
+      .sort((a, b) => {
+        const weight = (task: RenderedProgressTask) =>
+          task.pinned
+            ? -1
+            : task.state === "active" || task.state === "wait"
+              ? 0
+              : task.state === "warn" || task.state === "fail"
+                ? 1
+                : 2;
+        const byWeight = weight(a) - weight(b);
+        return byWeight || b.updatedAt - a.updatedAt;
+      });
     return tasks.slice(0, 6);
   }
 
@@ -297,6 +334,7 @@ export type AnchorProgressReporter = {
   mode: ProgressMode;
   log: (message: string) => void;
   close: () => void;
+  onOrgProgress: (progress: OrgLifecycleProgress) => void;
   onFetchProgress: (progress: FetchPullRequestsProgress) => void;
   onPrIndexProgress: (progress: IndexPullRequestsProgress) => void;
   onCodeProgress: (progress: CodeIndexProgress) => void;
@@ -309,10 +347,39 @@ export function createProgressReporter(input?: {
   json?: boolean;
   stream?: ProgressStream;
   title?: string;
+  heartbeat?: {
+    org: string;
+    command: string;
+  };
 }): AnchorProgressReporter {
   const stream = input?.stream ?? process.stderr;
   const mode = resolveProgressMode({ ...input, stream });
   const pretty = mode === "pretty" ? new LiveProgressRenderer(stream, input?.title) : undefined;
+  let heartbeat: OrgRunHeartbeat | undefined = input?.heartbeat
+    ? {
+        pid: process.pid,
+        command: input.heartbeat.command,
+        org: input.heartbeat.org,
+        phase: "starting",
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+    : undefined;
+  const updateHeartbeat = (
+    patch: Partial<Pick<OrgRunHeartbeat, "repo" | "repoIndex" | "repoTotal" | "phase">>,
+  ): void => {
+    if (!heartbeat) return;
+    heartbeat = {
+      ...heartbeat,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      writeOrgHeartbeat(heartbeat);
+    } catch {
+      // Heartbeat is best-effort status metadata; progress must not fail commands.
+    }
+  };
   const log = (message: string): void => {
     if (mode === "off") return;
     if (pretty) pretty.log(message);
@@ -325,24 +392,51 @@ export function createProgressReporter(input?: {
   return {
     mode,
     log,
-    close: () => pretty?.close(),
+    close: () => {
+      pretty?.close();
+      if (input?.heartbeat) clearOrgHeartbeat(input.heartbeat.org);
+    },
+    onOrgProgress: (progress) => {
+      updateHeartbeat(heartbeatPatchFromOrgProgress(progress));
+      if (mode === "plain") printOrgLifecycleProgress(progress);
+      else render(orgLifecycleTask(progress));
+    },
     onFetchProgress: (progress) => {
+      updateHeartbeat(heartbeatPatchFromFetchProgress(progress));
       if (mode === "plain") printFetchProgress(progress);
       else render(fetchTask(progress));
     },
     onPrIndexProgress: (progress) => {
+      updateHeartbeat({
+        repo: progress.repo,
+        phase:
+          progress.stage === "indexing_pull_request"
+            ? "Indexing PR history into SQLite"
+            : "Indexed PR history",
+      });
       if (mode === "plain") printIndexProgress(progress);
       else render(indexTask(progress));
     },
     onCodeProgress: (progress) => {
+      updateHeartbeat(heartbeatPatchFromCodeProgress(progress));
       if (mode === "plain") printCodeIndexProgress(progress);
       else render(codeTask(progress));
     },
     onGraphProgress: (progress) => {
+      updateHeartbeat(heartbeatPatchFromGraphProgress(progress));
       if (mode === "plain") printOrgGraphProgress(progress);
       else render(graphTask(progress));
     },
     onCloneProgress: (progress) => {
+      updateHeartbeat({
+        repo: progress.repo,
+        repoIndex: progress.current,
+        repoTotal: progress.total,
+        phase:
+          progress.stage === "cloning_or_pulling_repo"
+            ? "Cloning or pulling repo"
+            : "Repo clone/pull complete",
+      });
       if (mode === "plain") printOrgCloneProgress(progress);
       else render(cloneTask(progress));
     },
@@ -357,6 +451,181 @@ function shouldPrintIndexProgress(progress: IndexPullRequestsProgress): boolean 
 
 function fetchScope(progress: { all: boolean; limit?: number }): string {
   return progress.all ? "all merged PRs" : `up to ${progress.limit ?? 200} merged PRs`;
+}
+
+function heartbeatPatchFromOrgProgress(
+  progress: OrgLifecycleProgress,
+): Partial<Pick<OrgRunHeartbeat, "repo" | "repoIndex" | "repoTotal" | "phase">> {
+  switch (progress.stage) {
+    case "org_sync_started":
+      return { phase: "Starting org sync", repoIndex: 0, repoTotal: progress.totalRepos };
+    case "org_repo_started":
+      return {
+        repo: progress.repo,
+        repoIndex: progress.current,
+        repoTotal: progress.total,
+        phase: "Starting repo",
+      };
+    case "org_repo_phase":
+      return {
+        repo: progress.repo,
+        repoIndex: progress.current,
+        repoTotal: progress.total,
+        phase: progress.phase,
+      };
+    case "org_repo_skipped_history":
+      return {
+        repo: progress.repo,
+        repoIndex: progress.current,
+        repoTotal: progress.total,
+        phase: "PR history skipped",
+      };
+    case "org_repo_skipped_code":
+      return {
+        repo: progress.repo,
+        repoIndex: progress.current,
+        repoTotal: progress.total,
+        phase: "Code skipped",
+      };
+    case "org_repo_finalizing":
+      return {
+        repo: progress.repo,
+        repoIndex: progress.current,
+        repoTotal: progress.total,
+        phase: "Writing repo state",
+      };
+    case "org_repo_completed":
+      return {
+        repo: progress.repo,
+        repoIndex: progress.current,
+        repoTotal: progress.total,
+        phase: progress.error ? "Repo completed with errors" : "Repo completed",
+      };
+    case "org_graph_skipped":
+      return { phase: "Graph skipped" };
+    case "org_sync_completed":
+      return {
+        phase: "Org sync completed",
+        repoIndex: progress.totalRepos,
+        repoTotal: progress.totalRepos,
+      };
+    case "org_sync_failed":
+      return { phase: "Org sync failed" };
+  }
+}
+
+function heartbeatPatchFromFetchProgress(
+  progress: FetchPullRequestsProgress,
+): Partial<Pick<OrgRunHeartbeat, "repo" | "phase">> {
+  switch (progress.stage) {
+    case "discovering_pull_requests":
+    case "scanned_pull_request_page":
+    case "discovered_pull_requests":
+      return { repo: progress.repo, phase: "Fetching PR metadata" };
+    case "fetching_pull_request_details":
+    case "fetched_pull_request_details":
+      return { repo: progress.repo, phase: "Fetching PR details" };
+    case "enriching_pull_request_patches":
+    case "enriched_pull_request_patches":
+    case "skipped_pull_request_patch_enrichment":
+      return { repo: progress.repo, phase: "Enriching PR patches" };
+    case "github_graphql_retry":
+      return { repo: progress.repo, phase: "Retrying GitHub GraphQL" };
+    case "github_rate_limited":
+      return { repo: progress.repo, phase: "Waiting for GitHub rate limit" };
+    case "skipped_pull_request_fetch":
+      return { repo: progress.repo, phase: "PR history skipped" };
+    default:
+      return { repo: progress.repo, phase: "Fetching PR history" };
+  }
+}
+
+function heartbeatPatchFromCodeProgress(
+  progress: CodeIndexProgress,
+): Partial<Pick<OrgRunHeartbeat, "repo" | "phase">> {
+  switch (progress.stage) {
+    case "discovering_code_files":
+    case "discovered_code_files":
+      return { repo: progress.repo, phase: "Discovering code files" };
+    case "indexing_code_file":
+    case "indexed_code_file":
+      return { repo: progress.repo, phase: "Indexing code files" };
+    case "indexed_architecture":
+      return { repo: progress.repo, phase: "Indexing architecture memory" };
+    case "completed_code_index":
+      return { repo: progress.repo, phase: "Code index completed" };
+  }
+}
+
+function heartbeatPatchFromGraphProgress(
+  progress: OrgGraphProgress,
+): Partial<Pick<OrgRunHeartbeat, "phase">> {
+  switch (progress.stage) {
+    case "loading_package_manifests":
+    case "loaded_package_manifests":
+      return { phase: "Loading package manifests" };
+    case "building_package_edges":
+      return { phase: "Building package dependency edges" };
+    case "loading_imports":
+    case "building_import_edges":
+      return { phase: "Building import edges" };
+    case "loading_code_chunks":
+    case "extracting_api_contracts":
+      return { phase: "Extracting API contracts" };
+    case "matching_api_consumers":
+      return { phase: "Matching API consumers" };
+    case "writing_org_graph":
+      return { phase: "Writing org graph" };
+    case "completed_org_graph":
+      return { phase: "Org graph completed" };
+  }
+}
+
+export function printOrgLifecycleProgress(progress: OrgLifecycleProgress): void {
+  switch (progress.stage) {
+    case "org_sync_started":
+      console.error(`[anchor] ${progress.command} started for ${progress.totalRepos} repo(s).`);
+      return;
+    case "org_repo_started":
+      console.error(`[anchor] repo ${progress.current}/${progress.total}: ${progress.repo}`);
+      return;
+    case "org_repo_phase":
+      console.error(
+        `[anchor] repo ${progress.current}/${progress.total} ${progress.repo}: ${progress.phase}${progress.detail ? ` (${progress.detail})` : ""}...`,
+      );
+      return;
+    case "org_repo_skipped_history":
+      console.error(
+        `[anchor] repo ${progress.current}/${progress.total} ${progress.repo}: ${progress.reason}`,
+      );
+      return;
+    case "org_repo_skipped_code":
+      console.error(
+        `[anchor] repo ${progress.current}/${progress.total} ${progress.repo}: ${progress.reason}`,
+      );
+      return;
+    case "org_repo_finalizing":
+      console.error(
+        `[anchor] repo ${progress.current}/${progress.total} ${progress.repo}: writing index state...`,
+      );
+      return;
+    case "org_repo_completed":
+      console.error(
+        `[anchor] repo ${progress.current}/${progress.total} ${progress.error ? "partial" : "complete"}: ${progress.repo} (${(progress.durationMs / 1000).toFixed(1)}s, ${progress.prsIndexed} PRs, ${progress.codeFilesIndexed} code files)${progress.error ? ` - ${progress.error}` : ""}`,
+      );
+      return;
+    case "org_graph_skipped":
+      console.error(`[anchor] ${progress.reason}`);
+      return;
+    case "org_sync_completed":
+      console.error(
+        `[anchor] ${progress.command} completed in ${(progress.durationMs / 1000).toFixed(1)}s: ${progress.succeededRepos} succeeded, ${progress.failedRepos} failed.`,
+      );
+      return;
+    case "org_sync_failed":
+      console.error(`[anchor] ${progress.command} failed: ${progress.error}`);
+      return;
+  }
 }
 
 export function printFetchProgress(progress: FetchPullRequestsProgress): void {
@@ -456,6 +725,11 @@ export function printFetchProgress(progress: FetchPullRequestsProgress): void {
         `[anchor] resuming GraphQL PR fetch checkpoint after ${progress.matchedMergedPullRequests} merged PRs (page size ${progress.pageSize}).`,
       );
       return;
+    case "github_graphql_retry":
+      console.error(
+        `[anchor] GitHub GraphQL transient failure. Retry ${progress.attempt}/${progress.maxAttempts - 1} in ${(progress.waitMs / 1000).toFixed(1)}s. ${progress.reason}.`,
+      );
+      return;
     case "github_rate_limited":
       console.error(
         `[anchor] GitHub rate limit hit while ${progress.request}. Waiting ${progress.waitSeconds}s until ${progress.retryAt}. ${progress.reason}.`,
@@ -475,7 +749,7 @@ export function printIndexProgress(progress: IndexPullRequestsProgress): void {
     case "indexed_pull_request":
       if (!shouldPrintIndexProgress(progress)) return;
       console.error(
-        `[anchor] indexed PR ${progress.current}/${progress.total}: #${progress.prNumber} (${progress.wisdomUnitsCreated} wisdom units)`,
+        `[anchor] indexed PR ${progress.current}/${progress.total}: #${progress.prNumber} (${progress.wisdomUnitsCreated} wisdom units, ${progress.regressionEventsCreated} regressions)`,
       );
       return;
   }
@@ -513,6 +787,11 @@ export function printCodeIndexProgress(progress: CodeIndexProgress): void {
     case "indexed_architecture":
       console.error(
         `[anchor] indexed architecture memory: ${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports.`,
+      );
+      return;
+    case "completed_code_index":
+      console.error(
+        `[anchor] code index complete for ${progress.repo}: ${progress.files} files, ${progress.chunks} chunks, ${progress.testFiles} tests, ${progress.testLinks} test links, ${progress.skippedFiles} skipped.`,
       );
       return;
   }
@@ -607,6 +886,106 @@ export function printOrgCloneProgress(progress: OrgCloneProgress): void {
       );
       return;
     }
+  }
+}
+
+function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
+  switch (progress.stage) {
+    case "org_sync_started":
+      return {
+        key: `org:${progress.org}`,
+        phase: "Org",
+        label: "Starting org memory run",
+        current: 0,
+        total: progress.totalRepos,
+        detail: progress.command,
+        pinned: true,
+      };
+    case "org_repo_started":
+      return {
+        key: `org:${progress.org}`,
+        phase: "Repo",
+        label: `${progress.current}/${progress.total} ${progress.repo}`,
+        current: progress.current,
+        total: progress.total,
+        detail: "starting",
+        pinned: true,
+      };
+    case "org_repo_phase":
+      return {
+        key: `org:${progress.org}`,
+        phase: "Repo",
+        label: `${progress.current}/${progress.total} ${progress.repo}`,
+        current: progress.current,
+        total: progress.total,
+        detail: progress.detail ? `${progress.phase}: ${progress.detail}` : progress.phase,
+        pinned: true,
+      };
+    case "org_repo_skipped_history":
+      return {
+        key: `history-skip:${progress.repo}`,
+        phase: "GitHub",
+        label: "PR history skipped",
+        state: "done",
+        detail: progress.reason,
+      };
+    case "org_repo_skipped_code":
+      return {
+        key: `code-skip:${progress.repo}`,
+        phase: "Code",
+        label: "Code skipped",
+        state: "done",
+        detail: progress.reason,
+      };
+    case "org_repo_finalizing":
+      return {
+        key: `org:${progress.org}`,
+        phase: "Repo",
+        label: `${progress.current}/${progress.total} ${progress.repo}`,
+        current: progress.current,
+        total: progress.total,
+        detail: "writing repo state",
+        pinned: true,
+      };
+    case "org_repo_completed":
+      return {
+        key: `org:${progress.org}`,
+        phase: "Repo",
+        label: `${progress.current}/${progress.total} ${progress.repo}`,
+        current: progress.current,
+        total: progress.total,
+        state: progress.error ? "warn" : progress.current >= progress.total ? "done" : "active",
+        detail: `${progress.prsIndexed} PRs, ${progress.codeFilesIndexed} files, ${(progress.durationMs / 1000).toFixed(1)}s`,
+        pinned: true,
+      };
+    case "org_graph_skipped":
+      return {
+        key: `graph-skip:${progress.org}`,
+        phase: "Org graph",
+        label: "Graph skipped",
+        state: "done",
+        detail: progress.reason,
+      };
+    case "org_sync_completed":
+      return {
+        key: `org:${progress.org}`,
+        phase: "Org",
+        label: "Org memory run complete",
+        current: progress.totalRepos,
+        total: progress.totalRepos,
+        state: progress.failedRepos > 0 ? "warn" : "done",
+        detail: `${progress.succeededRepos} succeeded, ${progress.failedRepos} failed, ${(progress.durationMs / 1000).toFixed(1)}s`,
+        pinned: true,
+      };
+    case "org_sync_failed":
+      return {
+        key: `org:${progress.org}`,
+        phase: "Org",
+        label: "Org memory run failed",
+        state: "fail",
+        detail: progress.error,
+        pinned: true,
+      };
   }
 }
 
@@ -731,6 +1110,16 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         state: "done",
         detail: `page size ${progress.pageSize}`,
       };
+    case "github_graphql_retry":
+      return {
+        key: `graphql-retry:${progress.repo}`,
+        phase: "GraphQL",
+        label: "Retrying transient failure",
+        state: "wait",
+        current: progress.attempt,
+        total: progress.maxAttempts - 1,
+        detail: `${(progress.waitMs / 1000).toFixed(1)}s: ${progress.reason}`,
+      };
     case "github_rate_limited":
       return {
         key: `rate-limit:${progress.repo}`,
@@ -766,7 +1155,7 @@ function indexTask(progress: IndexPullRequestsProgress): ProgressTask {
         : "active",
     detail:
       progress.stage === "indexed_pull_request"
-        ? `#${progress.prNumber} (${progress.wisdomUnitsCreated} wisdom units)`
+        ? `#${progress.prNumber} (${progress.wisdomUnitsCreated} wisdom, ${progress.regressionEventsCreated} regressions)`
         : `#${progress.prNumber}`,
   };
 }
@@ -816,6 +1205,16 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         label: "Indexed architecture memory",
         state: "done",
         detail: `${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports`,
+      };
+    case "completed_code_index":
+      return {
+        key: `code:${progress.repo}`,
+        phase: "Code",
+        label: "Code index complete",
+        current: progress.files,
+        total: progress.files,
+        state: "done",
+        detail: `${progress.chunks} chunks, ${progress.testFiles} tests, ${progress.testLinks} test links`,
       };
   }
 }

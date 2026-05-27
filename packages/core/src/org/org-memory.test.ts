@@ -307,6 +307,7 @@ describe("org memory", () => {
         commits: [],
       };
       let fetchCalls = 0;
+      const firstLifecycle: string[] = [];
       await indexOrgRepos(db, config, {
         token: "test-token",
         command: "org sync",
@@ -316,10 +317,14 @@ describe("org memory", () => {
           fetchCalls += 1;
           return [pr];
         },
+        onLifecycleProgress: (item) => firstLifecycle.push(item.stage),
       });
       expect(fetchCalls).toBe(1);
+      expect(firstLifecycle).toContain("org_repo_started");
+      expect(firstLifecycle).toContain("org_graph_skipped");
 
       const progress: string[] = [];
+      const lifecycle: string[] = [];
       const resumed = await indexOrgRepos(db, config, {
         token: "test-token",
         command: "org sync",
@@ -329,12 +334,17 @@ describe("org memory", () => {
           return [];
         },
         onFetchProgress: (item) => progress.push(item.stage),
+        onLifecycleProgress: (item) => lifecycle.push(item.stage),
       });
 
       expect(fetchCalls).toBe(1);
       expect(resumed.repos[0]?.skippedHistory).toBe(true);
       expect(resumed.repos[0]?.skippedCode).toBe(true);
       expect(progress).toContain("skipped_pull_request_fetch");
+      expect(lifecycle).toContain("org_repo_skipped_history");
+      expect(lifecycle).toContain("org_repo_skipped_code");
+      expect(lifecycle).toContain("org_repo_completed");
+      expect(lifecycle).toContain("org_sync_completed");
       expect(resumed.graph.skipped).toBeUndefined();
     } finally {
       db.close();

@@ -232,7 +232,7 @@ Use this when you do not have GitHub auth or only need current-code context. It 
 `anchor sync`:
 Use this after the first index. It is incremental and safe to run repeatedly. Add `--all` to catch up from an old cursor, `--since YYYY-MM-DD` to override the cursor, `--no-code` for PR-only sync, and `--concurrency 1-10` to tune patch enrichment pressure.
 
-Anchor automatically chooses progress output: modern live progress in interactive terminals, plain line logs in CI or non-TTY shells, and no progress for JSON output.
+Anchor automatically chooses progress output: modern live progress in interactive terminals, plain line logs in CI or non-TTY shells, and no progress for JSON output. Long org commands show the active repo, phase, counts, elapsed time, and last update age across GitHub fetches, SQLite PR indexing, code indexing, architecture indexing, and graph creation.
 
 ## Sync
 
@@ -301,6 +301,8 @@ Use `--repo owner/name` to refresh one repo, `--code-only` when GitHub auth is u
 
 `anchor org sync`:
 Use this as the daily org command. Add `--repo owner/name` for a focused retry, `--since YYYY-MM-DD` for targeted PR catch-up, `--concurrency 1-3` for large allowlists, `--no-graph` when you want clone/index work to finish first, and `--force` when status reports stale org data. If a recent previous sync already finished PR/code indexing but was interrupted before graph completion, rerunning `anchor org sync` resumes from the graph phase and skips redundant PR fetches for completed repos.
+
+While sync/index/graph runs, Anchor writes a small local heartbeat file at `~/.anchor/orgs/<org>/sync-heartbeat.json`. `anchor org status --org my-org` reads that first, so it can still show the active command, pid, repo, phase, elapsed time, and last update age even if SQLite is temporarily locked by a writer.
 
 `anchor org graph`:
 Rebuilds cross-repo edges, API contracts, and API consumers from the already-indexed org database without cloning repos, fetching GitHub, or re-indexing code. Use it after `anchor org sync --no-graph`, or when `anchor org status` shows zero cross-repo edges/API consumers after indexing finishes. Add `--html` to generate a standalone local graph page, `--open` to open it in your browser, and `--output path/to/graph.html` to choose the file path.
@@ -828,7 +830,7 @@ anchor sync --concurrency 2
 Use `anchor index-all --concurrency 1` when you want the safest full-history run. Anchor indexes locally, so you do not need to refetch unchanged history often.
 
 GraphQL returned HTML / `Unexpected token '<'`:
-This means the GraphQL endpoint, a proxy, or an auth/SSO layer returned an HTML page instead of GitHub's JSON response. Update Anchor to a version that reports this as a non-JSON GraphQL response instead of falling back to REST, then retry after checking network/VPN/proxy/auth state:
+This means the GraphQL endpoint, a proxy, or an auth/SSO layer returned an HTML page instead of GitHub's JSON response. Anchor retries transient GraphQL network/HTML gateway failures before deciding whether to continue, defer, or fail clearly. If it persists, check network/VPN/proxy/auth state:
 
 ```bash
 npm install -g @pratik7368patil/anchor@latest
@@ -888,7 +890,7 @@ Stale org index:
 Run `anchor org sync --org my-org`. If only code changed, `anchor org index --org my-org --code-only --force` is enough.
 
 Org sync indexed repos but is still running:
-Anchor may be rebuilding the cross-repo graph, which detects package edges, API contracts, and API consumers after repo indexing finishes. Newer versions show this as a visible graph progress phase. For large allowlists, split the work:
+Anchor may be finishing SQLite writes or rebuilding the cross-repo graph, which detects package edges, API contracts, and API consumers after repo indexing finishes. Current versions show a live repo/phase row plus detailed GitHub, code, architecture, and graph progress. In another terminal, run `anchor org status --org my-org` to see the active heartbeat even when the database is locked. For large allowlists, split the work:
 
 ```bash
 anchor org sync --org my-org --no-graph --concurrency 2

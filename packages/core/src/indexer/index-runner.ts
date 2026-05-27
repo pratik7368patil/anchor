@@ -59,6 +59,7 @@ export function indexPullRequests(
       total: pullRequests.length,
       prNumber: pr.number,
       wisdomUnitsCreated: result.wisdom,
+      regressionEventsCreated: result.regressions,
     });
   }
 

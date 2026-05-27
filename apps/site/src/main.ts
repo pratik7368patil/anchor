@@ -740,7 +740,7 @@ function renderCliPage(): string {
           <span class="section-label">Reference</span>
           <h2>CLI reference</h2>
           <p class="section-intro">Options are documented next to the command that supports them, because the same flag can mean different tradeoffs depending on the workflow.</p>
-          <p>Long-running commands automatically choose progress output: a modern live view in interactive terminals, plain line logs in CI or non-TTY shells, and no progress when JSON output is requested.</p>
+          <p>Long-running commands automatically choose progress output: a modern live view in interactive terminals, plain line logs in CI or non-TTY shells, and no progress when JSON output is requested. Org runs also write a local heartbeat, so <code>anchor org status</code> can show the active repo, phase, elapsed time, and last update age while sync or graph work is still running.</p>
         </div>
         <label class="command-search">
           <span class="sr-only">Filter commands</span>

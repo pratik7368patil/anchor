@@ -463,6 +463,8 @@ export type OrgStatus = {
   org: string;
   root: string;
   databasePath: string;
+  statusReadError?: string;
+  activeRun?: OrgRunHeartbeatStatus;
   repoCount: number;
   enabledRepoCount: number;
   clonedRepoCount: number;
@@ -492,6 +494,112 @@ export type OrgStatus = {
     }
   >;
 };
+
+export type OrgRunHeartbeat = {
+  pid: number;
+  command: string;
+  org: string;
+  repo?: string;
+  repoIndex?: number;
+  repoTotal?: number;
+  phase: string;
+  startedAt: string;
+  updatedAt: string;
+};
+
+export type OrgRunHeartbeatStatus = OrgRunHeartbeat & {
+  pidRunning: boolean;
+  stale: boolean;
+  elapsedSeconds: number;
+  lastUpdateAgeSeconds: number;
+};
+
+export type OrgLifecycleProgress =
+  | {
+      stage: "org_sync_started";
+      org: string;
+      command: string;
+      totalRepos: number;
+    }
+  | {
+      stage: "org_repo_started";
+      org: string;
+      command: string;
+      repo: string;
+      current: number;
+      total: number;
+    }
+  | {
+      stage: "org_repo_phase";
+      org: string;
+      command: string;
+      repo: string;
+      current: number;
+      total: number;
+      phase: string;
+      detail?: string;
+    }
+  | {
+      stage: "org_repo_skipped_history";
+      org: string;
+      command: string;
+      repo: string;
+      current: number;
+      total: number;
+      reason: string;
+    }
+  | {
+      stage: "org_repo_skipped_code";
+      org: string;
+      command: string;
+      repo: string;
+      current: number;
+      total: number;
+      reason: string;
+    }
+  | {
+      stage: "org_repo_finalizing";
+      org: string;
+      command: string;
+      repo: string;
+      current: number;
+      total: number;
+    }
+  | {
+      stage: "org_repo_completed";
+      org: string;
+      command: string;
+      repo: string;
+      current: number;
+      total: number;
+      skippedHistory: boolean;
+      skippedCode: boolean;
+      prsIndexed: number;
+      codeFilesIndexed: number;
+      durationMs: number;
+      error?: string;
+    }
+  | {
+      stage: "org_graph_skipped";
+      org: string;
+      command: string;
+      reason: string;
+    }
+  | {
+      stage: "org_sync_completed";
+      org: string;
+      command: string;
+      totalRepos: number;
+      succeededRepos: number;
+      failedRepos: number;
+      durationMs: number;
+    }
+  | {
+      stage: "org_sync_failed";
+      org: string;
+      command: string;
+      error: string;
+    };
 
 export type OrgGraphProgress =
   | {
@@ -669,6 +777,14 @@ export type FetchPullRequestsProgress =
       resetAt?: string | null;
     }
   | {
+      stage: "github_graphql_retry";
+      repo: string;
+      attempt: number;
+      maxAttempts: number;
+      waitMs: number;
+      reason: string;
+    }
+  | {
       stage: "github_rate_limited";
       repo: string;
       waitSeconds: number;
@@ -698,6 +814,7 @@ export type IndexPullRequestsProgress =
       total: number;
       prNumber: number;
       wisdomUnitsCreated: number;
+      regressionEventsCreated: number;
     };
 
 export type CodeIndexProgress =
@@ -732,6 +849,18 @@ export type CodeIndexProgress =
       components: number;
       patterns: number;
       imports: number;
+    }
+  | {
+      stage: "completed_code_index";
+      repo: string;
+      files: number;
+      chunks: number;
+      skippedFiles: number;
+      testFiles: number;
+      testLinks: number;
+      architectureComponents: number;
+      architecturePatterns: number;
+      architectureImports: number;
     };
 
 export type IndexSummary = {

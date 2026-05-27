@@ -1,7 +1,17 @@
 import fs from "node:fs";
 import type { AnchorDatabase } from "../db/database.js";
-import { initializeSchema, openAnchorDatabase } from "../db/database.js";
-import type { AnchorOrgConfig, CoverageGrade, OrgRepoCloneState, OrgStatus } from "../types.js";
+import {
+  initializeSchema,
+  openAnchorDatabase,
+  openAnchorDatabaseReadOnly,
+} from "../db/database.js";
+import type {
+  AnchorOrgConfig,
+  CoverageGrade,
+  OrgRepoCloneState,
+  OrgRunHeartbeatStatus,
+  OrgStatus,
+} from "../types.js";
 import { orgDatabasePath, orgRepoLocalPath, orgRoot } from "./config.js";
 
 type CountRow = { count: number };
@@ -44,6 +54,10 @@ export function openOrgDatabase(org: string, baseDir?: string): AnchorDatabase {
   const db = openAnchorDatabase(root, orgDatabasePath(org, baseDir));
   initializeSchema(db);
   return db;
+}
+
+export function openOrgDatabaseReadOnly(org: string, baseDir?: string): AnchorDatabase {
+  return openAnchorDatabaseReadOnly(orgDatabasePath(org, baseDir));
 }
 
 export function syncOrgConfigToDatabase(
@@ -278,9 +292,12 @@ export function getOrgStatus(
   db: AnchorDatabase,
   config: AnchorOrgConfig,
   baseDir?: string,
+  options: { syncConfig?: boolean; activeRun?: OrgRunHeartbeatStatus; statusReadError?: string } = {},
 ): OrgStatus {
-  initializeSchema(db);
-  syncOrgConfigToDatabase(db, config, baseDir);
+  if (options.syncConfig !== false) {
+    initializeSchema(db);
+    syncOrgConfigToDatabase(db, config, baseDir);
+  }
   const enabledRepos = config.repos.filter((repo) => repo.enabled);
   const states = new Map(
     (
@@ -332,6 +349,8 @@ export function getOrgStatus(
     org: config.org,
     root: orgRoot(config.org, baseDir),
     databasePath: orgDatabasePath(config.org, baseDir),
+    statusReadError: options.statusReadError,
+    activeRun: options.activeRun,
     repoCount: config.repos.length,
     enabledRepoCount: enabledRepos.length,
     clonedRepoCount,
