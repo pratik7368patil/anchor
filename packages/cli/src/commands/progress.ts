@@ -1007,6 +1007,8 @@ function heartbeatPatchFromCodeProgress(
       return { repo: progress.repo, phase: "Indexing architecture memory" };
     case "writing_code_index":
       return { repo: progress.repo, phase: progress.phase };
+    case "inferring_test_awareness":
+      return { repo: progress.repo, phase: "Inferring test awareness" };
     case "deleting_existing_code_index":
       return { repo: progress.repo, phase: "Deleting old code index" };
     case "writing_code_files":
@@ -1278,6 +1280,12 @@ export function printCodeIndexProgress(progress: CodeIndexProgress): void {
       return;
     case "writing_code_index":
       console.error(`[anchor] ${progress.repo}: ${progress.phase}...`);
+      return;
+    case "inferring_test_awareness":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] inferring test awareness ${progress.phase.replace("_", " ")} ${progress.current}/${progress.total}: ${progress.testFiles} tests, ${progress.testLinks} links${progress.filePath ? ` (${progress.filePath})` : ""}`,
+      );
       return;
     case "deleting_existing_code_index":
       console.error(
@@ -1893,6 +1901,19 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         label: progress.phase,
         timelineStepId: "sqlite_code_write",
         timelineLabel: progress.phase,
+        timelineRepo: progress.repo,
+      };
+    case "inferring_test_awareness":
+      return {
+        key: `test-awareness-infer:${progress.repo}`,
+        phase: "Tests",
+        label: `Inferring test awareness: ${progress.phase.replace("_", " ")}`,
+        current: progress.current,
+        total: progress.total,
+        state: progress.phase === "completed" ? "done" : "active",
+        detail: `${progress.testFiles} tests, ${progress.testLinks} links${progress.filePath ? ` · ${progress.filePath}` : ""}`,
+        timelineStepId: "test_awareness_inference",
+        timelineLabel: "Infer test awareness",
         timelineRepo: progress.repo,
       };
     case "deleting_existing_code_index":

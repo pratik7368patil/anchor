@@ -912,6 +912,16 @@ export type CodeIndexProgress =
       phase: string;
     }
   | {
+      stage: "inferring_test_awareness";
+      repo: string;
+      phase: "classifying_files" | "indexing_sources" | "linking_tests" | "completed";
+      current: number;
+      total: number;
+      testFiles: number;
+      testLinks: number;
+      filePath?: string;
+    }
+  | {
       stage: "deleting_existing_code_index";
       repo: string;
       chunks: number;
