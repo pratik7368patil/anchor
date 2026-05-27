@@ -58,7 +58,12 @@ function createProgressRateLimitController(
 }
 
 export function shouldFallbackToRestAfterGraphQLError(error: unknown): boolean {
-  return !isGitHubRateLimitError(error) && !isGitHubGraphQLResourceLimitError(error);
+  const message = ((error as { message?: string }).message ?? "").toLowerCase();
+  return (
+    !isGitHubRateLimitError(error) &&
+    !isGitHubGraphQLResourceLimitError(error) &&
+    !message.includes("non-json response")
+  );
 }
 
 async function fetchPullRequestDetailsConcurrently(options: {
@@ -217,7 +222,10 @@ export async function fetchMergedPullRequests(
     options.repo,
     options.onProgress,
   );
-  const restRateLimitController = createProgressRateLimitController(options.repo, options.onProgress);
+  const restRateLimitController = createProgressRateLimitController(
+    options.repo,
+    options.onProgress,
+  );
 
   try {
     return await fetchMergedPullRequestsWithGraphQL({

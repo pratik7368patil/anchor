@@ -1,8 +1,5 @@
 import type { GitHubRateLimitController, GitHubGraphQLRateLimitState } from "./rate-limit.js";
-import {
-  requestWithGitHubRateLimit,
-  updateGitHubGraphQLRateLimitState,
-} from "./rate-limit.js";
+import { requestWithGitHubRateLimit, updateGitHubGraphQLRateLimitState } from "./rate-limit.js";
 
 export type GitHubGraphQLFetch = typeof fetch;
 
@@ -49,7 +46,10 @@ function headersToRecord(headers: Headers): Record<string, string | number | und
 
 function errorStatus(status: number, errors: GitHubGraphQLErrorItem[] | undefined): number {
   if (status === 403 || status === 429) return status;
-  const message = (errors ?? []).map((error) => error.message ?? "").join("\n").toLowerCase();
+  const message = (errors ?? [])
+    .map((error) => error.message ?? "")
+    .join("\n")
+    .toLowerCase();
   if (message.includes("rate limit") || message.includes("secondary limit")) return 403;
   return status >= 400 ? status : 500;
 }
@@ -62,12 +62,38 @@ function errorMessage(status: number, errors: GitHubGraphQLErrorItem[] | undefin
   return `GitHub GraphQL request failed with status ${status}.`;
 }
 
+function responsePreview(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function parseGraphQLResponse<T>(
+  text: string,
+  status: number,
+  headers: Record<string, string | number | undefined>,
+): GitHubGraphQLRawResponse<T> {
+  try {
+    return JSON.parse(text) as GitHubGraphQLRawResponse<T>;
+  } catch {
+    const contentType = String(headers["content-type"] ?? "unknown");
+    const preview = responsePreview(text);
+    throw new GitHubGraphQLError(
+      `GitHub GraphQL returned a non-JSON response with status ${status} and content-type ${contentType}.${preview ? ` Response preview: ${preview}` : ""}`,
+      {
+        status,
+        headers,
+      },
+    );
+  }
+}
+
 export function createGitHubGraphQLRequester(options: {
   token: string;
   fetchImpl?: GitHubGraphQLFetch;
 }) {
   if (!options.token.trim()) {
-    throw new Error("GitHub authentication is required. Run gh auth login, or export GITHUB_TOKEN/GH_TOKEN.");
+    throw new Error(
+      "GitHub authentication is required. Run gh auth login, or export GITHUB_TOKEN/GH_TOKEN.",
+    );
   }
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (!fetchImpl) throw new Error("Global fetch is unavailable in this Node.js runtime.");
@@ -94,7 +120,7 @@ export function createGitHubGraphQLRequester(options: {
           body: JSON.stringify({ query, variables }),
         });
         const headers = headersToRecord(response.headers);
-        const raw = (await response.json()) as GitHubGraphQLRawResponse<T>;
+        const raw = parseGraphQLResponse<T>(await response.text(), response.status, headers);
         if (!response.ok || raw.errors?.length) {
           throw new GitHubGraphQLError(errorMessage(response.status, raw.errors), {
             status: errorStatus(response.status, raw.errors),
