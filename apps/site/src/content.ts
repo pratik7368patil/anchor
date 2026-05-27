@@ -58,7 +58,8 @@ anchor architecture --file src/api/routes.ts
 anchor architecture --map --format mermaid
 anchor architecture --check
 anchor review --share
-anchor org sync --org my-org
+anchor org sync --org my-org --no-graph
+anchor org graph --org my-org --open
 anchor org impact --org my-org --repo my-org/backend-api --strict
 anchor onboarding --area api
 anchor ci`;
@@ -110,7 +111,8 @@ export const workflowRecipes: WorkflowRecipe[] = [
     title: "Before API, auth, access, or shared-package changes",
     useWhen: "Use this when the change can affect other repos or consumers.",
     commands: [
-      "anchor org sync --org my-org",
+      "anchor org sync --org my-org --no-graph",
+      "anchor org graph --org my-org --open",
       "anchor org impact --org my-org --repo my-org/backend-api --strict",
     ],
     notes:
@@ -320,6 +322,10 @@ export const commandGroups: CommandGroup[] = [
         description: "Daily command: clone/pull, index, and rebuild the cross-repo graph.",
       },
       {
+        command: "anchor org graph",
+        description: "Rebuilds cross-repo edges and API consumers from already-indexed org data.",
+      },
+      {
         command: "anchor org status",
         description: "Shows org clone state, freshness, coverage, failures, and next commands.",
       },
@@ -389,6 +395,14 @@ const diffFileOption = (example: string): CommandOption => ({
   name: "--diff-file path",
   description: "Read a saved diff file instead of the current git diff.",
   useWhen: "Use it in CI, pre-PR review, or when reviewing a diff exported from another tool.",
+  example,
+});
+
+const progressOption = (example: string): CommandOption => ({
+  name: "--progress pretty|plain|off",
+  description: "Control long-running terminal progress output.",
+  useWhen:
+    "Use pretty in interactive terminals, plain for CI logs, and off when another tool wraps output.",
   example,
 });
 
@@ -489,6 +503,7 @@ export const commandDetails: Record<string, CommandDetail> = {
           "Use lower values for rate-limit safety and higher values for faster patch enrichment.",
         example: "anchor index --limit 200 --concurrency 2",
       },
+      progressOption("anchor index --progress pretty"),
     ],
   },
   "anchor index-all": {
@@ -526,6 +541,7 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use 1-2 for safest full-history runs; use 5 only when rate limits are healthy.",
         example: "anchor index-all --concurrency 1",
       },
+      progressOption("anchor index-all --progress plain"),
     ],
   },
   "anchor index-code": {
@@ -546,6 +562,7 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use it after ignored-file changes, generated index issues, or health warnings.",
         example: "anchor index-code --force",
       },
+      progressOption("anchor index-code --progress pretty"),
     ],
   },
   "anchor sync": {
@@ -589,6 +606,7 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use lower values if GitHub rate limits or secondary limits are close.",
         example: "anchor sync --concurrency 2",
       },
+      progressOption("anchor sync --progress off"),
     ],
   },
   "anchor health": {
@@ -954,6 +972,7 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use 1-3 for safer local/network load.",
         example: "anchor org clone --org my-org --concurrency 2",
       },
+      progressOption("anchor org clone --org my-org --progress pretty"),
     ],
   },
   "anchor org index": {
@@ -986,11 +1005,19 @@ export const commandDetails: Record<string, CommandDetail> = {
         example: "anchor org index --org my-org --prs-only",
       },
       {
+        name: "--no-graph",
+        description: "Skip the final cross-repo graph rebuild.",
+        useWhen:
+          "Use it for large orgs when you want indexing to finish first and graph rebuild to run separately.",
+        example: "anchor org index --org my-org --no-graph",
+      },
+      {
         name: "--force",
         description: "Rebuild derived org records for selected repos.",
         useWhen: "Use it after failed runs, schema changes, or stale org status warnings.",
         example: "anchor org index --org my-org --repo my-org/backend-api --force",
       },
+      progressOption("anchor org index --org my-org --progress pretty"),
     ],
   },
   "anchor org sync": {
@@ -1023,11 +1050,59 @@ export const commandDetails: Record<string, CommandDetail> = {
         example: "anchor org sync --org my-org --since 2026-01-01",
       },
       {
+        name: "--no-graph",
+        description: "Skip the final cross-repo graph rebuild.",
+        useWhen:
+          "Use it when many repos are syncing and you want to run `anchor org graph` as its own visible step.",
+        example: "anchor org sync --org my-org --no-graph --concurrency 2",
+      },
+      {
         name: "--force",
         description: "Force refresh selected org repo records.",
         useWhen: "Use it when status reports stale or inconsistent org data.",
         example: "anchor org sync --org my-org --repo my-org/backend-api --force",
       },
+      progressOption("anchor org sync --org my-org --progress plain"),
+    ],
+  },
+  "anchor org graph": {
+    recommendedUse:
+      "Use after org indexing to rebuild cross-repo edges, API contracts, and API consumers without refetching GitHub or reindexing code.",
+    example: "anchor org graph --org my-org",
+    options: [
+      {
+        name: "--org name",
+        description: "Select the org namespace.",
+        useWhen: "Use it for every org graph run.",
+        example: "anchor org graph --org my-org",
+      },
+      {
+        name: "--repo owner/name",
+        description:
+          "Accepted for command compatibility; graph relationships are still rebuilt from the org database.",
+        useWhen: "Use the full org graph for best cross-repo results.",
+        example: "anchor org graph --org my-org --repo my-org/backend-api",
+      },
+      {
+        name: "--html",
+        description: "Write a standalone interactive HTML graph page under the local org cache.",
+        useWhen: "Use it when you want to inspect or share the local graph file manually.",
+        example: "anchor org graph --org my-org --html",
+      },
+      {
+        name: "--open",
+        description: "Write the HTML graph and open it in the default browser.",
+        useWhen: "Use it for demos and visual debugging of cross-repo relationships.",
+        example: "anchor org graph --org my-org --open",
+      },
+      {
+        name: "--output path",
+        description: "Choose where the generated HTML graph is written.",
+        useWhen: "Use it when saving graph snapshots for local docs or demos.",
+        example: "anchor org graph --org my-org --html --output /tmp/anchor-org-graph.html",
+      },
+      progressOption("anchor org graph --org my-org --progress pretty"),
+      jsonOption("anchor org graph --org my-org --json"),
     ],
   },
   "anchor org status": {

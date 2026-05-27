@@ -122,6 +122,7 @@ export function checkSchema(db: AnchorDatabase): boolean {
       "org_cross_repo_edges",
       "org_api_consumers",
       "org_anomaly_events",
+      "org_graph_state",
     ].every(
       (tableName) =>
         db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all(tableName).length > 0,

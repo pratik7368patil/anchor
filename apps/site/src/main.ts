@@ -336,7 +336,8 @@ anchor rules suggest
 anchor ci
 anchor org init --org my-org
 anchor org add-repo my-org/backend-api --group backend
-anchor org sync --org my-org`,
+anchor org sync --org my-org --no-graph
+anchor org graph --org my-org --open`,
         true,
       )}
       <div class="doc-callout">
@@ -702,7 +703,8 @@ function renderOrgMemoryPage(): string {
 anchor org add-repo my-org/backend-api --group backend
 anchor org add-repo my-org/frontend-app --group frontend
 anchor org add-repo my-org/shared-sdk --group shared
-anchor org sync --org my-org
+anchor org sync --org my-org --no-graph
+anchor org graph --org my-org --open
 anchor org status --org my-org
 anchor org impact --org my-org --repo my-org/backend-api --strict`,
         true,

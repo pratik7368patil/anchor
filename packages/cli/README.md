@@ -30,6 +30,8 @@ anchor health
 anchor org init --org my-org
 anchor org add-repo my-org/backend-api --org my-org --group backend
 anchor org sync --org my-org
+anchor org graph --org my-org
+anchor org graph --org my-org --open
 anchor org impact --org my-org --repo my-org/backend-api --strict
 anchor rules init
 anchor rules validate
@@ -80,23 +82,24 @@ anchor explain src/api/routes.ts
 Before API, auth, access, schema, SDK, shared-package, or cross-repo work:
 
 ```bash
-anchor org sync --org my-org
+anchor org sync --org my-org --no-graph --concurrency 2
+anchor org graph --org my-org
 anchor org impact --org my-org --repo my-org/backend-api --strict
 ```
 
 ## Command-specific options
 
 `anchor index`:
-Use `--repo owner/name` when git remote detection is unavailable, `--limit 50` for a fast first pass, `--all` for full history through the normal command, `--since YYYY-MM-DD` for targeted backfill, `--force` to rebuild local derived records, `--no-code` to skip code indexing, and `--concurrency 1-10` to tune patch enrichment pressure.
+Use `--repo owner/name` when git remote detection is unavailable, `--limit 50` for a fast first pass, `--all` for full history through the normal command, `--since YYYY-MM-DD` for targeted backfill, `--force` to rebuild local derived records, `--no-code` to skip code indexing, `--concurrency 1-10` to tune patch enrichment pressure, and `--progress pretty|plain|off` to control terminal progress.
 
 `anchor index-all`:
-Use for complete merged PR history. Prefer `--concurrency 1` or `--concurrency 2` on large repos. Use `--no-code` when code context is already fresh.
+Use for complete merged PR history. Prefer `--concurrency 1` or `--concurrency 2` on large repos. Use `--no-code` when code context is already fresh and `--progress plain` in CI logs.
 
 `anchor sync`:
-Use after the first index. It is incremental and safe to rerun. Add `--all` for a full catch-up from the sync cursor, `--since YYYY-MM-DD` for a specific window, `--no-code` for PR-only refresh, and `--concurrency 1-10` when tuning rate-limit pressure.
+Use after the first index. It is incremental and safe to rerun. Add `--all` for a full catch-up from the sync cursor, `--since YYYY-MM-DD` for a specific window, `--no-code` for PR-only refresh, `--concurrency 1-10` when tuning rate-limit pressure, and `--progress off` when another tool wraps output.
 
 `anchor index-code`:
-Use when you only need current-code context or do not have GitHub auth. Add `--force` when `anchor health` reports stale code records.
+Use when you only need current-code context or do not have GitHub auth. Add `--force` when `anchor health` reports stale code records and `--progress pretty` for large interactive runs.
 
 `anchor plan`:
 Use `--file path` for a likely target file, `--symbol name` for a likely contract or implementation point, `--strict` for high-risk work, and `--json` for automation.
@@ -108,7 +111,7 @@ Use `--share` for Slack or PR-comment Markdown. Use `--diff-file change.diff` on
 Use `--file path` for file-level guidance, `--area api` for one architecture area, `--check` for the current diff, `--diff-file change.diff` for saved diffs, `--map --format mermaid` for docs, `--map --format json` for tooling, and `--write-doc` only when you intentionally want `ANCHOR_ARCHITECTURE.md`.
 
 `anchor org ...`:
-Use `--org my-org` on every org command. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--concurrency 1-3` with `org clone` and `org sync`, `--diff-file` and `--strict` with `org impact`, and `--min-coverage` with `org ci`.
+Use `--org my-org` on every org command. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--no-graph` with `org index`/`org sync` to postpone cross-repo graph rebuilds, `org graph` to rebuild only edges/API consumers, `org graph --open` to inspect the graph in a local browser UI, `--concurrency 1-3` with `org clone` and `org sync`, `--progress pretty|plain|off` for long org runs, `--diff-file` and `--strict` with `org impact`, and `--min-coverage` with `org ci`.
 
 Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`.
 
@@ -119,6 +122,8 @@ Use `anchor_get_context` with `strict: true` when Cursor should only receive non
 Anchor indexes PR history, local code chunks, likely related tests, regression memory, architecture patterns, and team-approved rules. `anchor health` and `anchor_index_status` include a local coverage score. All data stays in `.anchor/index.sqlite` on your machine.
 
 Org Memory is opt-in. `anchor org ...` commands store allowlisted repo clones and one org SQLite database under `~/.anchor/orgs/<org>/`, then expose cross-repo context through `anchor_get_org_context`, `anchor_check_cross_repo_impact`, `anchor_find_api_consumers`, `anchor_get_org_architecture`, and `anchor_org_index_status`.
+
+Cross-repo edges and API consumers are created during the org graph phase. If a large `anchor org sync` is taking too long after repo indexing completes, run `anchor org sync --org my-org --no-graph` first, then `anchor org graph --org my-org --open` as a separate, visible progress step with an interactive local graph page.
 
 Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor sync`, and `anchor index-code`. It gives Cursor deterministic current-code guidance about file areas, import direction, symbols, repeated folder patterns, and nearby test conventions before adding APIs, services, components, hooks, tests, or refactors.
 

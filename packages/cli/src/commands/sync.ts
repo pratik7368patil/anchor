@@ -17,7 +17,7 @@ import {
 } from "@pratik7368patil/anchor-core";
 import { printIndexOutcome } from "./engagement.js";
 import { resolveRepo, type IndexOptions } from "./index.js";
-import { printCodeIndexProgress, printFetchProgress, printIndexProgress } from "./progress.js";
+import { createProgressReporter } from "./progress.js";
 
 function removeDatabaseFiles(databasePath: string): void {
   for (const candidate of [databasePath, `${databasePath}-wal`, `${databasePath}-shm`]) {
@@ -39,9 +39,10 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
-  console.error("Anchor sync started.");
-  console.error(`Repository: ${repo}`);
-  console.error(`Database path: ${databasePath}`);
+  const progress = createProgressReporter({ progress: options.progress });
+  progress.log("Anchor sync started.");
+  progress.log(`Repository: ${repo}`);
+  progress.log(`Database path: ${databasePath}`);
 
   const db = openAnchorDatabase(root, databasePath);
   const startedAt = new Date().toISOString();
@@ -69,9 +70,9 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
       onGraphQLCheckpoint: (checkpoint) => {
         pendingGraphQLCheckpoint = checkpoint;
       },
-      onProgress: printFetchProgress,
+      onProgress: progress.onFetchProgress,
     });
-    console.error(`[anchor] writing ${pullRequests.length} PRs to SQLite...`);
+    progress.log(`[anchor] writing ${pullRequests.length} PRs to SQLite...`);
     const historyCoverage = options.all && !pendingGraphQLCheckpoint ? "all" : "limited";
     const summary = indexPullRequests(db, pullRequests, {
       cwd: root,
@@ -79,7 +80,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
       historyCoverage,
       historyLimit: options.all ? undefined : (options.limit ?? 200),
       historySince: since,
-      onProgress: printIndexProgress,
+      onProgress: progress.onPrIndexProgress,
     });
     if (checkpointScope && pendingGraphQLCheckpoint) {
       saveGraphQLFetchCheckpoint(db, pendingGraphQLCheckpoint);
@@ -95,8 +96,9 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
         : indexCodebase(db, {
             cwd: root,
             repo,
-            onProgress: printCodeIndexProgress,
+            onProgress: progress.onCodeProgress,
           });
+    progress.close();
     console.log("Anchor sync complete.");
     console.log(`Repository: ${repo}`);
     console.log(`Since: ${since ?? "full recent history"}`);
@@ -145,6 +147,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
     });
     throw error;
   } finally {
+    progress.close();
     db.close();
   }
 }
