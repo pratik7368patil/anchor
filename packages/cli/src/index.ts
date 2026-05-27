@@ -39,6 +39,22 @@ import {
 } from "./commands/playbooks.js";
 import { runWatch } from "./commands/watch.js";
 import {
+  printJsonOrMarkdown,
+  printOrgAddRepo,
+  printOrgInit,
+  printOrgRemoveRepo,
+  runOrgAddRepo,
+  runOrgCi,
+  runOrgClone,
+  runOrgImpact,
+  runOrgIndex,
+  runOrgInit,
+  runOrgList,
+  runOrgMap,
+  runOrgRemoveRepo,
+  runOrgStatus,
+} from "./commands/org.js";
+import {
   printRulesAdd,
   printRulesEvidenceCheck,
   printRulesInit,
@@ -449,13 +465,19 @@ feedback
   .command("record")
   .description("Record whether an Anchor result was useful")
   .requiredOption("--result-id <id>", "Result id from structured Anchor metadata")
-  .requiredOption("--rating <rating>", "Feedback rating: useful or not-useful", parseFeedbackRatingOption)
+  .requiredOption(
+    "--rating <rating>",
+    "Feedback rating: useful or not-useful",
+    parseFeedbackRatingOption,
+  )
   .option("--note <note>", "Optional local-only note")
   .action((options) => {
     printFeedbackRecord(runFeedbackRecord(process.cwd(), options));
   });
 
-const playbooks = program.command("playbooks").description("Manage repo playbooks from Anchor evidence");
+const playbooks = program
+  .command("playbooks")
+  .description("Manage repo playbooks from Anchor evidence");
 
 playbooks
   .command("init")
@@ -487,6 +509,136 @@ playbooks
   .option("--json", "Print playbook as JSON")
   .action((id, options) => {
     printPlaybook(runPlaybooksGet(process.cwd(), id), options);
+  });
+
+const org = program.command("org").description("Manage local-first organization memory");
+
+org
+  .command("init")
+  .description("Initialize a local Anchor org memory store")
+  .requiredOption("--org <org>", "GitHub org or company namespace")
+  .action((options) => {
+    printOrgInit(runOrgInit(options));
+  });
+
+org
+  .command("add-repo")
+  .description("Allowlist a repository for local org memory")
+  .argument("<owner/name>", "Repository full name")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--alias <name>", "Local clone alias")
+  .option("--group <group>", "Repo group: backend, frontend, shared, infra, docs, or unknown")
+  .action(async (repo, options) => {
+    printOrgAddRepo(await runOrgAddRepo(repo, options));
+  });
+
+org
+  .command("remove-repo")
+  .description("Disable an allowlisted org repository")
+  .argument("<owner/name>", "Repository full name")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .action((repo, options) => {
+    printOrgRemoveRepo(runOrgRemoveRepo(repo, options), repo);
+  });
+
+org
+  .command("list")
+  .description("List allowlisted org repositories")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--json", "Print structured status as JSON")
+  .action((options) => {
+    printJsonOrMarkdown(runOrgList(options), options);
+  });
+
+org
+  .command("clone")
+  .description("Clone or pull allowlisted repos into the local Anchor org cache")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--repo <owner/name>", "Only clone or pull one repo")
+  .option("--concurrency <number>", "Concurrent clone/pull workers", parseIntegerOption, 3)
+  .option("--json", "Print results as JSON")
+  .action(async (options) => {
+    printJsonOrMarkdown(await runOrgClone(options), options);
+  });
+
+org
+  .command("index")
+  .description("Index allowlisted org repos into one local org SQLite database")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--repo <owner/name>", "Only index one repo")
+  .option("--code-only", "Index code only without GitHub PR history")
+  .option("--prs-only", "Index PR history only without code")
+  .option("--force", "Refresh unchanged code indexes")
+  .option("--concurrency <number>", "Concurrent GitHub detail fetches", parseIntegerOption, 3)
+  .option("--json", "Print results as JSON")
+  .action(async (options) => {
+    printJsonOrMarkdown(await runOrgIndex({ ...options, command: "org index" }), options);
+  });
+
+org
+  .command("sync")
+  .description("Pull/index allowlisted repos and refresh cross-repo graph")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--repo <owner/name>", "Only sync one repo")
+  .option(
+    "--concurrency <number>",
+    "Concurrent clone/pull and GitHub workers",
+    parseIntegerOption,
+    3,
+  )
+  .option("--since <YYYY-MM-DD>", "Override PR sync cursor")
+  .option("--force", "Refresh unchanged code indexes")
+  .option("--json", "Print results as JSON")
+  .action(async (options) => {
+    await runOrgClone(options);
+    printJsonOrMarkdown(await runOrgIndex({ ...options, command: "org sync" }), options);
+  });
+
+org
+  .command("status")
+  .description("Report org memory coverage, clone state, and index health")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--json", "Print structured status as JSON")
+  .action((options) => {
+    printJsonOrMarkdown(runOrgStatus(options), options);
+  });
+
+org
+  .command("map")
+  .description("Show cross-repo architecture and dependency map")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--format <format>", "Map format: mermaid or json", parseMapFormatOption, "mermaid")
+  .option("--json", "Print structured metadata as JSON")
+  .action((options) => {
+    printJsonOrMarkdown(runOrgMap(options), options);
+  });
+
+org
+  .command("impact")
+  .description("Check a diff for cross-repo impact and deterministic anomalies")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--repo <owner/name>", "Repo where the diff belongs")
+  .option("--diff-file <path>", "Read diff from a file instead of git diff")
+  .option("--strict", "Fail metadata when high/blocker anomalies are found")
+  .option("--json", "Print structured impact as JSON")
+  .action((options) => {
+    const result = runOrgImpact(options);
+    printJsonOrMarkdown(result, options);
+    if (options.strict && !result.metadata.ok) process.exitCode = 1;
+  });
+
+org
+  .command("ci")
+  .description("Run org-memory reliability gates for CI")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--repo <owner/name>", "Repo where the diff belongs")
+  .option("--strict", "Fail on high/blocker anomalies")
+  .option("--min-coverage <number>", "Minimum org coverage score", parseIntegerOption, 70)
+  .option("--json", "Print structured CI result as JSON")
+  .action((options) => {
+    const result = runOrgCi(options);
+    printJsonOrMarkdown(result, options);
+    if (!result.metadata.ok) process.exitCode = 1;
   });
 
 program

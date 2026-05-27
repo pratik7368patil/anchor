@@ -49,16 +49,25 @@ function asPackageJson(value: unknown): PackageJson {
 }
 
 function packageManager(cwd: string): "pnpm" | "npm" | "yarn" {
-  if (fs.existsSync(path.join(cwd, "pnpm-lock.yaml")) || fs.existsSync(path.join(cwd, "pnpm-workspace.yaml"))) {
+  if (
+    fs.existsSync(path.join(cwd, "pnpm-lock.yaml")) ||
+    fs.existsSync(path.join(cwd, "pnpm-workspace.yaml"))
+  ) {
     return "pnpm";
   }
   if (fs.existsSync(path.join(cwd, "yarn.lock"))) return "yarn";
   return "npm";
 }
 
-function findPackageRoot(cwd: string, filePath?: string): { root: string; packageJson: PackageJson } {
+function findPackageRoot(
+  cwd: string,
+  filePath?: string,
+): { root: string; packageJson: PackageJson } {
   const absolute = filePath ? path.resolve(cwd, filePath) : cwd;
-  let current = fs.existsSync(absolute) && fs.statSync(absolute).isDirectory() ? absolute : path.dirname(absolute);
+  let current =
+    fs.existsSync(absolute) && fs.statSync(absolute).isDirectory()
+      ? absolute
+      : path.dirname(absolute);
   const root = path.resolve(cwd);
   while (current.startsWith(root)) {
     const packageJsonPath = path.join(current, "package.json");
@@ -169,7 +178,10 @@ function testTargetsForFile(db: AnchorDatabase, filePath: string): string[] {
 
 function confidenceForTarget(filePath: string, targetPath: string): ConfidenceLevel {
   if (filePath === targetPath || isTestFilePath(filePath)) return "strong";
-  const sourceBase = path.posix.basename(filePath).replace(/\.[^.]+$/i, "").toLowerCase();
+  const sourceBase = path.posix
+    .basename(filePath)
+    .replace(/\.[^.]+$/i, "")
+    .toLowerCase();
   const testBase = path.posix
     .basename(targetPath)
     .replace(/\.(test|spec)\.[^.]+$/i, "")
@@ -178,10 +190,10 @@ function confidenceForTarget(filePath: string, targetPath: string): ConfidenceLe
   return sourceBase === testBase ? "strong" : "moderate";
 }
 
-function commandId(command: TestCommand): string {
+function commandId(repo: string, command: TestCommand): string {
   return crypto
     .createHash("sha256")
-    .update(`${command.filePath ?? ""}\0${command.command}`)
+    .update(`${repo}\0${command.filePath ?? ""}\0${command.command}`)
     .digest("hex");
 }
 
@@ -199,8 +211,17 @@ export function detectTestCommandsForFile(
     const scriptName = scriptNameFor(packageInfo.packageJson);
     if (scriptName) {
       commands.push({
-        command: commandForScript(cwd, packageInfo.root, packageInfo.packageJson, scriptName, targetPath),
-        reason: targets.length > 0 ? `Related test inferred for ${filePath}.` : "Exact file test command inferred from package scripts.",
+        command: commandForScript(
+          cwd,
+          packageInfo.root,
+          packageInfo.packageJson,
+          scriptName,
+          targetPath,
+        ),
+        reason:
+          targets.length > 0
+            ? `Related test inferred for ${filePath}.`
+            : "Exact file test command inferred from package scripts.",
         confidence: confidenceForTarget(filePath, targetPath),
         filePath: targetPath,
       });
@@ -226,8 +247,9 @@ export function detectTestCommands(
   const targetFiles =
     files.length > 0
       ? files
-      : ((db.prepare("SELECT path FROM code_files ORDER BY path LIMIT 250").all() as CodeFileRow[])
-          .map((row) => row.path));
+      : (
+          db.prepare("SELECT path FROM code_files ORDER BY path LIMIT 250").all() as CodeFileRow[]
+        ).map((row) => row.path);
   const commands = targetFiles.flatMap((filePath) => detectTestCommandsForFile(db, cwd, filePath));
   const seen = new Set<string>();
   return commands.filter((command) => {
@@ -254,7 +276,7 @@ export function refreshTestCommands(
     );
     for (const command of commands) {
       insert.run(
-        commandId(command),
+        commandId(repo, command),
         repo,
         command.filePath ?? null,
         command.command,

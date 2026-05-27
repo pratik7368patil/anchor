@@ -158,6 +158,63 @@ anchor sync --no-code
 
 `anchor sync` is safe to run repeatedly. Use `--all` to fetch every merged PR updated since the sync cursor. Use `--force` to rebuild the local database. Codebase indexing is refreshed by default unless `--no-code` is passed.
 
+## Org Memory
+
+Anchor can also build a local, allowlisted organization memory across multiple repos. This is opt-in and local-only: Anchor never scans every org repo automatically.
+
+```bash
+anchor org init --org my-org
+anchor org add-repo my-org/backend-api --group backend
+anchor org add-repo my-org/frontend-app --group frontend
+anchor org add-repo my-org/shared-sdk --group shared
+anchor org sync --org my-org
+anchor org status --org my-org
+```
+
+Org data is stored under:
+
+```text
+~/.anchor/orgs/<org>/
+  org.json
+  org.sqlite
+  repos/
+```
+
+`org.json` is the explicit allowlist. `anchor org clone` shallow-clones missing repos and pulls existing managed clones. It does not run install, build, tests, branch creation, commits, pushes, or GitHub write APIs.
+
+Useful org commands:
+
+```bash
+anchor org list --org my-org
+anchor org clone --org my-org --concurrency 3
+anchor org index --org my-org --code-only
+anchor org sync --org my-org --since 2026-01-01
+anchor org map --org my-org --format mermaid
+anchor org impact --org my-org --repo my-org/backend-api --diff-file change.diff --strict
+anchor org ci --org my-org --strict --min-coverage 70
+```
+
+Org Memory indexes current code and, when GitHub auth is available, PR history for each allowlisted repo into one local SQLite database. Re-runs are idempotent: unchanged code indexes are skipped, changed repos replace their current-code records, PRs are upserted by repo and number, and successful repos stay intact when another repo fails.
+
+Anchor builds deterministic cross-repo edges from package dependencies, imports, API/schema/client strings, SDK-like consumers, and indexed code evidence. This powers these MCP tools:
+
+```text
+anchor_get_org_context
+anchor_check_cross_repo_impact
+anchor_find_api_consumers
+anchor_get_org_architecture
+anchor_org_index_status
+```
+
+Use this Cursor prompt for API, access, billing, auth, SDK, schema, shared package, or broad refactor work:
+
+```text
+Before changing this API/access logic, call anchor_check_cross_repo_impact.
+Find affected repos, API consumers, regressions, and required tests.
+```
+
+Org anomaly detection is deterministic, not magic. It flags evidence-backed risks such as access-control changes without tests, API contract changes with known consumers, shared package blast radius, known regression matches, stale org indexes, and missing consumer updates.
+
 ## Team Rules
 
 Team-approved constraints can live in a committed `anchor.rules.json` file:
@@ -465,6 +522,12 @@ Architecture:
 Before adding this API integration, call `anchor_get_architecture` for the `api` area and summarize existing placement, import, and test patterns.
 ```
 
+Cross-repo impact:
+
+```text
+Before changing this access/API/shared-package logic, call `anchor_check_cross_repo_impact` and summarize affected repos, API consumers, regression memory, stale-index warnings, and required tests.
+```
+
 Onboarding:
 
 ```text
@@ -501,6 +564,11 @@ Secondary tools:
 - `anchor_get_architecture_map`
 - `anchor_onboarding_pack`
 - `anchor_get_playbook`
+- `anchor_get_org_context`
+- `anchor_check_cross_repo_impact`
+- `anchor_find_api_consumers`
+- `anchor_get_org_architecture`
+- `anchor_org_index_status`
 
 ## Development Commands
 
@@ -525,6 +593,10 @@ pnpm --filter @pratik7368patil/anchor start -- onboarding --area api
 pnpm --filter @pratik7368patil/anchor start -- eval init
 pnpm --filter @pratik7368patil/anchor start -- eval run
 pnpm --filter @pratik7368patil/anchor start -- ci
+pnpm --filter @pratik7368patil/anchor start -- org init --org my-org
+pnpm --filter @pratik7368patil/anchor start -- org add-repo my-org/backend-api --org my-org --group backend
+pnpm --filter @pratik7368patil/anchor start -- org sync --org my-org
+pnpm --filter @pratik7368patil/anchor start -- org impact --org my-org --repo my-org/backend-api --diff-file change.diff
 pnpm --filter @pratik7368patil/anchor start -- playbooks suggest
 pnpm --filter @pratik7368patil/anchor start -- rules suggest
 pnpm --filter @pratik7368patil/anchor start -- doctor
@@ -630,6 +702,21 @@ Run `anchor health` for the reason and suggested next command. Common fixes are 
 
 No related tests:
 Run `anchor index-code` and confirm test files are not ignored by git. Anchor only links tests it can see in tracked or non-ignored files.
+
+Org repo not cloned:
+Run `anchor org clone --org my-org --repo owner/name`, then `anchor org status --org my-org`.
+
+Clone permission denied:
+Confirm your GitHub token or local git credential can read the repo. Anchor uses read-only `git clone`/`git fetch`; it does not request write access.
+
+Stale org index:
+Run `anchor org sync --org my-org`. If only code changed, `anchor org index --org my-org --code-only --force` is enough.
+
+No API consumers found:
+Run `anchor org sync --org my-org` after allowlisting both provider and consumer repos. Consumers are detected from package dependencies, imports, API route strings, GraphQL operation names, and SDK/client-like code.
+
+Org impact too noisy:
+Start with `anchor org impact --org my-org --repo owner/name --diff-file change.diff --strict`, then reduce the allowlist to repos that actually interact with that area.
 
 ## Safety Notes
 

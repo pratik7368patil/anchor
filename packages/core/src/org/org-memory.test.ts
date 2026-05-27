@@ -1,0 +1,227 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { describe, expect, it } from "vitest";
+import {
+  addOrgRepoConfig,
+  checkOrgImpact,
+  cloneOrgRepos,
+  findOrgApiConsumers,
+  getOrgArchitectureMap,
+  getOrgStatus,
+  indexOrgRepos,
+  initOrgConfig,
+  loadOrgConfig,
+  openOrgDatabase,
+  orgRepoLocalPath,
+  plannedOrgCloneCommands,
+  removeOrgRepoConfig,
+} from "../index.js";
+
+function tempDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "anchor-org-test-"));
+}
+
+function writeFile(cwd: string, filePath: string, content: string): void {
+  const target = path.join(cwd, filePath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content);
+}
+
+function initGitRepo(cwd: string): void {
+  execFileSync("git", ["init", "-b", "main"], { cwd, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "anchor@example.test"], { cwd, stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "Anchor Test"], { cwd, stdio: "ignore" });
+}
+
+function commitAll(cwd: string, message: string): void {
+  execFileSync("git", ["add", "."], { cwd, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", message], { cwd, stdio: "ignore" });
+}
+
+function createBackendRepo(root: string): string {
+  const repo = path.join(root, "backend-api");
+  fs.mkdirSync(repo, { recursive: true });
+  initGitRepo(repo);
+  writeFile(
+    repo,
+    "package.json",
+    JSON.stringify({ name: "@acme/backend-api", version: "1.0.0" }, null, 2),
+  );
+  writeFile(
+    repo,
+    "src/api/user-access.ts",
+    [
+      'export const USER_ACCESS_ROUTE = "/api/user-access";',
+      "export function getUserAccess() {",
+      "  return { allowed: true };",
+      "}",
+    ].join("\n"),
+  );
+  writeFile(
+    repo,
+    "src/api/user-access.test.ts",
+    "import { getUserAccess } from './user-access';\ntest('keeps access contract', () => expect(getUserAccess().allowed).toBe(true));\n",
+  );
+  commitAll(repo, "initial backend");
+  return repo;
+}
+
+function createFrontendRepo(root: string): string {
+  const repo = path.join(root, "frontend-app");
+  fs.mkdirSync(repo, { recursive: true });
+  initGitRepo(repo);
+  writeFile(
+    repo,
+    "package.json",
+    JSON.stringify(
+      {
+        name: "@acme/frontend-app",
+        version: "1.0.0",
+        dependencies: { "@acme/backend-api": "workspace:*" },
+      },
+      null,
+      2,
+    ),
+  );
+  writeFile(
+    repo,
+    "src/api/user-access-client.ts",
+    [
+      'import { USER_ACCESS_ROUTE } from "@acme/backend-api";',
+      "export async function fetchUserAccess() {",
+      '  return fetch("/api/user-access");',
+      "}",
+    ].join("\n"),
+  );
+  commitAll(repo, "initial frontend");
+  return repo;
+}
+
+describe("org memory", () => {
+  it("manages allowlisted repos idempotently", () => {
+    const baseDir = tempDir();
+    initOrgConfig("acme", baseDir);
+    addOrgRepoConfig(
+      "acme",
+      "acme/backend-api",
+      { alias: "backend", group: "backend", cloneUrl: "https://github.com/acme/backend-api.git" },
+      baseDir,
+    );
+    addOrgRepoConfig(
+      "acme",
+      "acme/backend-api",
+      { alias: "backend", group: "backend", cloneUrl: "https://github.com/acme/backend-api.git" },
+      baseDir,
+    );
+    let config = loadOrgConfig("acme", baseDir);
+    expect(config.repos).toHaveLength(1);
+    expect(config.repos[0]?.enabled).toBe(true);
+
+    config = removeOrgRepoConfig("acme", "acme/backend-api", baseDir);
+    expect(config.repos[0]?.enabled).toBe(false);
+
+    expect(() => addOrgRepoConfig("acme", "not-a-full-name", {}, baseDir)).toThrow(/owner\/name/);
+  });
+
+  it("plans safe shallow clone and pull commands without tokens", () => {
+    const localPath = path.join(tempDir(), "repo");
+    const commands = plannedOrgCloneCommands(
+      {
+        fullName: "acme/backend-api",
+        alias: "backend-api",
+        group: "backend",
+        cloneUrl: "https://github.com/acme/backend-api.git",
+        defaultBranch: "main",
+        enabled: true,
+      },
+      localPath,
+    );
+    expect(commands[0]?.args).toEqual([
+      "clone",
+      "--depth",
+      "1",
+      "https://github.com/acme/backend-api.git",
+      localPath,
+    ]);
+    expect(JSON.stringify(commands)).not.toContain("GITHUB_TOKEN");
+  });
+
+  it("indexes cloned repos into one org database, detects consumers, and reports impact", async () => {
+    const root = tempDir();
+    const baseDir = path.join(root, "orgs");
+    const backendSource = createBackendRepo(root);
+    const frontendSource = createFrontendRepo(root);
+    let config = initOrgConfig("acme", baseDir);
+    config = addOrgRepoConfig(
+      "acme",
+      "acme/backend-api",
+      {
+        alias: "backend-api",
+        group: "backend",
+        cloneUrl: backendSource,
+        defaultBranch: "main",
+      },
+      baseDir,
+    );
+    config = addOrgRepoConfig(
+      "acme",
+      "acme/frontend-app",
+      {
+        alias: "frontend-app",
+        group: "frontend",
+        cloneUrl: frontendSource,
+        defaultBranch: "main",
+      },
+      baseDir,
+    );
+
+    const db = openOrgDatabase("acme", baseDir);
+    try {
+      const cloneResults = await cloneOrgRepos({ config, db, baseDir });
+      expect(cloneResults.every((result) => !result.error)).toBe(true);
+      expect(fs.existsSync(orgRepoLocalPath("acme", config.repos[0]!, baseDir))).toBe(true);
+
+      const first = await indexOrgRepos(db, config, { codeOnly: true, force: true, baseDir });
+      const firstChunkCount = (
+        db.prepare("SELECT COUNT(*) AS count FROM code_chunks").get() as { count: number }
+      ).count;
+      const second = await indexOrgRepos(db, config, { codeOnly: true, baseDir });
+      const secondChunkCount = (
+        db.prepare("SELECT COUNT(*) AS count FROM code_chunks").get() as { count: number }
+      ).count;
+      expect(first.graph.apiConsumers).toBeGreaterThan(0);
+      expect(second.repos).toHaveLength(2);
+      expect(secondChunkCount).toBe(firstChunkCount);
+
+      const status = getOrgStatus(db, config, baseDir);
+      expect(status.enabledRepoCount).toBe(2);
+      expect(status.crossRepoEdgeCount).toBeGreaterThan(0);
+      expect(status.apiConsumerCount).toBeGreaterThan(0);
+
+      const consumers = findOrgApiConsumers(db, config, {
+        repo: "acme/backend-api",
+        files: ["src/api/user-access.ts"],
+      });
+      expect(consumers[0]?.consumerRepo).toBe("acme/frontend-app");
+
+      const impact = checkOrgImpact(db, config, {
+        repo: "acme/backend-api",
+        files: ["src/api/user-access.ts"],
+        strict: true,
+      });
+      expect(impact.markdown).toContain("# Anchor Cross-Repo Impact");
+      expect(
+        impact.metadata.anomalies.some((item) => item.category === "api_contract_change"),
+      ).toBe(true);
+      expect(impact.metadata.apiConsumers[0]?.consumerRepo).toBe("acme/frontend-app");
+
+      const map = getOrgArchitectureMap(db, config, "mermaid");
+      expect(map.markdown).toContain("```mermaid");
+      expect(JSON.stringify(map.metadata)).toContain("acme/frontend-app");
+    } finally {
+      db.close();
+    }
+  });
+});

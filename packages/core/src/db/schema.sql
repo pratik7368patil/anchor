@@ -298,6 +298,108 @@ CREATE TABLE IF NOT EXISTS sync_state (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS org_repositories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  alias TEXT NOT NULL,
+  repo_group TEXT NOT NULL,
+  clone_url TEXT NOT NULL,
+  default_branch TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(org, full_name)
+);
+
+CREATE TABLE IF NOT EXISTS org_repo_state (
+  org TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  local_path TEXT NOT NULL,
+  default_branch TEXT NOT NULL,
+  current_commit TEXT,
+  last_pulled_at TEXT,
+  last_code_indexed_commit TEXT,
+  last_code_indexed_at TEXT,
+  last_pr_sync_at TEXT,
+  last_error TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(org, repo)
+);
+
+CREATE TABLE IF NOT EXISTS org_index_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  org TEXT NOT NULL,
+  repo TEXT,
+  command TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  status TEXT NOT NULL,
+  prs_indexed INTEGER NOT NULL DEFAULT 0,
+  code_files_indexed INTEGER NOT NULL DEFAULT 0,
+  failures_json TEXT NOT NULL DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS org_cross_repo_edges (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  source_repo TEXT NOT NULL,
+  source_path TEXT NOT NULL,
+  target_repo TEXT NOT NULL,
+  target_path TEXT,
+  relationship TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS org_api_contracts (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  contract TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS org_api_consumers (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  provider_repo TEXT NOT NULL,
+  provider_path TEXT,
+  consumer_repo TEXT NOT NULL,
+  consumer_path TEXT NOT NULL,
+  contract TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS org_anomaly_events (
+  id TEXT PRIMARY KEY,
+  org TEXT NOT NULL,
+  category TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  summary_sanitized TEXT NOT NULL,
+  affected_repos_json TEXT NOT NULL,
+  affected_files_json TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  recommended_checks_json TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS org_sync_checkpoints (
+  org TEXT NOT NULL,
+  repo TEXT NOT NULL,
+  checkpoint_key TEXT NOT NULL,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(org, repo, checkpoint_key)
+);
+
 CREATE INDEX IF NOT EXISTS idx_pull_requests_repo_number ON pull_requests(repo_id, number);
 CREATE INDEX IF NOT EXISTS idx_pr_files_path ON pr_files(path);
 CREATE INDEX IF NOT EXISTS idx_pr_comments_source ON pr_comments(source_type);
@@ -319,3 +421,10 @@ CREATE INDEX IF NOT EXISTS idx_test_commands_file ON test_commands(file_path);
 CREATE INDEX IF NOT EXISTS idx_regression_events_pr ON regression_events(pr_id);
 CREATE INDEX IF NOT EXISTS idx_index_runs_started ON index_runs(started_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_events_result ON feedback_events(result_id);
+CREATE INDEX IF NOT EXISTS idx_org_repositories_org ON org_repositories(org);
+CREATE INDEX IF NOT EXISTS idx_org_repo_state_org ON org_repo_state(org);
+CREATE INDEX IF NOT EXISTS idx_org_edges_source ON org_cross_repo_edges(org, source_repo);
+CREATE INDEX IF NOT EXISTS idx_org_edges_target ON org_cross_repo_edges(org, target_repo);
+CREATE INDEX IF NOT EXISTS idx_org_consumers_provider ON org_api_consumers(org, provider_repo);
+CREATE INDEX IF NOT EXISTS idx_org_consumers_consumer ON org_api_consumers(org, consumer_repo);
+CREATE INDEX IF NOT EXISTS idx_org_anomalies_org ON org_anomaly_events(org, severity);
