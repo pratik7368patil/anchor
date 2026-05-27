@@ -152,7 +152,7 @@ export function runOrgList(options: OrgOptions) {
 export async function runOrgClone(options: OrgOptions) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
-  const progress = createProgressReporter(options);
+  const progress = createProgressReporter({ ...options, title: "Cloning org repos" });
   try {
     const results = await cloneOrgRepos({
       config,
@@ -171,7 +171,10 @@ export async function runOrgClone(options: OrgOptions) {
 export async function runOrgIndex(options: OrgOptions & { command?: "org index" | "org sync" }) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
-  const progress = createProgressReporter(options);
+  const progress = createProgressReporter({
+    ...options,
+    title: options.command === "org sync" ? "Syncing org memory" : "Indexing org memory",
+  });
   try {
     return await indexOrgRepos(db, config, {
       repo: options.repo,
@@ -200,7 +203,7 @@ export function runOrgStatus(options: OrgOptions) {
 export function runOrgGraph(options: OrgOptions) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
-  const progress = createProgressReporter(options);
+  const progress = createProgressReporter({ ...options, title: "Building org graph" });
   try {
     const graph = rebuildOrgGraph(db, config, {
       onProgress: progress.onGraphProgress,

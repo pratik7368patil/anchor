@@ -221,16 +221,18 @@ The local database is written to:
 ### Indexing Option Guide
 
 `anchor index`:
-Use this as the normal first command. Add `--repo owner/name` when git remote detection is unavailable, `--limit 50` for a fast first pass, `--since YYYY-MM-DD` for a targeted backfill, `--no-code` to skip code indexing, `--force` to rebuild local derived records, `--concurrency 1-10` to tune supplemental patch enrichment, and `--progress pretty|plain|off` to control terminal progress. Use `--all` only when you intentionally want all merged PRs through the `index` command.
+Use this as the normal first command. Add `--repo owner/name` when git remote detection is unavailable, `--limit 50` for a fast first pass, `--since YYYY-MM-DD` for a targeted backfill, `--no-code` to skip code indexing, `--force` to rebuild local derived records, and `--concurrency 1-10` to tune supplemental patch enrichment. Use `--all` only when you intentionally want all merged PRs through the `index` command.
 
 `anchor index-all`:
-Use this for complete merged PR history. Prefer `--concurrency 1` or `--concurrency 2` on large repositories. Use `--no-code` if the code index is already fresh, `--progress plain` for CI logs, and rerun the same command after a GitHub reset if Anchor saved a resume checkpoint.
+Use this for complete merged PR history. Prefer `--concurrency 1` or `--concurrency 2` on large repositories. Use `--no-code` if the code index is already fresh, and rerun the same command after a GitHub reset if Anchor saved a resume checkpoint.
 
 `anchor index-code`:
-Use this when you do not have GitHub auth or only need current-code context. It refreshes code chunks, test links, test commands, and Architecture Memory. Use `--force` when `anchor health` reports stale or inconsistent code records and `--progress pretty` when indexing a large repo interactively.
+Use this when you do not have GitHub auth or only need current-code context. It refreshes code chunks, test links, test commands, and Architecture Memory. Use `--force` when `anchor health` reports stale or inconsistent code records.
 
 `anchor sync`:
-Use this after the first index. It is incremental and safe to run repeatedly. Add `--all` to catch up from an old cursor, `--since YYYY-MM-DD` to override the cursor, `--no-code` for PR-only sync, `--concurrency 1-10` to tune patch enrichment pressure, and `--progress off` when another tool is wrapping output.
+Use this after the first index. It is incremental and safe to run repeatedly. Add `--all` to catch up from an old cursor, `--since YYYY-MM-DD` to override the cursor, `--no-code` for PR-only sync, and `--concurrency 1-10` to tune patch enrichment pressure.
+
+Anchor automatically chooses progress output: modern live progress in interactive terminals, plain line logs in CI or non-TTY shells, and no progress for JSON output.
 
 ## Sync
 
@@ -292,13 +294,13 @@ Use `--org my-org` on every org command to select the local namespace under `~/.
 Use `--group backend|frontend|shared|infra|docs|unknown` so org maps and impact reports are easier to scan. Use `--alias name` when the full repo name is long or similar to another repo.
 
 `anchor org clone`:
-Use `--repo owner/name` to retry one allowlisted repo. Use `--concurrency 1-3` to control local/network pressure while cloning or pulling multiple repos. Use `--progress pretty|plain|off` when you want to force terminal progress behavior.
+Use `--repo owner/name` to retry one allowlisted repo. Use `--concurrency 1-3` to control local/network pressure while cloning or pulling multiple repos. Anchor automatically shows live progress in interactive terminals and plain logs in CI.
 
 `anchor org index`:
 Use `--repo owner/name` to refresh one repo, `--code-only` when GitHub auth is unavailable or PR history is already fresh, `--prs-only` when clones are already fresh, `--no-graph` when you want to skip the final cross-repo graph rebuild, and `--force` after stale index warnings.
 
 `anchor org sync`:
-Use this as the daily org command. Add `--repo owner/name` for a focused retry, `--since YYYY-MM-DD` for targeted PR catch-up, `--concurrency 1-3` for large allowlists, `--no-graph` when you want clone/index work to finish first, and `--force` when status reports stale org data.
+Use this as the daily org command. Add `--repo owner/name` for a focused retry, `--since YYYY-MM-DD` for targeted PR catch-up, `--concurrency 1-3` for large allowlists, `--no-graph` when you want clone/index work to finish first, and `--force` when status reports stale org data. If a recent previous sync already finished PR/code indexing but was interrupted before graph completion, rerunning `anchor org sync` resumes from the graph phase and skips redundant PR fetches for completed repos.
 
 `anchor org graph`:
 Rebuilds cross-repo edges, API contracts, and API consumers from the already-indexed org database without cloning repos, fetching GitHub, or re-indexing code. Use it after `anchor org sync --no-graph`, or when `anchor org status` shows zero cross-repo edges/API consumers after indexing finishes. Add `--html` to generate a standalone local graph page, `--open` to open it in your browser, and `--output path/to/graph.html` to choose the file path.
@@ -317,7 +319,7 @@ Use `--repo owner/name` to identify the repo being checked, `--diff-file change.
 `anchor org ci`:
 Use `--strict` to fail on blocker/high anomalies and `--min-coverage 70` to enforce an org coverage threshold.
 
-Org Memory indexes current code and, when GitHub auth is available, PR history for each allowlisted repo into one local SQLite database. Re-runs are idempotent: unchanged code indexes are skipped, changed repos replace their current-code records, PRs are upserted by repo and number, and successful repos stay intact when another repo fails.
+Org Memory indexes current code and, when GitHub auth is available, PR history for each allowlisted repo into one local SQLite database. Re-runs are idempotent: unchanged code indexes are skipped, changed repos replace their current-code records, PRs are upserted by repo and number, recently completed PR syncs are reused when resuming unfinished graph work, and successful repos stay intact when another repo fails.
 
 Anchor builds deterministic cross-repo edges from package dependencies, imports, API/schema/client strings, SDK-like consumers, and indexed code evidence. Cross-repo edges and API consumers appear after the graph phase completes; use `anchor org graph` to rerun only that phase, or `anchor org graph --open` to inspect the graph in an offline interactive HTML view. This powers these MCP tools:
 

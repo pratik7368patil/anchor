@@ -39,7 +39,10 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
-  const progress = createProgressReporter({ progress: options.progress });
+  const progress = createProgressReporter({
+    progress: options.progress,
+    title: "Syncing repo memory",
+  });
   progress.log("Anchor sync started.");
   progress.log(`Repository: ${repo}`);
   progress.log(`Database path: ${databasePath}`);

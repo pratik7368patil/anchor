@@ -63,7 +63,10 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
-  const progress = createProgressReporter({ progress: options.progress });
+  const progress = createProgressReporter({
+    progress: options.progress,
+    title: options.all ? "Indexing complete repo history" : "Indexing repo memory",
+  });
   progress.log("Anchor index started.");
   progress.log(`Repository: ${repo}`);
   progress.log(`Database path: ${databasePath}`);
@@ -179,7 +182,10 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
   const databasePath = defaultDatabasePath(root);
   if (options.force) removeDatabaseFiles(databasePath);
 
-  const progress = createProgressReporter({ progress: options.progress });
+  const progress = createProgressReporter({
+    progress: options.progress,
+    title: "Indexing codebase",
+  });
   progress.log("Anchor code index started.");
   progress.log(`Repository: ${repo}`);
   progress.log(`Database path: ${databasePath}`);

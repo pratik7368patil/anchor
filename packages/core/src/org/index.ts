@@ -16,6 +16,7 @@ import { orgRepoLocalPath } from "./config.js";
 import { defaultGitCommandRunner, type GitCommandRunner } from "./clone.js";
 import {
   getOrgRepoState,
+  getOrgGraphState,
   getOrgGraphCounts,
   recordOrgIndexRun,
   recordOrgGraphState,
@@ -24,9 +25,13 @@ import {
 } from "./database.js";
 import { rebuildOrgGraph } from "./graph.js";
 
+const ORG_SYNC_RESUME_WINDOW_MS = 12 * 60 * 60 * 1000;
+
 export type OrgRepoIndexResult = {
   repo: string;
   skippedCode: boolean;
+  skippedHistory?: boolean;
+  historySkippedReason?: string;
   currentCommit?: string;
   history?: IndexSummary;
   code?: CodeIndexSummary;
@@ -57,6 +62,7 @@ export type OrgIndexOptions = {
   command?: "org index" | "org sync";
   baseDir?: string;
   runner?: GitCommandRunner;
+  fetchPullRequests?: typeof fetchMergedPullRequests;
   onFetchProgress?: (progress: FetchPullRequestsProgress) => void;
   onPrIndexProgress?: (progress: IndexPullRequestsProgress) => void;
   onCodeProgress?: (progress: CodeIndexProgress) => void;
@@ -75,6 +81,45 @@ function missingCloneError(repo: string, localPath: string): string {
   return `Repo ${repo} is not cloned at ${localPath}. Run anchor org clone --repo ${repo} --org <org>.`;
 }
 
+function latestIsoDate(dates: Array<string | undefined>): string | undefined {
+  return dates.filter((date): date is string => Boolean(date)).sort().at(-1);
+}
+
+function graphIsFreshForState(input: {
+  graphBuiltAt?: string;
+  graphStatus?: string;
+  lastPrSyncAt?: string;
+  lastCodeIndexedAt?: string;
+}): boolean {
+  const latestRepoIndexAt = latestIsoDate([input.lastPrSyncAt, input.lastCodeIndexedAt]);
+  return Boolean(
+    latestRepoIndexAt &&
+      input.graphStatus === "success" &&
+      input.graphBuiltAt &&
+      input.graphBuiltAt >= latestRepoIndexAt,
+  );
+}
+
+function isWithinResumeWindow(date: string): boolean {
+  const parsed = Date.parse(date);
+  return Number.isFinite(parsed) && Date.now() - parsed <= ORG_SYNC_RESUME_WINDOW_MS;
+}
+
+function shouldSkipPrFetchForResume(input: {
+  options: OrgIndexOptions;
+  lastPrSyncAt?: string;
+  lastCodeIndexedAt?: string;
+  graphBuiltAt?: string;
+  graphStatus?: string;
+}): boolean {
+  if (input.options.command !== "org sync") return false;
+  if (input.options.force || input.options.since || input.options.noGraph) return false;
+  if (input.options.codeOnly || input.options.prsOnly) return false;
+  if (!input.lastPrSyncAt) return false;
+  if (!isWithinResumeWindow(input.lastPrSyncAt)) return false;
+  return !graphIsFreshForState(input);
+}
+
 export async function indexOrgRepos(
   db: AnchorDatabase,
   config: AnchorOrgConfig,
@@ -86,9 +131,11 @@ export async function indexOrgRepos(
     (repo) => repo.enabled && (!options.repo || repo.fullName === options.repo),
   );
   const runner = options.runner ?? defaultGitCommandRunner;
+  const fetchPullRequests = options.fetchPullRequests ?? fetchMergedPullRequests;
   const auth = options.token ? { token: options.token } : resolveGitHubToken();
   const results: OrgRepoIndexResult[] = [];
   const startedAt = new Date().toISOString();
+  const graphState = getOrgGraphState(db, config.org);
 
   for (const repo of repos) {
     const localPath = orgRepoLocalPath(config.org, repo, options.baseDir);
@@ -101,10 +148,29 @@ export async function indexOrgRepos(
       const state = getOrgRepoState(db, config.org, repo.fullName);
       let history: IndexSummary | undefined;
       let code: CodeIndexSummary | undefined;
+      let skippedHistory = false;
+      let historySkippedReason: string | undefined;
       const repoFailures: string[] = [];
 
       if (!options.codeOnly) {
-        if (!auth.token) {
+        if (
+          shouldSkipPrFetchForResume({
+            options,
+            lastPrSyncAt: state?.lastPrSyncAt,
+            lastCodeIndexedAt: state?.lastCodeIndexedAt,
+            graphBuiltAt: graphState?.lastBuiltAt,
+            graphStatus: graphState?.lastStatus,
+          })
+        ) {
+          skippedHistory = true;
+          historySkippedReason =
+            "PR history already synced; resuming unfinished org graph/index work.";
+          options.onFetchProgress?.({
+            stage: "skipped_pull_request_fetch",
+            repo: repo.fullName,
+            reason: historySkippedReason,
+          });
+        } else if (!auth.token) {
           repoFailures.push(
             "GitHub authentication is required for org PR indexing. Run gh auth login, or export GITHUB_TOKEN/GH_TOKEN with read-only access.",
           );
@@ -115,7 +181,7 @@ export async function indexOrgRepos(
               (options.command === "org sync"
                 ? (state?.lastPrSyncAt ?? getLastSyncTime(db, repo.fullName))
                 : undefined);
-            const pullRequests = await fetchMergedPullRequests({
+            const pullRequests = await fetchPullRequests({
               token: auth.token,
               repo: repo.fullName,
               limit: 200,
@@ -182,6 +248,8 @@ export async function indexOrgRepos(
       results.push({
         repo: repo.fullName,
         skippedCode: Boolean(codeUnchanged || options.prsOnly),
+        skippedHistory,
+        historySkippedReason,
         currentCommit,
         history,
         code,
