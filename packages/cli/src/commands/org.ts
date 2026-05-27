@@ -25,6 +25,7 @@ import {
   validateOrgRepoFullName,
   validateOrgRepoGroup,
 } from "@pratik7368patil/anchor-core";
+import type { OrgRunTimelineSnapshot, OrgRunTimelineStepStatus } from "@pratik7368patil/anchor-core";
 import { createProgressReporter, type ProgressMode } from "./progress.js";
 import { writeOrgGraphHtml } from "./org-graph-html.js";
 
@@ -456,6 +457,7 @@ export function printJsonOrMarkdown(
         stale: boolean;
         elapsedSeconds: number;
         lastUpdateAgeSeconds: number;
+        timeline?: OrgRunTimelineSnapshot;
       };
       repos: Array<{ fullName: string; group: string; cloned: boolean; enabled: boolean }>;
     };
@@ -493,6 +495,7 @@ export function printJsonOrMarkdown(
       console.log(
         `Active phase: ${status.activeRun.phase}, elapsed ${status.activeRun.elapsedSeconds}s, last update ${status.activeRun.lastUpdateAgeSeconds}s ago`,
       );
+      if (status.activeRun.timeline) printActiveTimeline(status.activeRun.timeline);
     }
     console.log("");
     console.log("## Repos");
@@ -504,6 +507,51 @@ export function printJsonOrMarkdown(
     return;
   }
   console.log(JSON.stringify(result, null, 2));
+}
+
+function printActiveTimeline(timeline: OrgRunTimelineSnapshot): void {
+  const repo =
+    timeline.repo && timeline.repoIndex && timeline.repoTotal
+      ? `${timeline.repoIndex}/${timeline.repoTotal}: ${timeline.repo}`
+      : (timeline.repo ?? "current run");
+  console.log(`Active timeline: ${repo}`);
+  for (const step of timeline.steps.slice(-8)) {
+    const count =
+      typeof step.current === "number" && typeof step.total === "number"
+        ? ` ${step.current}/${step.total}`
+        : typeof step.current === "number"
+          ? ` ${step.current}`
+          : "";
+    const duration =
+      typeof step.durationMs === "number" ? `, ${formatStatusDuration(step.durationMs)}` : "";
+    const detail = step.detail ? ` - ${step.detail}` : "";
+    console.log(`  ${timelineStatusSymbol(step.status)} ${step.label}${count}${duration}${detail}`);
+  }
+  if (timeline.recentRepos.length > 0) {
+    console.log("Recent repo completions:");
+    for (const repoSummary of timeline.recentRepos.slice(-3)) {
+      const detail = repoSummary.detail ? ` - ${repoSummary.detail}` : "";
+      console.log(
+        `  ${timelineStatusSymbol(repoSummary.status)} ${repoSummary.repo}, ${formatStatusDuration(repoSummary.durationMs)}${detail}`,
+      );
+    }
+  }
+}
+
+function timelineStatusSymbol(status: OrgRunTimelineStepStatus): string {
+  if (status === "done") return "✓";
+  if (status === "skipped") return "◇";
+  if (status === "warn") return "!";
+  if (status === "fail") return "×";
+  if (status === "wait") return "…";
+  return "›";
+}
+
+function formatStatusDuration(durationMs: number): string {
+  if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`;
+  const seconds = durationMs / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 }
 
 export function printOrgInit(result: ReturnType<typeof runOrgInit>): void {

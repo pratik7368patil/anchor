@@ -495,6 +495,37 @@ export type OrgStatus = {
   >;
 };
 
+export type OrgRunTimelineStepStatus = "active" | "done" | "skipped" | "warn" | "fail" | "wait";
+
+export type OrgRunTimelineStep = {
+  id: string;
+  label: string;
+  status: OrgRunTimelineStepStatus;
+  startedAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  current?: number;
+  total?: number;
+  detail?: string;
+};
+
+export type OrgRunTimelineRepoSummary = {
+  repo: string;
+  status: OrgRunTimelineStepStatus;
+  durationMs: number;
+  detail?: string;
+};
+
+export type OrgRunTimelineSnapshot = {
+  repo?: string;
+  repoIndex?: number;
+  repoTotal?: number;
+  activeStepId?: string;
+  steps: OrgRunTimelineStep[];
+  recentRepos: OrgRunTimelineRepoSummary[];
+};
+
 export type OrgRunHeartbeat = {
   pid: number;
   command: string;
@@ -503,6 +534,7 @@ export type OrgRunHeartbeat = {
   repoIndex?: number;
   repoTotal?: number;
   phase: string;
+  timeline?: OrgRunTimelineSnapshot;
   startedAt: string;
   updatedAt: string;
 };
@@ -844,11 +876,90 @@ export type CodeIndexProgress =
       chunks: number;
     }
   | {
+      stage: "building_architecture_imports";
+      repo: string;
+      current: number;
+      total: number;
+      filePath?: string;
+      imports: number;
+    }
+  | {
+      stage: "building_architecture_components";
+      repo: string;
+      current: number;
+      total: number;
+      filePath?: string;
+      components: number;
+    }
+  | {
+      stage: "building_architecture_patterns";
+      repo: string;
+      current: number;
+      total: number;
+      area?: ArchitectureArea;
+      patterns: number;
+    }
+  | {
       stage: "indexed_architecture";
       repo: string;
       components: number;
       patterns: number;
       imports: number;
+    }
+  | {
+      stage: "writing_code_index";
+      repo: string;
+      phase: string;
+    }
+  | {
+      stage: "deleting_existing_code_index";
+      repo: string;
+      chunks: number;
+      patterns: number;
+    }
+  | {
+      stage: "writing_code_files";
+      repo: string;
+      current: number;
+      total: number;
+      filePath?: string;
+    }
+  | {
+      stage: "writing_code_chunks";
+      repo: string;
+      current: number;
+      total: number;
+      filePath?: string;
+      chunks: number;
+    }
+  | {
+      stage: "writing_test_awareness";
+      repo: string;
+      current: number;
+      total: number;
+      kind: "test_files" | "test_links";
+    }
+  | {
+      stage: "writing_architecture_data";
+      repo: string;
+      current: number;
+      total: number;
+      kind: "imports" | "components" | "patterns";
+    }
+  | {
+      stage: "writing_architecture_map_edges";
+      repo: string;
+      current: number;
+      total: number;
+      edges: number;
+    }
+  | {
+      stage: "refreshing_test_commands";
+      repo: string;
+      current: number;
+      total: number;
+      phase: "detecting" | "writing";
+      commands: number;
     }
   | {
       stage: "completed_code_index";

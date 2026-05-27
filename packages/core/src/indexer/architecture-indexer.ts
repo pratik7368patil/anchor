@@ -6,6 +6,7 @@ import type {
   ArchitectureIndexData,
   ArchitecturePattern,
   CodeChunk,
+  CodeIndexProgress,
   CodeImport,
 } from "../types.js";
 import type { ChunkableCodeFile } from "./code-chunker.js";
@@ -14,6 +15,15 @@ import { sanitizeHistoricalText } from "../security/sanitize.js";
 import { uniqueStrings } from "../utils/text.js";
 
 const KNOWN_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"];
+const ARCHITECTURE_PROGRESS_INTERVAL = 250;
+
+type BuildArchitectureIndexOptions = {
+  onProgress?: (progress: CodeIndexProgress) => void;
+};
+
+function shouldEmitProgress(current: number, total: number): boolean {
+  return current === 0 || current === 1 || current === total || current % ARCHITECTURE_PROGRESS_INTERVAL === 0;
+}
 
 export function classifyArchitectureArea(
   filePath: string,
@@ -232,6 +242,7 @@ export function buildArchitectureIndex(
   repo: string,
   files: ChunkableCodeFile[],
   chunks: CodeChunk[],
+  options: BuildArchitectureIndexOptions = {},
 ): ArchitectureIndexData {
   const allPaths = files.map((file) => file.path);
   const codePaths = new Set(allPaths);
@@ -241,9 +252,28 @@ export function buildArchitectureIndex(
     symbolsByPath.set(chunk.filePath, uniqueStrings([...existing, ...chunk.symbols]).slice(0, 40));
   }
 
-  const imports = files.flatMap((file) =>
-    extractCodeImports(file.path, file.content, codePaths, repo),
-  );
+  const imports: CodeImport[] = [];
+  options.onProgress?.({
+    stage: "building_architecture_imports",
+    repo,
+    current: 0,
+    total: files.length,
+    imports: 0,
+  });
+  for (const [index, file] of files.entries()) {
+    imports.push(...extractCodeImports(file.path, file.content, codePaths, repo));
+    const current = index + 1;
+    if (shouldEmitProgress(current, files.length)) {
+      options.onProgress?.({
+        stage: "building_architecture_imports",
+        repo,
+        current,
+        total: files.length,
+        filePath: file.path,
+        imports: imports.length,
+      });
+    }
+  }
   const importsByPath = new Map<string, CodeImport[]>();
   for (const item of imports) {
     const existing = importsByPath.get(item.sourcePath) ?? [];
@@ -251,11 +281,19 @@ export function buildArchitectureIndex(
     importsByPath.set(item.sourcePath, existing);
   }
 
-  const components: ArchitectureComponent[] = files.map((file) => {
+  const components: ArchitectureComponent[] = [];
+  options.onProgress?.({
+    stage: "building_architecture_components",
+    repo,
+    current: 0,
+    total: files.length,
+    components: 0,
+  });
+  for (const [index, file] of files.entries()) {
     const area = classifyArchitectureArea(file.path, file.language, file.content);
     const fileImports = importsByPath.get(file.path) ?? [];
     const symbols = symbolsByPath.get(file.path) ?? [];
-    return {
+    components.push({
       repo,
       path: file.path,
       area,
@@ -268,33 +306,26 @@ export function buildArchitectureIndex(
       relatedTests: relatedTestsFor(file.path, allPaths),
       confidence: area === "unknown" ? 0.45 : 0.82,
       updatedAt: file.updatedAt,
-    };
-  });
+    });
+    const current = index + 1;
+    if (shouldEmitProgress(current, files.length)) {
+      options.onProgress?.({
+        stage: "building_architecture_components",
+        repo,
+        current,
+        total: files.length,
+        filePath: file.path,
+        components: components.length,
+      });
+    }
+  }
 
   const componentByPath = new Map(components.map((component) => [component.path, component]));
-  const patterns: ArchitecturePattern[] = [];
   const componentsByArea = new Map<ArchitectureArea, ArchitectureComponent[]>();
   for (const component of components) {
     const existing = componentsByArea.get(component.area) ?? [];
     existing.push(component);
     componentsByArea.set(component.area, existing);
-  }
-
-  for (const [area, areaComponents] of componentsByArea.entries()) {
-    const filesForArea = areaComponents.map((component) => component.path);
-    const directories = topDirectories(filesForArea);
-    const symbols = areaComponents.flatMap((component) => component.symbols);
-    patterns.push(
-      createPattern({
-        repo,
-        area,
-        name: `${area} area placement`,
-        summary: `${area} code is represented by ${filesForArea.length} file(s), commonly under ${directories.join(", ")}. Use these files as current architecture evidence before adding or changing similar code.`,
-        sourceFiles: filesForArea,
-        symbols,
-        confidence: 0.55 + Math.min(0.3, filesForArea.length * 0.04),
-      }),
-    );
   }
 
   const importDirectionCounts = new Map<
@@ -314,6 +345,44 @@ export function buildArchitectureIndex(
     importDirectionCounts.set(key, existing);
   }
 
+  const patterns: ArchitecturePattern[] = [];
+  const patternTotal = componentsByArea.size + importDirectionCounts.size;
+  let patternProgress = 0;
+  options.onProgress?.({
+    stage: "building_architecture_patterns",
+    repo,
+    current: 0,
+    total: patternTotal,
+    patterns: 0,
+  });
+  for (const [area, areaComponents] of componentsByArea.entries()) {
+    const filesForArea = areaComponents.map((component) => component.path);
+    const directories = topDirectories(filesForArea);
+    const symbols = areaComponents.flatMap((component) => component.symbols);
+    patterns.push(
+      createPattern({
+        repo,
+        area,
+        name: `${area} area placement`,
+        summary: `${area} code is represented by ${filesForArea.length} file(s), commonly under ${directories.join(", ")}. Use these files as current architecture evidence before adding or changing similar code.`,
+        sourceFiles: filesForArea,
+        symbols,
+        confidence: 0.55 + Math.min(0.3, filesForArea.length * 0.04),
+      }),
+    );
+    patternProgress += 1;
+    if (shouldEmitProgress(patternProgress, patternTotal)) {
+      options.onProgress?.({
+        stage: "building_architecture_patterns",
+        repo,
+        current: patternProgress,
+        total: patternTotal,
+        area,
+        patterns: patterns.length,
+      });
+    }
+  }
+
   for (const [key, value] of importDirectionCounts.entries()) {
     const [sourceArea, targetArea] = key.split("->") as [ArchitectureArea, ArchitectureArea];
     patterns.push(
@@ -327,6 +396,17 @@ export function buildArchitectureIndex(
         confidence: 0.62 + Math.min(0.25, value.count * 0.05),
       }),
     );
+    patternProgress += 1;
+    if (shouldEmitProgress(patternProgress, patternTotal)) {
+      options.onProgress?.({
+        stage: "building_architecture_patterns",
+        repo,
+        current: patternProgress,
+        total: patternTotal,
+        area: sourceArea,
+        patterns: patterns.length,
+      });
+    }
   }
 
   const testedComponents = components.filter((component) => component.relatedTests.length > 0);

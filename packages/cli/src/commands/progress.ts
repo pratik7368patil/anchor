@@ -1,5 +1,5 @@
 import readline from "node:readline";
-import { clearOrgHeartbeat, writeOrgHeartbeat } from "@pratik7368patil/anchor-core";
+import { clearOrgHeartbeat, redactSecrets, writeOrgHeartbeat } from "@pratik7368patil/anchor-core";
 import type {
   CodeIndexProgress,
   FetchPullRequestsProgress,
@@ -8,6 +8,8 @@ import type {
   OrgCloneProgress,
   OrgLifecycleProgress,
   OrgRunHeartbeat,
+  OrgRunTimelineSnapshot,
+  OrgRunTimelineStepStatus,
 } from "@pratik7368patil/anchor-core";
 
 export type ProgressMode = "pretty" | "plain" | "off";
@@ -18,7 +20,7 @@ type ProgressStream = {
   write: (text: string) => boolean;
 };
 
-type ProgressTaskState = "active" | "done" | "warn" | "fail" | "wait";
+type ProgressTaskState = "active" | "done" | "skip" | "warn" | "fail" | "wait";
 
 type ProgressTask = {
   key: string;
@@ -29,11 +31,50 @@ type ProgressTask = {
   detail?: string;
   state?: ProgressTaskState;
   pinned?: boolean;
+  timelineStepId?: string;
+  timelineLabel?: string;
+  timelineRepo?: string;
+  timelineRepoIndex?: number;
+  timelineRepoTotal?: number;
 };
 
 type RenderedProgressTask = ProgressTask & {
   startedAt: number;
   updatedAt: number;
+};
+
+type TimelineStep = {
+  id: string;
+  label: string;
+  status: ProgressTaskState;
+  startedAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  current?: number;
+  total?: number;
+  detail?: string;
+};
+
+type TimelineRepoSummary = {
+  repo: string;
+  status: ProgressTaskState;
+  durationMs: number;
+  detail?: string;
+};
+
+type TimelineSnapshot = {
+  command: string;
+  org: string;
+  repo?: string;
+  repoIndex?: number;
+  repoTotal?: number;
+  activeStepId?: string;
+  steps: TimelineStep[];
+  recentRepos: TimelineRepoSummary[];
+  slowestSteps: Array<{ label: string; repo?: string; durationMs: number }>;
+  startedAt: number;
+  updatedAt: number;
+  completed: boolean;
 };
 
 export function parseProgressMode(value: string): ProgressMode {
@@ -66,6 +107,24 @@ function formatElapsed(startedAt: number): string {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+}
+
+function formatDurationMs(durationMs: number): string {
+  if (durationMs < 1000) return `${Math.max(1, Math.round(durationMs))}ms`;
+  const seconds = durationMs / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return `${minutes}m ${remainder}s`;
+}
+
+function timelineStatus(state: ProgressTaskState): OrgRunTimelineStepStatus {
+  return state === "skip" ? "skipped" : state;
+}
+
+function sanitizeTimelineDetail(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return redactSecrets(value.replace(/\s+/g, " ")).slice(0, 220);
 }
 
 function supportsColor(stream: ProgressStream): boolean {
@@ -159,10 +218,228 @@ function progressBar(
       ? "33"
       : input.state === "fail"
         ? "31"
+        : input.state === "skip"
+          ? "2"
         : input.state === "done"
           ? "32"
           : "36";
   return colorize(input.color, color, body);
+}
+
+class ProgressTimelineTracker {
+  private readonly startedAt = Date.now();
+  private readonly steps = new Map<string, TimelineStep>();
+  private readonly recentRepos: TimelineRepoSummary[] = [];
+  private readonly slowestSteps: Array<{ label: string; repo?: string; durationMs: number }> = [];
+  private currentRepo: string | undefined;
+  private currentRepoIndex: number | undefined;
+  private currentRepoTotal: number | undefined;
+  private repoStartedAt = Date.now();
+  private updatedAt = Date.now();
+  private activeStepId: string | undefined;
+  private completed = false;
+
+  constructor(
+    private readonly command: string,
+    private readonly org: string,
+  ) {}
+
+  update(task: ProgressTask): string[] {
+    const logs: string[] = [];
+    const now = Date.now();
+    this.updatedAt = now;
+    this.completed = false;
+
+    if (task.timelineRepo) {
+      const isNewRepo = this.currentRepo !== task.timelineRepo;
+      this.currentRepo = task.timelineRepo;
+      this.currentRepoIndex = task.timelineRepoIndex;
+      this.currentRepoTotal = task.timelineRepoTotal;
+      if (isNewRepo) {
+        this.steps.clear();
+        this.repoStartedAt = now;
+      }
+    }
+
+    if (task.timelineStepId) {
+      logs.push(...this.updateStep(task, now));
+    }
+
+    if (task.timelineStepId === "repo_complete") {
+      this.completeRepo(task, now);
+    }
+
+    if (task.timelineStepId === "run_complete" || task.timelineStepId === "run_failed") {
+      this.completed = true;
+    }
+
+    return logs;
+  }
+
+  snapshot(): TimelineSnapshot {
+    return {
+      command: this.command,
+      org: this.org,
+      repo: this.currentRepo,
+      repoIndex: this.currentRepoIndex,
+      repoTotal: this.currentRepoTotal,
+      activeStepId: this.activeStepId,
+      steps: [...this.steps.values()],
+      recentRepos: [...this.recentRepos],
+      slowestSteps: [...this.slowestSteps],
+      startedAt: this.startedAt,
+      updatedAt: this.updatedAt,
+      completed: this.completed,
+    };
+  }
+
+  heartbeatSnapshot(): OrgRunTimelineSnapshot {
+    const snapshot = this.snapshot();
+    return {
+      repo: snapshot.repo,
+      repoIndex: snapshot.repoIndex,
+      repoTotal: snapshot.repoTotal,
+      activeStepId: snapshot.activeStepId,
+      steps: snapshot.steps.slice(-12).map((step) => ({
+        id: step.id,
+        label: step.label,
+        status: timelineStatus(step.status),
+        startedAt: new Date(step.startedAt).toISOString(),
+        updatedAt: new Date(step.updatedAt).toISOString(),
+        completedAt: step.completedAt ? new Date(step.completedAt).toISOString() : undefined,
+        durationMs: step.completedAt
+          ? step.completedAt - step.startedAt
+          : Math.max(0, Date.now() - step.startedAt),
+        current: step.current,
+        total: step.total,
+        detail: sanitizeTimelineDetail(step.detail),
+      })),
+      recentRepos: snapshot.recentRepos.slice(-4).map((repo) => ({
+        repo: repo.repo,
+        status: timelineStatus(repo.status),
+        durationMs: repo.durationMs,
+        detail: sanitizeTimelineDetail(repo.detail),
+      })),
+    };
+  }
+
+  finalSummaryLines(): string[] {
+    const lines: string[] = [];
+    if (this.recentRepos.length > 0) {
+      lines.push("[anchor] Org run timeline summary:");
+      for (const repo of this.recentRepos.slice(-8)) {
+        lines.push(
+          `[anchor] ${statusText(repo.status)} ${repo.repo} in ${formatDurationMs(repo.durationMs)}${repo.detail ? ` (${repo.detail})` : ""}`,
+        );
+      }
+    }
+    if (this.slowestSteps.length > 0) {
+      lines.push("[anchor] Slowest timeline steps:");
+      for (const step of this.slowestSteps.slice(0, 5)) {
+        const repo = step.repo ? `${step.repo}: ` : "";
+        lines.push(`[anchor] ${repo}${step.label} took ${formatDurationMs(step.durationMs)}`);
+      }
+    }
+    return lines;
+  }
+
+  private updateStep(task: ProgressTask, now: number): string[] {
+    const id = task.timelineStepId ?? task.key;
+    const status = task.state ?? "active";
+    const previous = this.steps.get(id);
+    const label = task.timelineLabel ?? task.label;
+    const detail = sanitizeTimelineDetail(task.detail);
+    const logs: string[] = [];
+    const step: TimelineStep = {
+      id,
+      label,
+      status,
+      startedAt: previous?.startedAt ?? now,
+      updatedAt: now,
+      completedAt: previous?.completedAt,
+      current: task.current,
+      total: task.total,
+      detail,
+    };
+
+    if (!previous) {
+      this.completePreviousActiveStep(id, now);
+      logs.push(`[anchor] ${timelineRepoLabel(this.snapshot(), task)}: ${statusText("active")} ${label} started`);
+    }
+
+    if (isTerminalTimelineState(status)) {
+      step.completedAt = previous?.completedAt ?? now;
+      this.recordSlowStep(step, task.timelineRepo ?? this.currentRepo);
+      if (!previous?.completedAt) {
+        logs.push(
+          `[anchor] ${timelineRepoLabel(this.snapshot(), task)}: ${statusText(status)} ${label}${formatTimelineCount(task)} in ${formatDurationMs(step.completedAt - step.startedAt)}${detail ? ` (${detail})` : ""}`,
+        );
+      }
+      if (this.activeStepId === id) this.activeStepId = undefined;
+    } else {
+      this.activeStepId = id;
+    }
+
+    this.steps.set(id, step);
+    return logs;
+  }
+
+  private completeRepo(task: ProgressTask, now: number): void {
+    if (!this.currentRepo) return;
+    const status = task.state ?? "done";
+    const durationMs = Math.max(0, now - this.repoStartedAt);
+    this.recentRepos.push({
+      repo: this.currentRepo,
+      status,
+      durationMs,
+      detail: sanitizeTimelineDetail(task.detail),
+    });
+    if (this.recentRepos.length > 12) this.recentRepos.shift();
+  }
+
+  private completePreviousActiveStep(nextStepId: string, now: number): void {
+    if (!this.activeStepId || this.activeStepId === nextStepId) return;
+    const previous = this.steps.get(this.activeStepId);
+    if (!previous || isTerminalTimelineState(previous.status)) return;
+    previous.status = "done";
+    previous.completedAt = previous.completedAt ?? now;
+    previous.updatedAt = now;
+    this.recordSlowStep(previous, this.currentRepo);
+  }
+
+  private recordSlowStep(step: TimelineStep, repo: string | undefined): void {
+    if (!step.completedAt) return;
+    const durationMs = step.completedAt - step.startedAt;
+    this.slowestSteps.push({ label: step.label, repo, durationMs });
+    this.slowestSteps.sort((a, b) => b.durationMs - a.durationMs);
+    this.slowestSteps.splice(8);
+  }
+}
+
+function isTerminalTimelineState(state: ProgressTaskState): boolean {
+  return state === "done" || state === "skip" || state === "warn" || state === "fail";
+}
+
+function statusText(state: ProgressTaskState): string {
+  const unicode = supportsUnicode();
+  if (state === "done") return unicode ? "✓" : "ok";
+  if (state === "skip") return unicode ? "◇" : "-";
+  if (state === "warn") return "!";
+  if (state === "fail") return unicode ? "×" : "fail";
+  if (state === "wait") return unicode ? "…" : "wait";
+  return unicode ? "›" : ">";
+}
+
+function timelineRepoLabel(snapshot: TimelineSnapshot, task: ProgressTask): string {
+  return task.timelineRepo ?? snapshot.repo ?? snapshot.org;
+}
+
+function formatTimelineCount(task: ProgressTask): string {
+  if (typeof task.current === "number" && typeof task.total === "number") {
+    return ` ${task.current}/${task.total}`;
+  }
+  if (typeof task.current === "number") return ` ${task.current}`;
+  return "";
 }
 
 class LiveProgressRenderer {
@@ -171,6 +448,7 @@ class LiveProgressRenderer {
   private readonly unicode: boolean;
   private readonly spinnerFrames: string[];
   private readonly tasks = new Map<string, RenderedProgressTask>();
+  private timeline: TimelineSnapshot | undefined;
   private active = false;
   private renderedLines = 0;
   private spinnerIndex = 0;
@@ -186,6 +464,7 @@ class LiveProgressRenderer {
   }
 
   render(task: ProgressTask): void {
+    this.timeline = undefined;
     const previous = this.tasks.get(task.key);
     this.tasks.set(task.key, {
       ...previous,
@@ -194,6 +473,13 @@ class LiveProgressRenderer {
       startedAt: previous?.startedAt ?? Date.now(),
       updatedAt: Date.now(),
     });
+    this.paint();
+    this.startRepaintTimer();
+    this.active = true;
+  }
+
+  renderTimeline(timeline: TimelineSnapshot): void {
+    this.timeline = timeline;
     this.paint();
     this.startRepaintTimer();
     this.active = true;
@@ -233,6 +519,11 @@ class LiveProgressRenderer {
   private buildLines(): string[] {
     const width = Math.max(48, this.stream.columns ?? 100);
     const header = this.renderHeader(width);
+    if (this.timeline) {
+      return [header, ...this.renderTimelineLines(this.timeline, width)].map((line) =>
+        truncateEnd(line, width),
+      );
+    }
     const tasks = this.visibleTasks();
     return [header, ...tasks.map((task) => this.renderTask(task, width))].map((line) =>
       truncateEnd(line, width),
@@ -311,9 +602,116 @@ class LiveProgressRenderer {
       .trimEnd();
   }
 
+  private renderTimelineLines(timeline: TimelineSnapshot, width: number): string[] {
+    const lines: string[] = [];
+    const repoLabel =
+      timeline.repo && timeline.repoIndex && timeline.repoTotal
+        ? `Repo ${timeline.repoIndex}/${timeline.repoTotal}  ${timeline.repo}`
+        : timeline.repo
+          ? `Repo  ${timeline.repo}`
+          : `${timeline.command}  ${timeline.org}`;
+    lines.push(colorize(this.color, "1", repoLabel));
+
+    const visibleSteps = timeline.steps.slice(-12);
+    for (const step of visibleSteps) {
+      lines.push(this.renderTimelineStep(step, width));
+    }
+
+    if (timeline.recentRepos.length > 0) {
+      lines.push(colorize(this.color, "2", "Recent repos"));
+      for (const repo of timeline.recentRepos.slice(-3).reverse()) {
+        lines.push(
+          `  ${this.statusSymbol(repo.status)} ${truncateMiddle(repo.repo, Math.max(18, width - 34))} ${colorize(
+            this.color,
+            "2",
+            formatDurationMs(repo.durationMs),
+          )}${repo.detail ? ` ${colorize(this.color, "2", truncateMiddle(repo.detail, 28))}` : ""}`,
+        );
+      }
+    }
+
+    if (timeline.completed && timeline.slowestSteps.length > 0) {
+      lines.push(colorize(this.color, "2", "Slowest steps"));
+      for (const step of timeline.slowestSteps.slice(0, 5)) {
+        const label = `${step.repo ? `${step.repo}: ` : ""}${step.label}`;
+        lines.push(
+          `  ${colorize(this.color, "2", "•")} ${truncateMiddle(label, Math.max(18, width - 28))} ${colorize(
+            this.color,
+            "2",
+            formatDurationMs(step.durationMs),
+          )}`,
+        );
+      }
+    }
+
+    return lines;
+  }
+
+  private renderTimelineStep(step: TimelineStep, width: number): string {
+    const state = step.status;
+    const symbol = this.statusSymbol(state);
+    const connector = colorize(this.color, "2", this.unicode ? "│" : "|");
+    const label = colorize(this.color, state === "active" || state === "wait" ? "0" : "2", step.label);
+    const count =
+      typeof step.current === "number" && typeof step.total === "number"
+        ? `${step.current}/${step.total}`
+        : typeof step.current === "number"
+          ? `${step.current}`
+          : "";
+    const percent = formatPercent(step.current, step.total);
+    const rate = this.formatTimelineRate(step);
+    const eta = this.formatTimelineEta(step);
+    const duration =
+      step.completedAt || isTerminalTimelineState(state)
+        ? formatDurationMs(step.durationMs ?? Math.max(0, Date.now() - step.startedAt))
+        : formatDurationMs(Math.max(0, Date.now() - step.startedAt));
+    const metrics = [count, percent, rate, eta, duration].filter(Boolean).join(" ");
+    const barWidth = width >= 96 ? 18 : width >= 72 ? 12 : 8;
+    const bar = progressBar(step.current, step.total, barWidth, {
+      unicode: this.unicode,
+      color: this.color,
+      state,
+    });
+    const detailBudget = Math.max(12, width - 58 - barWidth);
+    const detail = step.detail
+      ? colorize(this.color, "2", truncateMiddle(step.detail, detailBudget))
+      : "";
+    return [" ", connector, symbol, label, bar, colorize(this.color, "2", metrics), detail]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trimEnd();
+  }
+
+  private formatTimelineRate(step: TimelineStep): string {
+    if (typeof step.current !== "number" || step.current <= 0) return "";
+    const seconds = Math.max(0.5, (Date.now() - step.startedAt) / 1000);
+    if (seconds < 2) return "";
+    const rate = step.current / seconds;
+    if (rate >= 10) return `${Math.round(rate)}/s`;
+    return `${rate.toFixed(1)}/s`;
+  }
+
+  private formatTimelineEta(step: TimelineStep): string {
+    if (
+      typeof step.current !== "number" ||
+      typeof step.total !== "number" ||
+      step.current <= 0 ||
+      step.current >= step.total
+    ) {
+      return "";
+    }
+    const seconds = Math.max(0.5, (Date.now() - step.startedAt) / 1000);
+    if (seconds < 3) return "";
+    const remaining = Math.ceil(((step.total - step.current) * seconds) / step.current);
+    if (remaining < 60) return `${remaining}s left`;
+    return `${Math.floor(remaining / 60)}m ${remaining % 60}s left`;
+  }
+
   private statusSymbol(state: ProgressTaskState): string {
     if (state === "active") return colorize(this.color, "36", this.spinnerFrames[this.spinnerIndex] ?? "*");
     if (state === "done") return colorize(this.color, "32", this.unicode ? "✓" : "ok");
+    if (state === "skip") return colorize(this.color, "2", this.unicode ? "◇" : "-");
     if (state === "warn") return colorize(this.color, "33", this.unicode ? "!" : "warn");
     if (state === "fail") return colorize(this.color, "31", this.unicode ? "×" : "fail");
     return colorize(this.color, "33", this.unicode ? "…" : "wait");
@@ -355,6 +753,9 @@ export function createProgressReporter(input?: {
   const stream = input?.stream ?? process.stderr;
   const mode = resolveProgressMode({ ...input, stream });
   const pretty = mode === "pretty" ? new LiveProgressRenderer(stream, input?.title) : undefined;
+  const timeline = input?.heartbeat
+    ? new ProgressTimelineTracker(input.heartbeat.command, input.heartbeat.org)
+    : undefined;
   let heartbeat: OrgRunHeartbeat | undefined = input?.heartbeat
     ? {
         pid: process.pid,
@@ -365,17 +766,25 @@ export function createProgressReporter(input?: {
         updatedAt: new Date().toISOString(),
       }
     : undefined;
+  let lastHeartbeatWriteAt = 0;
   const updateHeartbeat = (
-    patch: Partial<Pick<OrgRunHeartbeat, "repo" | "repoIndex" | "repoTotal" | "phase">>,
+    patch: Partial<
+      Pick<OrgRunHeartbeat, "repo" | "repoIndex" | "repoTotal" | "phase" | "timeline">
+    >,
+    inputOptions: { force?: boolean } = {},
   ): void => {
     if (!heartbeat) return;
+    const nowMs = Date.now();
     heartbeat = {
       ...heartbeat,
       ...patch,
+      timeline: timeline?.heartbeatSnapshot() ?? patch.timeline,
       updatedAt: new Date().toISOString(),
     };
+    if (!inputOptions.force && nowMs - lastHeartbeatWriteAt < 1000) return;
     try {
       writeOrgHeartbeat(heartbeat);
+      lastHeartbeatWriteAt = nowMs;
     } catch {
       // Heartbeat is best-effort status metadata; progress must not fail commands.
     }
@@ -385,28 +794,52 @@ export function createProgressReporter(input?: {
     if (pretty) pretty.log(message);
     else stream.write(`${message}\n`);
   };
-  const render = (task: ProgressTask): void => {
+  const updateTimeline = (task: ProgressTask): string[] => timeline?.update(task) ?? [];
+  const render = (task: ProgressTask, timelineAlreadyUpdated = false): void => {
     if (mode === "off") return;
+    if (timeline) {
+      if (!timelineAlreadyUpdated) timeline.update(task);
+      pretty?.renderTimeline(timeline.snapshot());
+      return;
+    }
     pretty?.render(task);
+  };
+  const writeTimelinePlainLogs = (logs: string[]): void => {
+    if (!timeline || mode !== "plain") return;
+    for (const line of logs) stream.write(`${line}\n`);
   };
   return {
     mode,
     log,
     close: () => {
+      if (heartbeat) updateHeartbeat({ phase: "completed" }, { force: true });
       pretty?.close();
+      if (timeline && mode !== "off") {
+        for (const line of timeline.finalSummaryLines()) stream.write(`${line}\n`);
+      }
       if (input?.heartbeat) clearOrgHeartbeat(input.heartbeat.org);
     },
     onOrgProgress: (progress) => {
-      updateHeartbeat(heartbeatPatchFromOrgProgress(progress));
-      if (mode === "plain") printOrgLifecycleProgress(progress);
-      else render(orgLifecycleTask(progress));
+      const task = orgLifecycleTask(progress);
+      const timelineLogs = updateTimeline(task);
+      updateHeartbeat(heartbeatPatchFromOrgProgress(progress), { force: true });
+      if (mode === "plain") {
+        writeTimelinePlainLogs(timelineLogs);
+        printOrgLifecycleProgress(progress);
+      } else render(task, true);
     },
     onFetchProgress: (progress) => {
+      const task = fetchTask(progress);
+      const timelineLogs = updateTimeline(task);
       updateHeartbeat(heartbeatPatchFromFetchProgress(progress));
-      if (mode === "plain") printFetchProgress(progress);
-      else render(fetchTask(progress));
+      if (mode === "plain") {
+        writeTimelinePlainLogs(timelineLogs);
+        printFetchProgress(progress);
+      } else render(task, true);
     },
     onPrIndexProgress: (progress) => {
+      const task = indexTask(progress);
+      const timelineLogs = updateTimeline(task);
       updateHeartbeat({
         repo: progress.repo,
         phase:
@@ -414,20 +847,32 @@ export function createProgressReporter(input?: {
             ? "Indexing PR history into SQLite"
             : "Indexed PR history",
       });
-      if (mode === "plain") printIndexProgress(progress);
-      else render(indexTask(progress));
+      if (mode === "plain") {
+        writeTimelinePlainLogs(timelineLogs);
+        printIndexProgress(progress);
+      } else render(task, true);
     },
     onCodeProgress: (progress) => {
+      const task = codeTask(progress);
+      const timelineLogs = updateTimeline(task);
       updateHeartbeat(heartbeatPatchFromCodeProgress(progress));
-      if (mode === "plain") printCodeIndexProgress(progress);
-      else render(codeTask(progress));
+      if (mode === "plain") {
+        writeTimelinePlainLogs(timelineLogs);
+        printCodeIndexProgress(progress);
+      } else render(task, true);
     },
     onGraphProgress: (progress) => {
+      const task = graphTask(progress);
+      const timelineLogs = updateTimeline(task);
       updateHeartbeat(heartbeatPatchFromGraphProgress(progress));
-      if (mode === "plain") printOrgGraphProgress(progress);
-      else render(graphTask(progress));
+      if (mode === "plain") {
+        writeTimelinePlainLogs(timelineLogs);
+        printOrgGraphProgress(progress);
+      } else render(task, true);
     },
     onCloneProgress: (progress) => {
+      const task = cloneTask(progress);
+      const timelineLogs = updateTimeline(task);
       updateHeartbeat({
         repo: progress.repo,
         repoIndex: progress.current,
@@ -437,8 +882,10 @@ export function createProgressReporter(input?: {
             ? "Cloning or pulling repo"
             : "Repo clone/pull complete",
       });
-      if (mode === "plain") printOrgCloneProgress(progress);
-      else render(cloneTask(progress));
+      if (mode === "plain") {
+        writeTimelinePlainLogs(timelineLogs);
+        printOrgCloneProgress(progress);
+      } else render(task, true);
     },
   };
 }
@@ -550,8 +997,30 @@ function heartbeatPatchFromCodeProgress(
     case "indexing_code_file":
     case "indexed_code_file":
       return { repo: progress.repo, phase: "Indexing code files" };
+    case "building_architecture_imports":
+      return { repo: progress.repo, phase: "Building architecture imports" };
+    case "building_architecture_components":
+      return { repo: progress.repo, phase: "Building architecture components" };
+    case "building_architecture_patterns":
+      return { repo: progress.repo, phase: "Building architecture patterns" };
     case "indexed_architecture":
       return { repo: progress.repo, phase: "Indexing architecture memory" };
+    case "writing_code_index":
+      return { repo: progress.repo, phase: progress.phase };
+    case "deleting_existing_code_index":
+      return { repo: progress.repo, phase: "Deleting old code index" };
+    case "writing_code_files":
+      return { repo: progress.repo, phase: "Writing code files" };
+    case "writing_code_chunks":
+      return { repo: progress.repo, phase: "Writing code chunks" };
+    case "writing_test_awareness":
+      return { repo: progress.repo, phase: "Writing test awareness" };
+    case "writing_architecture_data":
+      return { repo: progress.repo, phase: `Writing architecture ${progress.kind}` };
+    case "writing_architecture_map_edges":
+      return { repo: progress.repo, phase: "Writing architecture map edges" };
+    case "refreshing_test_commands":
+      return { repo: progress.repo, phase: "Refreshing test commands" };
     case "completed_code_index":
       return { repo: progress.repo, phase: "Code index completed" };
   }
@@ -784,9 +1253,71 @@ export function printCodeIndexProgress(progress: CodeIndexProgress): void {
         `[anchor] indexed code file ${progress.current}/${progress.total}: ${progress.filePath} (${progress.chunks} chunks)`,
       );
       return;
+    case "building_architecture_imports":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] building architecture imports ${progress.current}/${progress.total}: ${progress.imports} import(s) found${progress.filePath ? ` (${progress.filePath})` : ""}`,
+      );
+      return;
+    case "building_architecture_components":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] building architecture components ${progress.current}/${progress.total}: ${progress.components} component(s)${progress.filePath ? ` (${progress.filePath})` : ""}`,
+      );
+      return;
+    case "building_architecture_patterns":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] building architecture patterns ${progress.current}/${progress.total}: ${progress.patterns} pattern(s)${progress.area ? ` (${progress.area})` : ""}`,
+      );
+      return;
     case "indexed_architecture":
       console.error(
         `[anchor] indexed architecture memory: ${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports.`,
+      );
+      return;
+    case "writing_code_index":
+      console.error(`[anchor] ${progress.repo}: ${progress.phase}...`);
+      return;
+    case "deleting_existing_code_index":
+      console.error(
+        `[anchor] deleting existing code index for ${progress.repo}: ${progress.chunks} chunks, ${progress.patterns} architecture patterns...`,
+      );
+      return;
+    case "writing_code_files":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing code files ${progress.current}/${progress.total}${progress.filePath ? `: ${progress.filePath}` : ""}`,
+      );
+      return;
+    case "writing_code_chunks":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing code chunks ${progress.current}/${progress.total}: ${progress.chunks} chunk(s)${progress.filePath ? ` (${progress.filePath})` : ""}`,
+      );
+      return;
+    case "writing_test_awareness":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing ${progress.kind.replace("_", " ")} ${progress.current}/${progress.total}`,
+      );
+      return;
+    case "writing_architecture_data":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing architecture ${progress.kind} ${progress.current}/${progress.total}`,
+      );
+      return;
+    case "writing_architecture_map_edges":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] writing architecture map edges ${progress.current}/${progress.total}: ${progress.edges} edge(s)`,
+      );
+      return;
+    case "refreshing_test_commands":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] ${progress.phase === "detecting" ? "detecting" : "writing"} test commands ${progress.current}/${progress.total}: ${progress.commands} command(s)`,
       );
       return;
     case "completed_code_index":
@@ -900,6 +1431,8 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         total: progress.totalRepos,
         detail: progress.command,
         pinned: true,
+        timelineStepId: "run_start",
+        timelineLabel: "Org run started",
       };
     case "org_repo_started":
       return {
@@ -910,6 +1443,11 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         total: progress.total,
         detail: "starting",
         pinned: true,
+        timelineStepId: "repo_start",
+        timelineLabel: "Repo started",
+        timelineRepo: progress.repo,
+        timelineRepoIndex: progress.current,
+        timelineRepoTotal: progress.total,
       };
     case "org_repo_phase":
       return {
@@ -920,22 +1458,37 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         total: progress.total,
         detail: progress.detail ? `${progress.phase}: ${progress.detail}` : progress.phase,
         pinned: true,
+        timelineStepId: orgPhaseStepId(progress.phase),
+        timelineLabel: progress.phase,
+        timelineRepo: progress.repo,
+        timelineRepoIndex: progress.current,
+        timelineRepoTotal: progress.total,
       };
     case "org_repo_skipped_history":
       return {
         key: `history-skip:${progress.repo}`,
         phase: "GitHub",
         label: "PR history skipped",
-        state: "done",
+        state: "skip",
         detail: progress.reason,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "PR history",
+        timelineRepo: progress.repo,
+        timelineRepoIndex: progress.current,
+        timelineRepoTotal: progress.total,
       };
     case "org_repo_skipped_code":
       return {
         key: `code-skip:${progress.repo}`,
         phase: "Code",
         label: "Code skipped",
-        state: "done",
+        state: "skip",
         detail: progress.reason,
+        timelineStepId: "code_index",
+        timelineLabel: "Code index",
+        timelineRepo: progress.repo,
+        timelineRepoIndex: progress.current,
+        timelineRepoTotal: progress.total,
       };
     case "org_repo_finalizing":
       return {
@@ -946,6 +1499,11 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         total: progress.total,
         detail: "writing repo state",
         pinned: true,
+        timelineStepId: "repo_finalizing",
+        timelineLabel: "Finalizing repo state",
+        timelineRepo: progress.repo,
+        timelineRepoIndex: progress.current,
+        timelineRepoTotal: progress.total,
       };
     case "org_repo_completed":
       return {
@@ -957,14 +1515,21 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         state: progress.error ? "warn" : progress.current >= progress.total ? "done" : "active",
         detail: `${progress.prsIndexed} PRs, ${progress.codeFilesIndexed} files, ${(progress.durationMs / 1000).toFixed(1)}s`,
         pinned: true,
+        timelineStepId: "repo_complete",
+        timelineLabel: "Repo complete",
+        timelineRepo: progress.repo,
+        timelineRepoIndex: progress.current,
+        timelineRepoTotal: progress.total,
       };
     case "org_graph_skipped":
       return {
         key: `graph-skip:${progress.org}`,
         phase: "Org graph",
         label: "Graph skipped",
-        state: "done",
+        state: "skip",
         detail: progress.reason,
+        timelineStepId: "org_graph",
+        timelineLabel: "Org graph",
       };
     case "org_sync_completed":
       return {
@@ -976,6 +1541,8 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         state: progress.failedRepos > 0 ? "warn" : "done",
         detail: `${progress.succeededRepos} succeeded, ${progress.failedRepos} failed, ${(progress.durationMs / 1000).toFixed(1)}s`,
         pinned: true,
+        timelineStepId: "run_complete",
+        timelineLabel: "Org run complete",
       };
     case "org_sync_failed":
       return {
@@ -985,8 +1552,19 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         state: "fail",
         detail: progress.error,
         pinned: true,
+        timelineStepId: "run_failed",
+        timelineLabel: "Org run failed",
       };
   }
+}
+
+function orgPhaseStepId(phase: string): string {
+  const normalized = phase.toLowerCase();
+  if (normalized.includes("commit")) return "commit_read";
+  if (normalized.includes("fetching pr")) return "github_pr_fetch";
+  if (normalized.includes("indexing pr")) return "sqlite_pr_index";
+  if (normalized.includes("code")) return "code_index";
+  return `phase:${normalized.replace(/[^a-z0-9]+/g, "_")}`;
 }
 
 function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
@@ -997,6 +1575,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         phase: "GitHub",
         label: `Finding ${fetchScope(progress)}`,
         detail: progress.backend === "graphql" ? "GitHub GraphQL" : undefined,
+        timelineStepId: "github_backend_fallback",
+        timelineLabel: "GitHub backend fallback",
+        timelineRepo: progress.repo,
       };
     case "scanned_pull_request_page":
       return {
@@ -1006,6 +1587,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         current: progress.all ? progress.scannedPullRequests : progress.matchedMergedPullRequests,
         total: progress.all ? undefined : progress.limit,
         detail: `${progress.repo} · ${progress.matchedMergedPullRequests} merged found`,
+        timelineStepId: "github_graphql_tuning",
+        timelineLabel: "Tune GraphQL page size",
+        timelineRepo: progress.repo,
       };
     case "discovered_pull_requests":
       return {
@@ -1019,6 +1603,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
           progress.backend === "graphql"
             ? "enriching patches with REST"
             : `fetching details with concurrency ${progress.detailConcurrency}`,
+        timelineStepId: "github_graphql_tuning",
+        timelineLabel: "Tune GraphQL page size",
+        timelineRepo: progress.repo,
       };
     case "fetching_pull_request_details":
       return {
@@ -1028,6 +1615,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         current: progress.current,
         total: progress.total,
         detail: `#${progress.prNumber}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR details",
+        timelineRepo: progress.repo,
       };
     case "fetched_pull_request_details":
       return {
@@ -1038,6 +1628,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         total: progress.total,
         state: progress.current >= progress.total ? "done" : "active",
         detail: `#${progress.prNumber}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR details",
+        timelineRepo: progress.repo,
       };
     case "enriching_pull_request_patches":
       return {
@@ -1047,6 +1640,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         current: progress.current,
         total: progress.total,
         detail: `#${progress.prNumber}`,
+        timelineStepId: "rest_patch_enrichment",
+        timelineLabel: "REST patch enrichment",
+        timelineRepo: progress.repo,
       };
     case "enriched_pull_request_patches":
       return {
@@ -1057,6 +1653,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         total: progress.total,
         state: progress.current >= progress.total ? "done" : "active",
         detail: `#${progress.prNumber} (${progress.patches} patches)`,
+        timelineStepId: "rest_patch_enrichment",
+        timelineLabel: "REST patch enrichment",
+        timelineRepo: progress.repo,
       };
     case "skipped_pull_request_patch_enrichment":
       return {
@@ -1067,6 +1666,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         total: progress.total,
         state: "warn",
         detail: `#${progress.prNumber}: ${progress.reason}`,
+        timelineStepId: "rest_patch_enrichment",
+        timelineLabel: "REST patch enrichment",
+        timelineRepo: progress.repo,
       };
     case "github_fetch_backend_fallback":
       return {
@@ -1075,6 +1677,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         label: `Fallback from ${progress.from} to ${progress.to}`,
         state: "warn",
         detail: progress.reason,
+        timelineStepId: "github_graphql_checkpoint",
+        timelineLabel: "Resume GraphQL checkpoint",
+        timelineRepo: progress.repo,
       };
     case "github_graphql_page_size_reduced":
       return {
@@ -1083,6 +1688,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         label: "Reducing page size",
         state: "warn",
         detail: `${progress.previousPageSize} -> ${progress.nextPageSize}: ${progress.reason}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR metadata",
+        timelineRepo: progress.repo,
       };
     case "github_graphql_page_size_selected":
       return {
@@ -1091,6 +1699,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         label: "Selected page size",
         state: "done",
         detail: `${progress.previousPageSize} -> ${progress.nextPageSize}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR metadata",
+        timelineRepo: progress.repo,
       };
     case "github_graphql_budget_deferred":
       return {
@@ -1100,6 +1711,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         current: progress.matchedMergedPullRequests,
         state: "warn",
         detail: `remaining ${progress.remaining ?? "unknown"}, reset ${progress.resetAt ?? "unknown"}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR metadata",
+        timelineRepo: progress.repo,
       };
     case "github_graphql_checkpoint_resumed":
       return {
@@ -1109,6 +1723,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         current: progress.matchedMergedPullRequests,
         state: "done",
         detail: `page size ${progress.pageSize}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR metadata",
+        timelineRepo: progress.repo,
       };
     case "github_graphql_retry":
       return {
@@ -1119,6 +1736,9 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         current: progress.attempt,
         total: progress.maxAttempts - 1,
         detail: `${(progress.waitMs / 1000).toFixed(1)}s: ${progress.reason}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR metadata",
+        timelineRepo: progress.repo,
       };
     case "github_rate_limited":
       return {
@@ -1127,14 +1747,20 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
         label: "Waiting for rate limit",
         state: "wait",
         detail: `${progress.waitSeconds}s until ${progress.retryAt}`,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "Fetch PR metadata",
+        timelineRepo: progress.repo,
       };
     case "skipped_pull_request_fetch":
       return {
         key: `fetch:${progress.repo}`,
         phase: "GitHub",
         label: "Skipped PR fetch",
-        state: "done",
+        state: "skip",
         detail: progress.reason,
+        timelineStepId: "github_pr_fetch",
+        timelineLabel: "PR history",
+        timelineRepo: progress.repo,
       };
   }
 }
@@ -1157,6 +1783,9 @@ function indexTask(progress: IndexPullRequestsProgress): ProgressTask {
       progress.stage === "indexed_pull_request"
         ? `#${progress.prNumber} (${progress.wisdomUnitsCreated} wisdom, ${progress.regressionEventsCreated} regressions)`
         : `#${progress.prNumber}`,
+    timelineStepId: "sqlite_pr_index",
+    timelineLabel: "Index PR history",
+    timelineRepo: progress.repo,
   };
 }
 
@@ -1168,6 +1797,9 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         phase: "Code",
         label: "Discovering code files",
         detail: progress.repo,
+        timelineStepId: "code_discovery",
+        timelineLabel: "Discover code files",
+        timelineRepo: progress.repo,
       };
     case "discovered_code_files":
       return {
@@ -1178,6 +1810,9 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         total: progress.files,
         state: "done",
         detail: `${progress.skippedFiles} skipped`,
+        timelineStepId: "code_discovery",
+        timelineLabel: "Discover code files",
+        timelineRepo: progress.repo,
       };
     case "indexing_code_file":
       return {
@@ -1187,6 +1822,9 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         current: progress.current,
         total: progress.total,
         detail: progress.filePath,
+        timelineStepId: "code_chunks",
+        timelineLabel: "Build code chunks",
+        timelineRepo: progress.repo,
       };
     case "indexed_code_file":
       return {
@@ -1197,6 +1835,45 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         total: progress.total,
         state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.filePath} (${progress.chunks} chunks)`,
+        timelineStepId: "code_chunks",
+        timelineLabel: "Build code chunks",
+        timelineRepo: progress.repo,
+      };
+    case "building_architecture_imports":
+      return {
+        key: `architecture-build:${progress.repo}`,
+        phase: "Architecture",
+        label: "Building imports",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.imports} imports${progress.filePath ? ` · ${progress.filePath}` : ""}`,
+        timelineStepId: "architecture_imports",
+        timelineLabel: "Build architecture imports",
+        timelineRepo: progress.repo,
+      };
+    case "building_architecture_components":
+      return {
+        key: `architecture-build:${progress.repo}`,
+        phase: "Architecture",
+        label: "Building components",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.components} components${progress.filePath ? ` · ${progress.filePath}` : ""}`,
+        timelineStepId: "architecture_components",
+        timelineLabel: "Build architecture components",
+        timelineRepo: progress.repo,
+      };
+    case "building_architecture_patterns":
+      return {
+        key: `architecture-build:${progress.repo}`,
+        phase: "Architecture",
+        label: "Building patterns",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.patterns} patterns${progress.area ? ` · ${progress.area}` : ""}`,
+        timelineStepId: "architecture_patterns",
+        timelineLabel: "Build architecture patterns",
+        timelineRepo: progress.repo,
       };
     case "indexed_architecture":
       return {
@@ -1205,6 +1882,99 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         label: "Indexed architecture memory",
         state: "done",
         detail: `${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports`,
+        timelineStepId: "architecture_patterns",
+        timelineLabel: "Build architecture patterns",
+        timelineRepo: progress.repo,
+      };
+    case "writing_code_index":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: progress.phase,
+        timelineStepId: "sqlite_code_write",
+        timelineLabel: progress.phase,
+        timelineRepo: progress.repo,
+      };
+    case "deleting_existing_code_index":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Deleting old code index",
+        state: "active",
+        detail: `${progress.chunks} chunks, ${progress.patterns} patterns`,
+        timelineStepId: "sqlite_code_delete",
+        timelineLabel: "Delete old code index",
+        timelineRepo: progress.repo,
+      };
+    case "writing_code_files":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Writing code files",
+        current: progress.current,
+        total: progress.total,
+        detail: progress.filePath,
+        timelineStepId: "sqlite_code_files",
+        timelineLabel: "Write code files",
+        timelineRepo: progress.repo,
+      };
+    case "writing_code_chunks":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Writing code chunks",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.chunks} chunks${progress.filePath ? ` · ${progress.filePath}` : ""}`,
+        timelineStepId: "sqlite_code_chunks",
+        timelineLabel: "Write code chunks",
+        timelineRepo: progress.repo,
+      };
+    case "writing_test_awareness":
+      return {
+        key: `test-awareness:${progress.repo}:${progress.kind}`,
+        phase: "Tests",
+        label: `Writing ${progress.kind.replace("_", " ")}`,
+        current: progress.current,
+        total: progress.total,
+        timelineStepId: "test_awareness",
+        timelineLabel: "Write test awareness",
+        timelineRepo: progress.repo,
+      };
+    case "writing_architecture_data":
+      return {
+        key: `architecture-write:${progress.repo}:${progress.kind}`,
+        phase: "SQLite",
+        label: `Writing architecture ${progress.kind}`,
+        current: progress.current,
+        total: progress.total,
+        timelineStepId: "sqlite_architecture_data",
+        timelineLabel: "Write architecture data",
+        timelineRepo: progress.repo,
+      };
+    case "writing_architecture_map_edges":
+      return {
+        key: `architecture-map:${progress.repo}`,
+        phase: "SQLite",
+        label: "Writing architecture map",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.edges} edges`,
+        timelineStepId: "architecture_map_edges",
+        timelineLabel: "Write architecture map",
+        timelineRepo: progress.repo,
+      };
+    case "refreshing_test_commands":
+      return {
+        key: `test-commands:${progress.repo}`,
+        phase: "Tests",
+        label: progress.phase === "detecting" ? "Detecting test commands" : "Writing test commands",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.commands} commands`,
+        timelineStepId: "test_commands",
+        timelineLabel: "Refresh test commands",
+        timelineRepo: progress.repo,
       };
     case "completed_code_index":
       return {
@@ -1215,6 +1985,9 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         total: progress.files,
         state: "done",
         detail: `${progress.chunks} chunks, ${progress.testFiles} tests, ${progress.testLinks} test links`,
+        timelineStepId: "code_index_complete",
+        timelineLabel: "Code index complete",
+        timelineRepo: progress.repo,
       };
   }
 }
@@ -1228,6 +2001,9 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         label: "Reading package manifests",
         current: 0,
         total: progress.totalRepos,
+        timelineStepId: "graph_manifests",
+        timelineLabel: "Read package manifests",
+        timelineRepo: `${progress.org} graph`,
       };
     case "loaded_package_manifests":
       return {
@@ -1238,6 +2014,9 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         total: progress.repos,
         state: "done",
         detail: `${progress.packageNames} package names`,
+        timelineStepId: "graph_manifests",
+        timelineLabel: "Read package manifests",
+        timelineRepo: `${progress.org} graph`,
       };
     case "building_package_edges":
       return {
@@ -1248,12 +2027,18 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         total: progress.total,
         state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.repo} (${progress.edges} edges)`,
+        timelineStepId: "graph_package_edges",
+        timelineLabel: "Build package edges",
+        timelineRepo: `${progress.org} graph`,
       };
     case "loading_imports":
       return {
         key: `graph:imports:${progress.org}`,
         phase: "Org graph",
         label: "Loading imports",
+        timelineStepId: "graph_imports",
+        timelineLabel: "Load imports",
+        timelineRepo: `${progress.org} graph`,
       };
     case "building_import_edges":
       return {
@@ -1264,12 +2049,18 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         total: progress.total,
         state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.edges} edges`,
+        timelineStepId: "graph_import_edges",
+        timelineLabel: "Build import edges",
+        timelineRepo: `${progress.org} graph`,
       };
     case "loading_code_chunks":
       return {
         key: `graph:chunks:${progress.org}`,
         phase: "Org graph",
         label: "Loading code chunks",
+        timelineStepId: "graph_code_chunks",
+        timelineLabel: "Load code chunks",
+        timelineRepo: `${progress.org} graph`,
       };
     case "extracting_api_contracts":
       return {
@@ -1280,6 +2071,9 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         total: progress.total,
         state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.contracts} contracts`,
+        timelineStepId: "graph_api_contracts",
+        timelineLabel: "Extract API contracts",
+        timelineRepo: `${progress.org} graph`,
       };
     case "matching_api_consumers":
       return {
@@ -1290,6 +2084,9 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         total: progress.total,
         state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.matches} new matches`,
+        timelineStepId: "graph_api_consumers",
+        timelineLabel: "Match API consumers",
+        timelineRepo: `${progress.org} graph`,
       };
     case "writing_org_graph":
       return {
@@ -1297,6 +2094,9 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         phase: "Org graph",
         label: "Writing graph",
         detail: `${progress.edges} edges, ${progress.apiContracts} contracts, ${progress.apiConsumers} consumers`,
+        timelineStepId: "graph_write",
+        timelineLabel: "Write org graph",
+        timelineRepo: `${progress.org} graph`,
       };
     case "completed_org_graph":
       return {
@@ -1305,6 +2105,9 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
         label: "Graph complete",
         state: "done",
         detail: `${progress.edges} edges, ${progress.apiConsumers} consumers in ${(progress.durationMs / 1000).toFixed(1)}s`,
+        timelineStepId: "graph_write",
+        timelineLabel: "Write org graph",
+        timelineRepo: `${progress.org} graph`,
       };
   }
 }
@@ -1318,6 +2121,11 @@ function cloneTask(progress: OrgCloneProgress): ProgressTask {
       current: progress.current,
       total: progress.total,
       detail: progress.repo,
+      timelineStepId: "clone_pull",
+      timelineLabel: "Clone or pull repo",
+      timelineRepo: progress.repo,
+      timelineRepoIndex: progress.current,
+      timelineRepoTotal: progress.total,
     };
   }
   return {
@@ -1330,5 +2138,10 @@ function cloneTask(progress: OrgCloneProgress): ProgressTask {
     detail: progress.error
       ? `${progress.repo} failed`
       : `${progress.repo} ${progress.cloned ? "cloned" : "pulled"}`,
+    timelineStepId: "clone_pull",
+    timelineLabel: "Clone or pull repo",
+    timelineRepo: progress.repo,
+    timelineRepoIndex: progress.current,
+    timelineRepoTotal: progress.total,
   };
 }

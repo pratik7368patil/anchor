@@ -47,7 +47,9 @@ export function indexCodebase(
     });
   }
 
-  const architecture = buildArchitectureIndex(options.repo, discovery.files, chunks);
+  const architecture = buildArchitectureIndex(options.repo, discovery.files, chunks, {
+    onProgress: options.onProgress,
+  });
   options.onProgress?.({
     stage: "indexed_architecture",
     repo: options.repo,
@@ -64,8 +66,9 @@ export function indexCodebase(
     discovery.skippedFiles,
     options.cwd,
     architecture,
+    { onProgress: options.onProgress },
   );
-  refreshTestCommands(db, options.cwd, options.repo);
+  refreshTestCommands(db, options.cwd, options.repo, [], { onProgress: options.onProgress });
   options.onProgress?.({
     stage: "completed_code_index",
     repo: options.repo,

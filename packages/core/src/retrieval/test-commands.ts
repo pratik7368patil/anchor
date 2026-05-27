@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AnchorDatabase } from "../db/database.js";
 import { initializeSchema } from "../db/database.js";
-import type { ConfidenceLevel, TestCommand } from "../types.js";
+import type { CodeIndexProgress, ConfidenceLevel, TestCommand } from "../types.js";
 import { isTestFilePath } from "../indexer/test-awareness.js";
 import { uniqueStrings } from "../utils/text.js";
 
@@ -265,8 +265,25 @@ export function refreshTestCommands(
   cwd: string,
   repo: string,
   files: string[] = [],
+  options: { onProgress?: (progress: CodeIndexProgress) => void } = {},
 ): TestCommand[] {
+  options.onProgress?.({
+    stage: "refreshing_test_commands",
+    repo,
+    phase: "detecting",
+    current: 0,
+    total: files.length,
+    commands: 0,
+  });
   const commands = detectTestCommands(db, cwd, files);
+  options.onProgress?.({
+    stage: "refreshing_test_commands",
+    repo,
+    phase: "writing",
+    current: 0,
+    total: commands.length,
+    commands: commands.length,
+  });
   const now = new Date().toISOString();
   const transaction = db.transaction(() => {
     db.prepare("DELETE FROM test_commands WHERE repo = ?").run(repo);
@@ -274,7 +291,7 @@ export function refreshTestCommands(
       `INSERT INTO test_commands (id, repo, file_path, command, reason, confidence, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
-    for (const command of commands) {
+    for (const [index, command] of commands.entries()) {
       insert.run(
         commandId(repo, command),
         repo,
@@ -284,6 +301,17 @@ export function refreshTestCommands(
         command.confidence,
         now,
       );
+      const current = index + 1;
+      if (current === 1 || current === commands.length || current % 250 === 0) {
+        options.onProgress?.({
+          stage: "refreshing_test_commands",
+          repo,
+          phase: "writing",
+          current,
+          total: commands.length,
+          commands: commands.length,
+        });
+      }
     }
   });
   transaction();

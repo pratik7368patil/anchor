@@ -324,6 +324,14 @@ describe("progress reporter", () => {
       filePath: "src/index.ts",
       chunks: 1,
     });
+    reporter.onCodeProgress({
+      stage: "writing_code_chunks",
+      repo: "owner/repo",
+      current: 500,
+      total: 1000,
+      filePath: "src/api/client.ts",
+      chunks: 500,
+    });
     reporter.log("[anchor] done");
     reporter.close();
 
@@ -331,6 +339,7 @@ describe("progress reporter", () => {
     expect(output).toContain("Indexing repo memory");
     expect(output).toContain("last update");
     expect(output).toContain("Indexed code");
+    expect(output).toContain("Writing code chunks");
     expect(output).toContain("1/2");
     expect(output).toContain("done");
     expect(output).not.toMatch(/\u001b\[[0-9;]*m/);
@@ -401,6 +410,122 @@ describe("progress reporter", () => {
       reporter.close();
       expect(readOrgHeartbeat("acme")).toBeUndefined();
     } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+
+  it("writes granular code progress into org heartbeat metadata", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    const stream = new PassThrough() as PassThrough & { isTTY: boolean; columns: number };
+    stream.isTTY = false;
+    stream.columns = 80;
+    let output = "";
+    stream.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    });
+    try {
+      const reporter = createProgressReporter({
+        stream,
+        heartbeat: { org: "acme", command: "org sync" },
+      });
+      reporter.onCodeProgress({
+        stage: "writing_architecture_data",
+        repo: "acme/backend-api",
+        current: 500,
+        total: 1000,
+        kind: "components",
+      });
+      const heartbeat = readOrgHeartbeat("acme");
+      expect(heartbeat?.command).toBe("org sync");
+      expect(heartbeat?.repo).toBe("acme/backend-api");
+      expect(heartbeat?.phase).toBe("Writing architecture components");
+      expect(heartbeat?.timeline?.repo).toBe("acme/backend-api");
+      expect(heartbeat?.timeline?.steps.at(-1)).toMatchObject({
+        id: "sqlite_architecture_data",
+        label: "Write architecture data",
+        status: "active",
+      });
+      reporter.close();
+      expect(output).toContain("Write architecture data started");
+      expect(output).not.toContain("ignore previous instructions");
+      expect(readOrgHeartbeat("acme")).toBeUndefined();
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+
+  it("renders an interactive org timeline with step durations and final summary", () => {
+    const previousCi = process.env.CI;
+    const previousProgress = process.env.ANCHOR_PROGRESS;
+    const previousNoColor = process.env.NO_COLOR;
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    delete process.env.CI;
+    delete process.env.ANCHOR_PROGRESS;
+    process.env.NO_COLOR = "1";
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    const stream = new PassThrough() as PassThrough & { isTTY: boolean; columns: number };
+    stream.isTTY = true;
+    stream.columns = 120;
+    let output = "";
+    stream.on("data", (chunk: Buffer) => {
+      output += chunk.toString("utf8");
+    });
+
+    try {
+      const reporter = createProgressReporter({
+        stream,
+        title: "Syncing org memory",
+        heartbeat: { org: "acme", command: "org sync" },
+      });
+      reporter.onOrgProgress({
+        stage: "org_repo_started",
+        org: "acme",
+        command: "org sync",
+        repo: "acme/backend-api",
+        current: 1,
+        total: 2,
+      });
+      reporter.onCodeProgress({
+        stage: "writing_code_chunks",
+        repo: "acme/backend-api",
+        current: 500,
+        total: 1000,
+        chunks: 500,
+        filePath: "src/api/client.ts",
+      });
+      reporter.onOrgProgress({
+        stage: "org_repo_completed",
+        org: "acme",
+        command: "org sync",
+        repo: "acme/backend-api",
+        current: 1,
+        total: 2,
+        skippedHistory: false,
+        skippedCode: false,
+        prsIndexed: 2,
+        codeFilesIndexed: 1000,
+        durationMs: 1250,
+      });
+      reporter.close();
+
+      expect(output).toContain("Repo 1/2  acme/backend-api");
+      expect(output).toContain("Write code chunks");
+      expect(output).toContain("Org run timeline summary");
+      expect(output).toContain("acme/backend-api");
+      expect(output).toContain("1000 files");
+      expect(output).not.toMatch(/\u001b\[[0-9;]*m/);
+    } finally {
+      if (previousCi === undefined) delete process.env.CI;
+      else process.env.CI = previousCi;
+      if (previousProgress === undefined) delete process.env.ANCHOR_PROGRESS;
+      else process.env.ANCHOR_PROGRESS = previousProgress;
+      if (previousNoColor === undefined) delete process.env.NO_COLOR;
+      else process.env.NO_COLOR = previousNoColor;
       if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
       else process.env.ANCHOR_ORG_HOME = previousOrgHome;
     }
