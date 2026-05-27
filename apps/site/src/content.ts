@@ -38,6 +38,8 @@ anchor architecture --file src/api/routes.ts
 anchor architecture --map --format mermaid
 anchor architecture --check
 anchor review --share
+anchor org sync --org my-org
+anchor org impact --org my-org --repo my-org/backend-api --strict
 anchor onboarding --area api
 anchor ci`;
 
@@ -105,7 +107,7 @@ export const commandGroups: CommandGroup[] = [
       "Use these when you want a concise briefing before edits, refactors, onboarding, or PR review.",
     commands: [
       {
-        command: "anchor plan \"<task>\"",
+        command: 'anchor plan "<task>"',
         description:
           "Creates a deterministic edit plan with target files, likely symbols, risks, and exact checks.",
       },
@@ -192,6 +194,46 @@ export const commandGroups: CommandGroup[] = [
     ],
   },
   {
+    title: "Org memory",
+    intro:
+      "Build a local allowlisted organization memory across repos for API, access, SDK, schema, and shared-package changes.",
+    commands: [
+      {
+        command: "anchor org init --org <org>",
+        description: "Creates ~/.anchor/orgs/<org>/org.json and org.sqlite.",
+      },
+      {
+        command: "anchor org add-repo <owner/name>",
+        description: "Allowlists one repo with an optional alias and group.",
+      },
+      {
+        command: "anchor org clone",
+        description: "Shallow-clones missing repos and pulls existing managed clones.",
+      },
+      {
+        command: "anchor org index",
+        description: "Indexes allowlisted repo code and PR history into one local org database.",
+      },
+      {
+        command: "anchor org sync",
+        description: "Daily command: clone/pull, index, and rebuild the cross-repo graph.",
+      },
+      {
+        command: "anchor org map",
+        description: "Prints a Mermaid or JSON cross-repo architecture map.",
+      },
+      {
+        command: "anchor org impact",
+        description:
+          "Checks a diff for cross-repo consumers, regressions, stale indexes, and anomalies.",
+      },
+      {
+        command: "anchor org ci",
+        description: "Runs org coverage and cross-repo anomaly gates for CI.",
+      },
+    ],
+  },
+  {
     title: "Team rules",
     intro: "Turn repeated historical evidence into explicit, reviewed repo rules.",
     commands: [
@@ -227,7 +269,10 @@ export const options: TableItem[] = [
   { name: "--repo owner/name", description: "Index a specific GitHub repo." },
   { name: "--limit 50", description: "Limit the number of PRs indexed." },
   { name: "--all", description: "Fetch all merged PRs." },
-  { name: "--concurrency 5", description: "Enrich PR patches in parallel while GraphQL adapts page size." },
+  {
+    name: "--concurrency 5",
+    description: "Enrich PR patches in parallel while GraphQL adapts page size.",
+  },
   { name: "--no-code", description: "Skip codebase indexing." },
   { name: "--since YYYY-MM-DD", description: "Index PRs updated since a date." },
   { name: "--force", description: "Rebuild the local index." },
@@ -246,6 +291,12 @@ export const options: TableItem[] = [
   { name: "--write-doc", description: "Write ANCHOR_ARCHITECTURE.md from architecture output." },
   { name: "--json", description: "Output machine-readable JSON." },
   { name: "--share", description: "Output short Markdown for sharing." },
+  { name: "--org my-org", description: "Select the local org memory namespace." },
+  { name: "--code-only", description: "For org indexing, skip PR history and refresh code only." },
+  {
+    name: "--prs-only",
+    description: "For org indexing, skip code refresh and fetch PR evidence only.",
+  },
 ];
 
 export const mcpTools: TableItem[] = [
@@ -298,6 +349,27 @@ export const mcpTools: TableItem[] = [
     name: "anchor_get_playbook",
     description: "Returns one committed repo playbook with cited evidence.",
   },
+  {
+    name: "anchor_get_org_context",
+    description: "Returns concise context across allowlisted org repos for broad work.",
+  },
+  {
+    name: "anchor_check_cross_repo_impact",
+    description: "Checks API/auth/shared/schema diffs for cross-repo impact and anomalies.",
+  },
+  {
+    name: "anchor_find_api_consumers",
+    description:
+      "Finds repos and files that consume a provider API, schema, route, or SDK contract.",
+  },
+  {
+    name: "anchor_get_org_architecture",
+    description: "Returns a local cross-repo architecture map.",
+  },
+  {
+    name: "anchor_org_index_status",
+    description: "Shows org memory freshness, coverage, cloned repos, edges, and consumers.",
+  },
 ];
 
 export const features = [
@@ -322,6 +394,11 @@ export const features = [
   "CI reliability gate",
   "Local feedback for ranking transparency",
   "Repo playbooks for repeated workflows",
+  "Local org memory across allowlisted repos",
+  "Managed shallow clones under ~/.anchor/orgs",
+  "Cross-repo impact and anomaly detection",
+  "API consumer detection across repos",
+  "Org architecture maps",
   "Team-approved rules via anchor.rules.json",
   "Strict mode with confidence and freshness checks",
   "Reliability gate for weak, stale, or loose matches",
@@ -342,6 +419,9 @@ export const useCases = [
   "Run Anchor in CI to catch stale indexes, invalid rules, and retrieval drift.",
   "Create onboarding packs for new developers or unfamiliar repo areas.",
   "Use repo playbooks for repeated tasks such as adding API integrations or tests.",
+  "Before API/access/shared package changes, ask Anchor for cross-repo impact.",
+  "Find frontend, SDK, or service consumers before changing backend contracts.",
+  "Run org CI to block high-risk cross-repo anomalies before merge.",
   "Check whether new code follows existing architecture patterns.",
   "Generate a local architecture briefing for onboarding or refactors.",
   "Convert repeated tribal knowledge into team-approved rules.",
@@ -398,6 +478,12 @@ export const docsPages: DocsPage[] = [
     path: "/docs/playbooks",
     title: "Playbooks",
     description: "Turn repeated evidence into repo workflow playbooks.",
+    group: "Guide",
+  },
+  {
+    path: "/docs/org-memory",
+    title: "Org Memory",
+    description: "Allowlist repos, build local org memory, and check cross-repo impact.",
     group: "Guide",
   },
   {

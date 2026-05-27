@@ -27,6 +27,10 @@ anchor architecture --check
 anchor review
 anchor review --share
 anchor health
+anchor org init --org my-org
+anchor org add-repo my-org/backend-api --org my-org --group backend
+anchor org sync --org my-org
+anchor org impact --org my-org --repo my-org/backend-api --strict
 anchor rules init
 anchor rules validate
 anchor rules suggest
@@ -35,13 +39,15 @@ anchor rules check-evidence
 anchor doctor
 ```
 
-Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, and `anchor_check_architecture`.
+Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`.
 
 Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, comments, reviews, commits, labels, and changed files. Anchor uses REST only to enrich PR file patches, caps GraphQL page size below GitHub's nested node ceiling, adapts GraphQL page size from live rate-limit cost, and saves a local resume checkpoint for full-history runs, so `anchor index`, `anchor index-all`, and `anchor sync` are more efficient without adding another command. If GraphQL itself is rate-limited, Anchor defers or fails clearly instead of falling back to the older REST PR-detail crawler.
 
 Use `anchor_get_context` with `strict: true` when Cursor should only receive non-stale, high-confidence evidence.
 
 Anchor indexes PR history, local code chunks, likely related tests, regression memory, architecture patterns, and team-approved rules. `anchor health` and `anchor_index_status` include a local coverage score. All data stays in `.anchor/index.sqlite` on your machine.
+
+Org Memory is opt-in. `anchor org ...` commands store allowlisted repo clones and one org SQLite database under `~/.anchor/orgs/<org>/`, then expose cross-repo context through `anchor_get_org_context`, `anchor_check_cross_repo_impact`, `anchor_find_api_consumers`, `anchor_get_org_architecture`, and `anchor_org_index_status`.
 
 Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor sync`, and `anchor index-code`. It gives Cursor deterministic current-code guidance about file areas, import direction, symbols, repeated folder patterns, and nearby test conventions before adding APIs, services, components, hooks, tests, or refactors.
 

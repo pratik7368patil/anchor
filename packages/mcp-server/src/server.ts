@@ -22,11 +22,25 @@ import {
   AnchorGetArchitectureMapSchema,
   handleAnchorGetArchitectureMap,
 } from "./tools/get-architecture-map.js";
-import {
-  AnchorOnboardingPackSchema,
-  handleAnchorOnboardingPack,
-} from "./tools/onboarding-pack.js";
+import { AnchorOnboardingPackSchema, handleAnchorOnboardingPack } from "./tools/onboarding-pack.js";
 import { AnchorGetPlaybookSchema, handleAnchorGetPlaybook } from "./tools/get-playbook.js";
+import { AnchorGetOrgContextSchema, handleAnchorGetOrgContext } from "./tools/get-org-context.js";
+import {
+  AnchorCheckCrossRepoImpactSchema,
+  handleAnchorCheckCrossRepoImpact,
+} from "./tools/check-cross-repo-impact.js";
+import {
+  AnchorFindApiConsumersSchema,
+  handleAnchorFindApiConsumers,
+} from "./tools/find-api-consumers.js";
+import {
+  AnchorGetOrgArchitectureSchema,
+  handleAnchorGetOrgArchitecture,
+} from "./tools/get-org-architecture.js";
+import {
+  AnchorOrgIndexStatusSchema,
+  handleAnchorOrgIndexStatus,
+} from "./tools/org-index-status.js";
 
 export type AnchorServerOptions = {
   cwd?: string;
@@ -37,7 +51,7 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
   const server = new McpServer(
     {
       name: "anchor",
-      version: "0.1.17",
+      version: "0.1.20",
     },
     {
       instructions:
@@ -221,6 +235,81 @@ export function createAnchorMcpServer(options: AnchorServerOptions = {}): McpSer
       },
     },
     async (input) => handleAnchorGetPlaybook(input, cwd),
+  );
+
+  server.registerTool(
+    "anchor_get_org_context",
+    {
+      title: "Get Anchor Org Context",
+      description:
+        "Use before broad or cross-repo Cursor work. Returns sanitized, evidence-backed org context across allowlisted repos.",
+      inputSchema: AnchorGetOrgContextSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorGetOrgContext(input),
+  );
+
+  server.registerTool(
+    "anchor_check_cross_repo_impact",
+    {
+      title: "Check Anchor Cross-Repo Impact",
+      description:
+        "Use before API, auth/access, billing, schema, SDK, shared-package, or broad refactor changes. Surfaces deterministic cross-repo impact and anomalies.",
+      inputSchema: AnchorCheckCrossRepoImpactSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorCheckCrossRepoImpact(input),
+  );
+
+  server.registerTool(
+    "anchor_find_api_consumers",
+    {
+      title: "Find Anchor API Consumers",
+      description:
+        "Use when changing endpoint, schema, client, or SDK code to find allowlisted repos that consume matching API contracts.",
+      inputSchema: AnchorFindApiConsumersSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorFindApiConsumers(input),
+  );
+
+  server.registerTool(
+    "anchor_get_org_architecture",
+    {
+      title: "Get Anchor Org Architecture",
+      description:
+        "Use when adding repos, services, packages, or cross-repo integrations to inspect the local org architecture map.",
+      inputSchema: AnchorGetOrgArchitectureSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorGetOrgArchitecture(input),
+  );
+
+  server.registerTool(
+    "anchor_org_index_status",
+    {
+      title: "Anchor Org Index Status",
+      description:
+        "Check local org memory freshness, coverage, cloned repos, cross-repo edge count, and API consumer count.",
+      inputSchema: AnchorOrgIndexStatusSchema,
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async (input) => handleAnchorOrgIndexStatus(input),
   );
 
   return server;

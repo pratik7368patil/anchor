@@ -376,6 +376,118 @@ export type OnboardingPack = {
   architectureMap: ArchitectureMap;
 };
 
+export type OrgRepoGroup = "backend" | "frontend" | "shared" | "infra" | "docs" | "unknown";
+
+export type AnchorOrgRepoConfig = {
+  fullName: string;
+  alias: string;
+  group: OrgRepoGroup;
+  cloneUrl: string;
+  defaultBranch: string;
+  enabled: boolean;
+};
+
+export type AnchorOrgConfig = {
+  version: 1;
+  org: string;
+  repos: AnchorOrgRepoConfig[];
+};
+
+export type OrgRepoCloneState = {
+  org: string;
+  repo: string;
+  localPath: string;
+  defaultBranch: string;
+  currentCommit?: string;
+  lastPulledAt?: string;
+  lastCodeIndexedCommit?: string;
+  lastCodeIndexedAt?: string;
+  lastPrSyncAt?: string;
+  lastError?: string;
+};
+
+export type OrgCrossRepoRelationship =
+  | "imports"
+  | "depends_on_package"
+  | "api_consumer"
+  | "sdk_wrapper"
+  | "schema_contract"
+  | "tested_by"
+  | "historical_cochange";
+
+export type OrgCrossRepoEdge = {
+  org: string;
+  sourceRepo: string;
+  sourcePath: string;
+  targetRepo: string;
+  targetPath?: string;
+  relationship: OrgCrossRepoRelationship;
+  evidence: EvidenceRef[];
+  confidence: number;
+};
+
+export type OrgApiConsumer = {
+  org: string;
+  providerRepo: string;
+  providerPath?: string;
+  consumerRepo: string;
+  consumerPath: string;
+  contract: string;
+  evidence: EvidenceRef[];
+  confidence: number;
+};
+
+export type OrgAnomalyCategory =
+  | "access_control_risk"
+  | "api_contract_change"
+  | "missing_consumer_update"
+  | "missing_tests"
+  | "known_regression_match"
+  | "shared_package_blast_radius"
+  | "stale_org_index"
+  | "architecture_boundary_violation";
+
+export type OrgAnomaly = {
+  id: string;
+  category: OrgAnomalyCategory;
+  severity: "blocker" | "high" | "medium" | "low";
+  summary: string;
+  affectedRepos: string[];
+  affectedFiles: string[];
+  evidence: EvidenceRef[];
+  recommendedChecks: string[];
+  confidence: ConfidenceLevel;
+};
+
+export type OrgStatus = {
+  org: string;
+  root: string;
+  databasePath: string;
+  repoCount: number;
+  enabledRepoCount: number;
+  clonedRepoCount: number;
+  codeFileCount: number;
+  codeChunkCount: number;
+  wisdomUnitCount: number;
+  crossRepoEdgeCount: number;
+  apiConsumerCount: number;
+  anomalyCount: number;
+  coverageScore: number;
+  coverageGrade: CoverageGrade;
+  coverageReasons: string[];
+  repos: Array<
+    AnchorOrgRepoConfig & {
+      localPath: string;
+      cloned: boolean;
+      currentCommit?: string;
+      lastPulledAt?: string;
+      lastCodeIndexedAt?: string;
+      lastPrSyncAt?: string;
+      lastError?: string;
+    }
+  >;
+};
+
 export type FetchPullRequestsProgress =
   | {
       stage: "discovering_pull_requests";

@@ -117,6 +117,11 @@ export function checkSchema(db: AnchorDatabase): boolean {
       "feedback_events",
       "playbooks",
       "watch_state",
+      "org_repositories",
+      "org_repo_state",
+      "org_cross_repo_edges",
+      "org_api_consumers",
+      "org_anomaly_events",
     ].every(
       (tableName) =>
         db.prepare("SELECT name FROM sqlite_master WHERE name = ?").all(tableName).length > 0,
@@ -273,9 +278,9 @@ export function clearGraphQLFetchCheckpoint(
   scope?: string,
 ): void {
   initializeSchema(db);
-  const row = db
-    .prepare("SELECT graphql_cursor_scope FROM sync_state WHERE repo = ?")
-    .get(repo) as SyncRow | undefined;
+  const row = db.prepare("SELECT graphql_cursor_scope FROM sync_state WHERE repo = ?").get(repo) as
+    | SyncRow
+    | undefined;
   if (scope && row?.graphql_cursor_scope && row.graphql_cursor_scope !== scope) return;
   db.prepare(
     `UPDATE sync_state SET
@@ -743,7 +748,12 @@ function insertArchitectureMapEdges(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const seen = new Set<string>();
-  const addEdge = (sourcePath: string, targetPath: string, relationship: string, weight: number) => {
+  const addEdge = (
+    sourcePath: string,
+    targetPath: string,
+    relationship: string,
+    weight: number,
+  ) => {
     if (!sourcePath || !targetPath || sourcePath === targetPath) return;
     const id = `${repo}:${sourcePath}->${targetPath}:${relationship}`;
     if (seen.has(id)) return;

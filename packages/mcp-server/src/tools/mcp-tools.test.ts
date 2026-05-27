@@ -4,9 +4,14 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  addOrgRepoConfig,
   indexCodebase,
   indexPullRequests,
+  initOrgConfig,
   openAnchorDatabase,
+  openOrgDatabase,
+  orgRepoLocalPath,
+  rebuildOrgGraph,
   type PullRequestRecord,
 } from "@pratik7368patil/anchor-core";
 import { createAnchorMcpServer } from "../server.js";
@@ -22,6 +27,11 @@ import { handleAnchorGetTestCommands } from "./get-test-commands.js";
 import { handleAnchorGetArchitectureMap } from "./get-architecture-map.js";
 import { handleAnchorOnboardingPack } from "./onboarding-pack.js";
 import { handleAnchorGetPlaybook } from "./get-playbook.js";
+import { handleAnchorGetOrgContext } from "./get-org-context.js";
+import { handleAnchorCheckCrossRepoImpact } from "./check-cross-repo-impact.js";
+import { handleAnchorFindApiConsumers } from "./find-api-consumers.js";
+import { handleAnchorGetOrgArchitecture } from "./get-org-architecture.js";
+import { handleAnchorOrgIndexStatus } from "./org-index-status.js";
 
 const tempDirs: string[] = [];
 
@@ -120,6 +130,7 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  delete process.env.ANCHOR_ORG_HOME;
 });
 
 describe("MCP tools", () => {
@@ -297,5 +308,88 @@ describe("MCP tools", () => {
     expect(playbook.structuredContent?.playbooks).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "auth-cache-playbook" })]),
     );
+  });
+
+  it("supports org memory MCP tools", async () => {
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    let config = initOrgConfig("acme");
+    config = addOrgRepoConfig("acme", "acme/backend-api", {
+      alias: "backend-api",
+      group: "backend",
+      cloneUrl: "https://github.com/acme/backend-api.git",
+    });
+    config = addOrgRepoConfig("acme", "acme/frontend-app", {
+      alias: "frontend-app",
+      group: "frontend",
+      cloneUrl: "https://github.com/acme/frontend-app.git",
+    });
+    const backendPath = orgRepoLocalPath("acme", config.repos[0]!);
+    const frontendPath = orgRepoLocalPath("acme", config.repos[1]!);
+    fs.mkdirSync(path.join(backendPath, "src/api"), { recursive: true });
+    fs.mkdirSync(path.join(frontendPath, "src/api"), { recursive: true });
+    execFileSync("git", ["init"], { cwd: backendPath, stdio: "ignore" });
+    execFileSync("git", ["init"], { cwd: frontendPath, stdio: "ignore" });
+    fs.writeFileSync(
+      path.join(backendPath, "package.json"),
+      JSON.stringify({ name: "@acme/backend-api" }, null, 2),
+    );
+    fs.writeFileSync(
+      path.join(backendPath, "src/api/user-access.ts"),
+      'export const USER_ACCESS_ROUTE = "/api/user-access";\n',
+    );
+    fs.writeFileSync(
+      path.join(frontendPath, "package.json"),
+      JSON.stringify(
+        { name: "@acme/frontend-app", dependencies: { "@acme/backend-api": "workspace:*" } },
+        null,
+        2,
+      ),
+    );
+    fs.writeFileSync(
+      path.join(frontendPath, "src/api/user-access-client.ts"),
+      'export function loadAccess() { return fetch("/api/user-access"); }\n',
+    );
+    execFileSync("git", ["add", "."], { cwd: backendPath, stdio: "ignore" });
+    execFileSync("git", ["add", "."], { cwd: frontendPath, stdio: "ignore" });
+    const db = openOrgDatabase("acme");
+    try {
+      indexCodebase(db, { cwd: backendPath, repo: "acme/backend-api" });
+      indexCodebase(db, { cwd: frontendPath, repo: "acme/frontend-app" });
+      rebuildOrgGraph(db, config);
+    } finally {
+      db.close();
+    }
+
+    const status = await handleAnchorOrgIndexStatus({ org: "acme" });
+    const consumers = await handleAnchorFindApiConsumers({
+      org: "acme",
+      repo: "acme/backend-api",
+      files: ["src/api/user-access.ts"],
+    });
+    const architecture = await handleAnchorGetOrgArchitecture({ org: "acme" });
+    const impact = await handleAnchorCheckCrossRepoImpact({
+      org: "acme",
+      repo: "acme/backend-api",
+      files: ["src/api/user-access.ts"],
+      strict: true,
+    });
+    const context = await handleAnchorGetOrgContext({
+      org: "acme",
+      task: "change user access API",
+      repos: ["acme/backend-api"],
+      files: ["src/api/user-access.ts"],
+    });
+
+    expect(status.content[0]?.text).toContain("# Anchor Org Index Status");
+    expect(status.structuredContent?.apiConsumerCount).toBeGreaterThan(0);
+    expect(consumers.content[0]?.text).toContain("acme/frontend-app");
+    expect(architecture.content[0]?.text).toContain("```mermaid");
+    expect(impact.content[0]?.text).toContain("# Anchor Cross-Repo Impact");
+    expect(impact.structuredContent?.apiConsumers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ consumerRepo: "acme/frontend-app" })]),
+    );
+    expect(context.content[0]?.text).toContain("# Anchor Org Context");
+    expect(context.content[0]?.text).not.toContain("ignore previous instructions");
   });
 });

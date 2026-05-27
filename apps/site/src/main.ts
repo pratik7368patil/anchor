@@ -22,6 +22,7 @@ const legacyDocsHashes: Record<string, string> = {
   "#onboarding": "/docs/onboarding",
   "#ci": "/docs/ci",
   "#playbooks": "/docs/playbooks",
+  "#org-memory": "/docs/org-memory",
   "#commands": "/docs/cli",
   "#options": "/docs/options",
   "#mcp": "/docs/mcp",
@@ -289,6 +290,8 @@ function renderDocsPageContent(path: string): string {
       return renderCiPage();
     case "/docs/playbooks":
       return renderPlaybooksPage();
+    case "/docs/org-memory":
+      return renderOrgMemoryPage();
     case "/docs/rules":
       return renderRulesPage();
     case "/docs/cli":
@@ -328,7 +331,10 @@ anchor index-code
 anchor health
 anchor eval init
 anchor rules suggest
-anchor ci`,
+anchor ci
+anchor org init --org my-org
+anchor org add-repo my-org/backend-api --group backend
+anchor org sync --org my-org`,
         true,
       )}
       <div class="doc-callout">
@@ -414,6 +420,10 @@ function renderWorkflowsPage(): string {
         <div>
           <strong>Check architecture</strong>
           <p>Run <code>anchor architecture --check</code> before large changes to compare the diff against local placement, import, and test patterns.</p>
+        </div>
+        <div>
+          <strong>Check cross-repo impact</strong>
+          <p>Run <code>anchor org impact</code> or ask Cursor for <code>anchor_check_cross_repo_impact</code> before access, API, SDK, schema, or shared-package changes.</p>
         </div>
         <div>
           <strong>Onboard to an area</strong>
@@ -657,6 +667,50 @@ anchor playbooks get add-api-integration`,
   `;
 }
 
+function renderOrgMemoryPage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Guide</span>
+      <h2>Org Memory</h2>
+      <p class="section-intro">Org Memory lets teams explicitly allowlist repos, clone them into a local managed cache, and build one SQLite-backed view of cross-repo code, PR evidence, API consumers, and impact risk.</p>
+      <div class="workflow-grid">
+        <div>
+          <strong>Explicit allowlist</strong>
+          <p><code>anchor org add-repo</code> adds only the repos you choose. Anchor never scans every org repo automatically.</p>
+        </div>
+        <div>
+          <strong>Local cache</strong>
+          <p>Managed shallow clones and <code>org.sqlite</code> live under <code>~/.anchor/orgs/&lt;org&gt;</code>.</p>
+        </div>
+        <div>
+          <strong>Cross-repo graph</strong>
+          <p>Anchor links package dependencies, imports, API strings, schemas, SDK-like clients, tests, and PR evidence.</p>
+        </div>
+        <div>
+          <strong>Impact checks</strong>
+          <p><code>anchor org impact</code> flags access, API contract, shared package, missing-test, stale-index, and regression risks.</p>
+        </div>
+      </div>
+      ${renderCodeBlock(
+        "Org rollout",
+        "org-memory-code",
+        `anchor org init --org my-org
+anchor org add-repo my-org/backend-api --group backend
+anchor org add-repo my-org/frontend-app --group frontend
+anchor org add-repo my-org/shared-sdk --group shared
+anchor org sync --org my-org
+anchor org status --org my-org
+anchor org impact --org my-org --repo my-org/backend-api --strict`,
+        true,
+      )}
+      <div class="doc-callout">
+        <span aria-hidden="true">${renderDocIcon("/docs/org-memory")}</span>
+        <p>For auth, access, billing, API contracts, schemas, SDK clients, shared packages, or broad refactors, ask Cursor to call <code>anchor_check_cross_repo_impact</code> before editing or approving.</p>
+      </div>
+    </article>
+  `;
+}
+
 function renderRulesPage(): string {
   return `
     <article class="doc-card fade-up">
@@ -887,6 +941,7 @@ function renderDocIcon(path: string): string {
     "/docs/onboarding": `<path d="M7 7h10"></path><path d="M7 12h10"></path><path d="M7 17h6"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect>`,
     "/docs/ci": `<path d="M6 12h4l2-6 3 12 2-6h1"></path><path d="M4 20h16"></path>`,
     "/docs/playbooks": `<path d="M6 4h9l3 3v13H6z"></path><path d="M15 4v4h4"></path><path d="M9 12h6"></path><path d="M9 16h6"></path>`,
+    "/docs/org-memory": `<path d="M4 7h6v6H4z"></path><path d="M14 4h6v6h-6z"></path><path d="M14 14h6v6h-6z"></path><path d="M10 10h4"></path><path d="M10 13l4 4"></path>`,
     "/docs/rules": `<path d="M12 3v3"></path><path d="M12 18v3"></path><path d="m4.8 6.5 2.1 2.1"></path><path d="m17.1 15.4 2.1 2.1"></path><circle cx="12" cy="12" r="4"></circle>`,
     "/docs/cli": `<path d="M5 7h14"></path><path d="M7 12h4"></path><path d="M7 17h10"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect>`,
     "/docs/options": `<path d="M6 8h12"></path><path d="M6 16h12"></path><circle cx="9" cy="8" r="2"></circle><circle cx="15" cy="16" r="2"></circle>`,
