@@ -300,7 +300,13 @@ describe("developer value commands", () => {
 });
 
 describe("progress reporter", () => {
-  it("renders pretty progress to stderr-like streams and can be turned off", () => {
+  it("defaults to modern pretty progress for interactive streams and can be turned off", () => {
+    const previousCi = process.env.CI;
+    const previousProgress = process.env.ANCHOR_PROGRESS;
+    const previousNoColor = process.env.NO_COLOR;
+    delete process.env.CI;
+    delete process.env.ANCHOR_PROGRESS;
+    process.env.NO_COLOR = "1";
     const stream = new PassThrough() as PassThrough & { isTTY: boolean; columns: number };
     stream.isTTY = true;
     stream.columns = 120;
@@ -309,7 +315,7 @@ describe("progress reporter", () => {
       output += chunk.toString("utf8");
     });
 
-    const reporter = createProgressReporter({ progress: "pretty", stream });
+    const reporter = createProgressReporter({ stream, title: "Indexing repo memory" });
     reporter.onCodeProgress({
       stage: "indexed_code_file",
       repo: "owner/repo",
@@ -321,12 +327,15 @@ describe("progress reporter", () => {
     reporter.log("[anchor] done");
     reporter.close();
 
-    expect(output).toContain("[anchor]");
+    expect(output).toContain("Anchor");
+    expect(output).toContain("Indexing repo memory");
+    expect(output).toContain("Indexed code");
     expect(output).toContain("1/2");
     expect(output).toContain("done");
+    expect(output).not.toMatch(/\u001b\[[0-9;]*m/);
 
     output = "";
-    const quiet = createProgressReporter({ progress: "off", stream });
+    const quiet = createProgressReporter({ json: true, stream });
     quiet.log("[anchor] hidden");
     quiet.onCodeProgress({
       stage: "discovering_code_files",
@@ -334,6 +343,31 @@ describe("progress reporter", () => {
     });
     quiet.close();
     expect(output).toBe("");
+
+    if (previousCi === undefined) delete process.env.CI;
+    else process.env.CI = previousCi;
+    if (previousProgress === undefined) delete process.env.ANCHOR_PROGRESS;
+    else process.env.ANCHOR_PROGRESS = previousProgress;
+    if (previousNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previousNoColor;
+  });
+
+  it("defaults to plain progress for non-tty streams", () => {
+    const previousCi = process.env.CI;
+    const previousProgress = process.env.ANCHOR_PROGRESS;
+    delete process.env.CI;
+    delete process.env.ANCHOR_PROGRESS;
+    const stream = new PassThrough() as PassThrough & { isTTY: boolean; columns: number };
+    stream.isTTY = false;
+    stream.columns = 80;
+
+    const reporter = createProgressReporter({ stream });
+    expect(reporter.mode).toBe("plain");
+
+    if (previousCi === undefined) delete process.env.CI;
+    else process.env.CI = previousCi;
+    if (previousProgress === undefined) delete process.env.ANCHOR_PROGRESS;
+    else process.env.ANCHOR_PROGRESS = previousProgress;
   });
 });
 

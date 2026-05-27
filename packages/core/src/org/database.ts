@@ -28,6 +28,17 @@ type OrgGraphStateRow = {
   last_error?: string | null;
 };
 
+export type OrgGraphState = {
+  org: string;
+  lastBuiltAt?: string;
+  lastStatus?: "success" | "failed" | "skipped" | "unknown";
+  lastDurationMs?: number;
+  edgeCount?: number;
+  apiContractCount?: number;
+  apiConsumerCount?: number;
+  lastError?: string;
+};
+
 export function openOrgDatabase(org: string, baseDir?: string): AnchorDatabase {
   const root = orgRoot(org, baseDir);
   const db = openAnchorDatabase(root, orgDatabasePath(org, baseDir));
@@ -216,6 +227,24 @@ export function recordOrgGraphState(
     input.error ?? null,
     now,
   );
+}
+
+export function getOrgGraphState(db: AnchorDatabase, org: string): OrgGraphState | undefined {
+  initializeSchema(db);
+  const row = db.prepare("SELECT * FROM org_graph_state WHERE org = ?").get(org) as
+    | OrgGraphStateRow
+    | undefined;
+  if (!row) return undefined;
+  return {
+    org: row.org,
+    lastBuiltAt: row.last_built_at ?? undefined,
+    lastStatus: row.last_status ?? undefined,
+    lastDurationMs: row.last_duration_ms ?? undefined,
+    edgeCount: row.edge_count ?? undefined,
+    apiContractCount: row.api_contract_count ?? undefined,
+    apiConsumerCount: row.api_consumer_count ?? undefined,
+    lastError: row.last_error ?? undefined,
+  };
 }
 
 function count(db: AnchorDatabase, table: string, where = "", params: unknown[] = []): number {

@@ -18,6 +18,7 @@ import {
   plannedOrgCloneCommands,
   removeOrgRepoConfig,
   rebuildOrgGraph,
+  type PullRequestRecord,
 } from "../index.js";
 
 function tempDir(): string {
@@ -256,6 +257,85 @@ describe("org memory", () => {
       const map = getOrgArchitectureMap(db, config, "mermaid");
       expect(map.markdown).toContain("```mermaid");
       expect(JSON.stringify(map.metadata)).toContain("acme/frontend-app");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("resumes org sync from graph work without refetching already-synced PRs", async () => {
+    const root = tempDir();
+    const baseDir = path.join(root, "orgs");
+    const backendSource = createBackendRepo(root);
+    let config = initOrgConfig("acme", baseDir);
+    config = addOrgRepoConfig(
+      "acme",
+      "acme/backend-api",
+      {
+        alias: "backend-api",
+        group: "backend",
+        cloneUrl: backendSource,
+        defaultBranch: "main",
+      },
+      baseDir,
+    );
+
+    const db = openOrgDatabase("acme", baseDir);
+    try {
+      await cloneOrgRepos({ config, db, baseDir });
+      const pr: PullRequestRecord = {
+        repo: "acme/backend-api",
+        number: 42,
+        html_url: "https://github.com/acme/backend-api/pull/42",
+        title: "Keep user access route stable",
+        body: "API contract: user access route must remain backward compatible.",
+        user: { login: "alice" },
+        labels: [{ name: "api" }],
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-02T00:00:00Z",
+        merged_at: "2026-01-02T00:00:00Z",
+        files: [
+          {
+            filename: "src/api/user-access.ts",
+            patch: '@@ route @@\n+export const USER_ACCESS_ROUTE = "/api/user-access";',
+            additions: 1,
+            deletions: 0,
+          },
+        ],
+        reviews: [],
+        reviewComments: [],
+        issueComments: [],
+        commits: [],
+      };
+      let fetchCalls = 0;
+      await indexOrgRepos(db, config, {
+        token: "test-token",
+        command: "org sync",
+        noGraph: true,
+        baseDir,
+        fetchPullRequests: async () => {
+          fetchCalls += 1;
+          return [pr];
+        },
+      });
+      expect(fetchCalls).toBe(1);
+
+      const progress: string[] = [];
+      const resumed = await indexOrgRepos(db, config, {
+        token: "test-token",
+        command: "org sync",
+        baseDir,
+        fetchPullRequests: async () => {
+          fetchCalls += 1;
+          return [];
+        },
+        onFetchProgress: (item) => progress.push(item.stage),
+      });
+
+      expect(fetchCalls).toBe(1);
+      expect(resumed.repos[0]?.skippedHistory).toBe(true);
+      expect(resumed.repos[0]?.skippedCode).toBe(true);
+      expect(progress).toContain("skipped_pull_request_fetch");
+      expect(resumed.graph.skipped).toBeUndefined();
     } finally {
       db.close();
     }

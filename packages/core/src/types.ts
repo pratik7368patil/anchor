@@ -676,6 +676,11 @@ export type FetchPullRequestsProgress =
       reason: string;
       request: string;
       attempt: number;
+    }
+  | {
+      stage: "skipped_pull_request_fetch";
+      repo: string;
+      reason: string;
     };
 
 export type IndexPullRequestsProgress =

@@ -15,16 +15,26 @@ type ProgressStream = {
   write: (text: string) => boolean;
 };
 
+type ProgressTaskState = "active" | "done" | "warn" | "fail" | "wait";
+
 type ProgressTask = {
+  key: string;
   label: string;
+  phase?: string;
   current?: number;
   total?: number;
   detail?: string;
+  state?: ProgressTaskState;
+};
+
+type RenderedProgressTask = ProgressTask & {
+  startedAt: number;
+  updatedAt: number;
 };
 
 export function parseProgressMode(value: string): ProgressMode {
   if (value === "pretty" || value === "plain" || value === "off") return value;
-  throw new Error("Invalid progress mode. Use pretty, plain, or off.");
+  throw new Error("Invalid ANCHOR_PROGRESS value. Use pretty, plain, or off.");
 }
 
 function progressModeFromEnvironment(): ProgressMode | undefined {
@@ -54,52 +64,232 @@ function formatElapsed(startedAt: number): string {
   return `${minutes}:${remainder.toString().padStart(2, "0")}`;
 }
 
-function progressBar(current: number, total: number, width: number): string {
-  if (total <= 0) return "";
-  const ratio = Math.max(0, Math.min(1, current / total));
-  const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
-  return `[${"=".repeat(filled)}${filled < width ? ">" : ""}${"-".repeat(Math.max(0, width - filled - (filled < width ? 1 : 0)))}]`;
+function supportsColor(stream: ProgressStream): boolean {
+  if (process.env.NO_COLOR) return false;
+  if (process.env.FORCE_COLOR && process.env.FORCE_COLOR !== "0") return true;
+  return Boolean(stream.isTTY);
 }
 
-class PrettyProgressRenderer {
-  private readonly startedAt = Date.now();
-  private active = false;
+function supportsUnicode(): boolean {
+  if (process.env.ANCHOR_ASCII_PROGRESS === "1") return false;
+  if (process.env.TERM === "dumb") return false;
+  return process.platform !== "win32" || Boolean(process.env.WT_SESSION || process.env.CI);
+}
 
-  constructor(private readonly stream: ProgressStream) {}
+function colorize(enabled: boolean, code: string, text: string): string {
+  return enabled ? `\u001b[${code}m${text}\u001b[0m` : text;
+}
+
+function visibleLength(text: string): number {
+  return text.replace(/\u001b\[[0-9;]*m/g, "").length;
+}
+
+function truncateEnd(text: string, maxLength: number): string {
+  if (maxLength <= 0) return "";
+  if (visibleLength(text) <= maxLength) return text;
+  const plain = text.replace(/\u001b\[[0-9;]*m/g, "");
+  return `${plain.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function truncateMiddle(text: string, maxLength: number): string {
+  if (maxLength <= 0) return "";
+  if (text.length <= maxLength) return text;
+  if (maxLength < 8) return text.slice(0, maxLength);
+  const left = Math.ceil((maxLength - 1) / 2);
+  const right = Math.floor((maxLength - 1) / 2);
+  return `${text.slice(0, left)}…${text.slice(text.length - right)}`;
+}
+
+function formatPercent(current?: number, total?: number): string {
+  if (typeof current !== "number" || typeof total !== "number" || total <= 0) return "";
+  return `${Math.round(Math.max(0, Math.min(1, current / total)) * 100)}%`;
+}
+
+function formatRate(task: RenderedProgressTask): string {
+  if (typeof task.current !== "number" || task.current <= 0) return "";
+  const seconds = Math.max(0.5, (Date.now() - task.startedAt) / 1000);
+  if (seconds < 2) return "";
+  const rate = task.current / seconds;
+  if (rate >= 10) return `${Math.round(rate)}/s`;
+  return `${rate.toFixed(1)}/s`;
+}
+
+function formatEta(task: RenderedProgressTask): string {
+  if (
+    typeof task.current !== "number" ||
+    typeof task.total !== "number" ||
+    task.current <= 0 ||
+    task.current >= task.total
+  ) {
+    return "";
+  }
+  const seconds = Math.max(0.5, (Date.now() - task.startedAt) / 1000);
+  if (seconds < 3) return "";
+  const remaining = Math.ceil(((task.total - task.current) * seconds) / task.current);
+  if (remaining < 60) return `${remaining}s left`;
+  return `${Math.floor(remaining / 60)}m ${remaining % 60}s left`;
+}
+
+function progressBar(
+  current: number | undefined,
+  total: number | undefined,
+  width: number,
+  input: { unicode: boolean; color: boolean; state: ProgressTaskState },
+): string {
+  if (typeof current !== "number" || typeof total !== "number" || total <= 0 || width <= 0) {
+    return "";
+  }
+  const ratio = Math.max(0, Math.min(1, current / total));
+  const filled = Math.max(0, Math.min(width, Math.round(ratio * width)));
+  const filledChar = input.unicode ? "━" : "=";
+  const emptyChar = input.unicode ? "─" : "-";
+  const headChar = input.unicode ? "╸" : ">";
+  const full = filled >= width;
+  const body = full
+    ? filledChar.repeat(width)
+    : `${filledChar.repeat(Math.max(0, filled))}${headChar}${emptyChar.repeat(
+        Math.max(0, width - filled - 1),
+      )}`;
+  const color =
+    input.state === "warn" || input.state === "wait"
+      ? "33"
+      : input.state === "fail"
+        ? "31"
+        : input.state === "done"
+          ? "32"
+          : "36";
+  return colorize(input.color, color, body);
+}
+
+class LiveProgressRenderer {
+  private readonly startedAt = Date.now();
+  private readonly color: boolean;
+  private readonly unicode: boolean;
+  private readonly spinnerFrames: string[];
+  private readonly tasks = new Map<string, RenderedProgressTask>();
+  private active = false;
+  private renderedLines = 0;
+  private spinnerIndex = 0;
+
+  constructor(
+    private readonly stream: ProgressStream,
+    private readonly title = "Anchor progress",
+  ) {
+    this.color = supportsColor(stream);
+    this.unicode = supportsUnicode();
+    this.spinnerFrames = this.unicode ? ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"] : ["-", "\\", "|", "/"];
+  }
 
   render(task: ProgressTask): void {
-    const width = Math.max(12, Math.min(28, Math.floor((this.stream.columns ?? 100) / 4)));
-    const elapsed = formatElapsed(this.startedAt);
-    const count =
-      typeof task.current === "number" && typeof task.total === "number"
-        ? `${task.current}/${task.total}`
-        : "";
-    const bar =
-      typeof task.current === "number" && typeof task.total === "number"
-        ? `${progressBar(task.current, task.total, width)} `
-        : "";
-    const detail = task.detail ? ` ${task.detail}` : "";
-    const line = `[anchor] ${task.label} ${bar}${count}${detail} elapsed ${elapsed}`;
-    readline.clearLine(this.stream as NodeJS.WriteStream, 0);
-    readline.cursorTo(this.stream as NodeJS.WriteStream, 0);
-    this.stream.write(line.slice(0, Math.max(20, (this.stream.columns ?? 120) - 1)));
+    const previous = this.tasks.get(task.key);
+    this.tasks.set(task.key, {
+      ...previous,
+      ...task,
+      state: task.state ?? "active",
+      startedAt: previous?.startedAt ?? Date.now(),
+      updatedAt: Date.now(),
+    });
+    this.paint();
     this.active = true;
   }
 
   log(message: string): void {
     this.clear();
-    this.stream.write(`${message}\n`);
+    this.stream.write(`${colorize(this.color, "2", message)}\n`);
   }
 
   close(): void {
     this.clear();
   }
 
+  private paint(): void {
+    this.clear();
+    const lines = this.buildLines();
+    if (lines.length === 0) return;
+    this.stream.write(`${lines.join("\n")}\n`);
+    this.renderedLines = lines.length;
+    this.active = true;
+    this.spinnerIndex = (this.spinnerIndex + 1) % this.spinnerFrames.length;
+  }
+
+  private buildLines(): string[] {
+    const width = Math.max(48, this.stream.columns ?? 100);
+    const header = this.renderHeader(width);
+    const tasks = this.visibleTasks();
+    return [header, ...tasks.map((task) => this.renderTask(task, width))].map((line) =>
+      truncateEnd(line, width),
+    );
+  }
+
+  private renderHeader(width: number): string {
+    const title = colorize(this.color, "1;36", "Anchor");
+    const elapsed = colorize(this.color, "2", `elapsed ${formatElapsed(this.startedAt)}`);
+    const label = colorize(this.color, "1", this.title);
+    return truncateEnd(`${title} ${colorize(this.color, "2", "›")} ${label} ${elapsed}`, width);
+  }
+
+  private visibleTasks(): RenderedProgressTask[] {
+    const tasks = [...this.tasks.values()].sort((a, b) => {
+      const weight = (task: RenderedProgressTask) =>
+        task.state === "active" || task.state === "wait"
+          ? 0
+          : task.state === "warn" || task.state === "fail"
+            ? 1
+            : 2;
+      const byWeight = weight(a) - weight(b);
+      return byWeight || b.updatedAt - a.updatedAt;
+    });
+    return tasks.slice(0, 6);
+  }
+
+  private renderTask(task: RenderedProgressTask, width: number): string {
+    const state = task.state ?? "active";
+    const symbol = this.statusSymbol(state);
+    const phase = task.phase ? colorize(this.color, "2", `${task.phase} `) : "";
+    const label = colorize(this.color, state === "active" || state === "wait" ? "0" : "2", task.label);
+    const count =
+      typeof task.current === "number" && typeof task.total === "number"
+        ? `${task.current}/${task.total}`
+        : typeof task.current === "number"
+          ? `${task.current}`
+          : "";
+    const percent = formatPercent(task.current, task.total);
+    const rate = formatRate(task);
+    const eta = formatEta(task);
+    const metrics = [count, percent, rate, eta].filter(Boolean).join(" ");
+    const barWidth = width >= 96 ? 24 : width >= 72 ? 16 : 10;
+    const bar = progressBar(task.current, task.total, barWidth, {
+      unicode: this.unicode,
+      color: this.color,
+      state,
+    });
+    const detailBudget = Math.max(14, width - 56 - barWidth);
+    const detail = task.detail
+      ? colorize(this.color, "2", truncateMiddle(task.detail, detailBudget))
+      : "";
+    return [" ", symbol, phase + label, bar, colorize(this.color, "2", metrics), detail]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trimEnd();
+  }
+
+  private statusSymbol(state: ProgressTaskState): string {
+    if (state === "active") return colorize(this.color, "36", this.spinnerFrames[this.spinnerIndex] ?? "*");
+    if (state === "done") return colorize(this.color, "32", this.unicode ? "✓" : "ok");
+    if (state === "warn") return colorize(this.color, "33", this.unicode ? "!" : "warn");
+    if (state === "fail") return colorize(this.color, "31", this.unicode ? "×" : "fail");
+    return colorize(this.color, "33", this.unicode ? "…" : "wait");
+  }
+
   private clear(): void {
     if (!this.active) return;
-    readline.clearLine(this.stream as NodeJS.WriteStream, 0);
-    readline.cursorTo(this.stream as NodeJS.WriteStream, 0);
+    for (let i = 0; i < this.renderedLines; i += 1) {
+      readline.moveCursor(this.stream as NodeJS.WriteStream, 0, -1);
+      readline.clearLine(this.stream as NodeJS.WriteStream, 0);
+    }
     this.active = false;
+    this.renderedLines = 0;
   }
 }
 
@@ -118,10 +308,11 @@ export function createProgressReporter(input?: {
   progress?: ProgressMode;
   json?: boolean;
   stream?: ProgressStream;
+  title?: string;
 }): AnchorProgressReporter {
   const stream = input?.stream ?? process.stderr;
   const mode = resolveProgressMode({ ...input, stream });
-  const pretty = mode === "pretty" ? new PrettyProgressRenderer(stream) : undefined;
+  const pretty = mode === "pretty" ? new LiveProgressRenderer(stream, input?.title) : undefined;
   const log = (message: string): void => {
     if (mode === "off") return;
     if (pretty) pretty.log(message);
@@ -269,6 +460,9 @@ export function printFetchProgress(progress: FetchPullRequestsProgress): void {
       console.error(
         `[anchor] GitHub rate limit hit while ${progress.request}. Waiting ${progress.waitSeconds}s until ${progress.retryAt}. ${progress.reason}.`,
       );
+      return;
+    case "skipped_pull_request_fetch":
+      console.error(`[anchor] skipped PR fetch for ${progress.repo}. ${progress.reason}`);
       return;
   }
 }
@@ -420,21 +614,28 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
   switch (progress.stage) {
     case "discovering_pull_requests":
       return {
-        label: `finding ${fetchScope(progress)} in ${progress.repo}`,
+        key: `fetch:${progress.repo}`,
+        phase: "GitHub",
+        label: `Finding ${fetchScope(progress)}`,
         detail: progress.backend === "graphql" ? "GitHub GraphQL" : undefined,
       };
     case "scanned_pull_request_page":
       return {
-        label: `scanning PR pages in ${progress.repo}`,
+        key: `fetch:${progress.repo}`,
+        phase: "GitHub",
+        label: "Scanning PR pages",
         current: progress.all ? progress.scannedPullRequests : progress.matchedMergedPullRequests,
         total: progress.all ? undefined : progress.limit,
-        detail: `${progress.matchedMergedPullRequests} merged found`,
+        detail: `${progress.repo} · ${progress.matchedMergedPullRequests} merged found`,
       };
     case "discovered_pull_requests":
       return {
-        label: `found merged PRs in ${progress.repo}`,
+        key: `fetch:${progress.repo}`,
+        phase: "GitHub",
+        label: "PR metadata ready",
         current: progress.total,
         total: progress.total,
+        state: "done",
         detail:
           progress.backend === "graphql"
             ? "enriching patches with REST"
@@ -442,82 +643,127 @@ function fetchTask(progress: FetchPullRequestsProgress): ProgressTask {
       };
     case "fetching_pull_request_details":
       return {
-        label: `fetching PR details in ${progress.repo}`,
+        key: `details:${progress.repo}`,
+        phase: "REST",
+        label: "Fetching PR details",
         current: progress.current,
         total: progress.total,
         detail: `#${progress.prNumber}`,
       };
     case "fetched_pull_request_details":
       return {
-        label: `fetched PR details in ${progress.repo}`,
+        key: `details:${progress.repo}`,
+        phase: "REST",
+        label: "Fetched PR details",
         current: progress.current,
         total: progress.total,
+        state: progress.current >= progress.total ? "done" : "active",
         detail: `#${progress.prNumber}`,
       };
     case "enriching_pull_request_patches":
       return {
-        label: `enriching PR patches in ${progress.repo}`,
+        key: `patches:${progress.repo}`,
+        phase: "REST",
+        label: "Enriching PR patches",
         current: progress.current,
         total: progress.total,
         detail: `#${progress.prNumber}`,
       };
     case "enriched_pull_request_patches":
       return {
-        label: `enriched PR patches in ${progress.repo}`,
+        key: `patches:${progress.repo}`,
+        phase: "REST",
+        label: "Enriched PR patches",
         current: progress.current,
         total: progress.total,
+        state: progress.current >= progress.total ? "done" : "active",
         detail: `#${progress.prNumber} (${progress.patches} patches)`,
       };
     case "skipped_pull_request_patch_enrichment":
       return {
-        label: `skipped PR patch enrichment in ${progress.repo}`,
+        key: `patches:skipped:${progress.repo}:${progress.prNumber}`,
+        phase: "REST",
+        label: "Skipped PR patch enrichment",
         current: progress.current,
         total: progress.total,
+        state: "warn",
         detail: `#${progress.prNumber}: ${progress.reason}`,
       };
     case "github_fetch_backend_fallback":
       return {
-        label: `fallback from ${progress.from} to ${progress.to}`,
+        key: `fallback:${progress.repo}`,
+        phase: "GitHub",
+        label: `Fallback from ${progress.from} to ${progress.to}`,
+        state: "warn",
         detail: progress.reason,
       };
     case "github_graphql_page_size_reduced":
       return {
-        label: "reducing GitHub GraphQL page size",
+        key: `graphql-size:${progress.repo}`,
+        phase: "GraphQL",
+        label: "Reducing page size",
+        state: "warn",
         detail: `${progress.previousPageSize} -> ${progress.nextPageSize}: ${progress.reason}`,
       };
     case "github_graphql_page_size_selected":
       return {
-        label: "selected GitHub GraphQL page size",
+        key: `graphql-size:${progress.repo}`,
+        phase: "GraphQL",
+        label: "Selected page size",
+        state: "done",
         detail: `${progress.previousPageSize} -> ${progress.nextPageSize}`,
       };
     case "github_graphql_budget_deferred":
       return {
-        label: "GraphQL budget reserve reached",
+        key: `graphql-budget:${progress.repo}`,
+        phase: "GraphQL",
+        label: "Budget reserve reached",
         current: progress.matchedMergedPullRequests,
+        state: "warn",
         detail: `remaining ${progress.remaining ?? "unknown"}, reset ${progress.resetAt ?? "unknown"}`,
       };
     case "github_graphql_checkpoint_resumed":
       return {
-        label: "resuming GraphQL checkpoint",
+        key: `graphql-checkpoint:${progress.repo}`,
+        phase: "GraphQL",
+        label: "Resuming checkpoint",
         current: progress.matchedMergedPullRequests,
+        state: "done",
         detail: `page size ${progress.pageSize}`,
       };
     case "github_rate_limited":
       return {
-        label: "waiting for GitHub rate limit",
+        key: `rate-limit:${progress.repo}`,
+        phase: "GitHub",
+        label: "Waiting for rate limit",
+        state: "wait",
         detail: `${progress.waitSeconds}s until ${progress.retryAt}`,
+      };
+    case "skipped_pull_request_fetch":
+      return {
+        key: `fetch:${progress.repo}`,
+        phase: "GitHub",
+        label: "Skipped PR fetch",
+        state: "done",
+        detail: progress.reason,
       };
   }
 }
 
 function indexTask(progress: IndexPullRequestsProgress): ProgressTask {
   return {
+    key: `index-prs:${progress.repo}`,
+    phase: "SQLite",
     label:
       progress.stage === "indexing_pull_request"
-        ? `indexing PR history in ${progress.repo}`
-        : `indexed PR history in ${progress.repo}`,
+        ? "Indexing PR history"
+        : "Indexed PR history",
     current: progress.current,
     total: progress.total,
+    state:
+      progress.stage === "indexed_pull_request" && progress.current >= progress.total
+        ? "done"
+        : "active",
     detail:
       progress.stage === "indexed_pull_request"
         ? `#${progress.prNumber} (${progress.wisdomUnitsCreated} wisdom units)`
@@ -528,31 +774,47 @@ function indexTask(progress: IndexPullRequestsProgress): ProgressTask {
 function codeTask(progress: CodeIndexProgress): ProgressTask {
   switch (progress.stage) {
     case "discovering_code_files":
-      return { label: `discovering code files in ${progress.repo}` };
+      return {
+        key: `code:${progress.repo}`,
+        phase: "Code",
+        label: "Discovering code files",
+        detail: progress.repo,
+      };
     case "discovered_code_files":
       return {
-        label: `found code files in ${progress.repo}`,
+        key: `code:${progress.repo}`,
+        phase: "Code",
+        label: "Code files discovered",
         current: progress.files,
         total: progress.files,
+        state: "done",
         detail: `${progress.skippedFiles} skipped`,
       };
     case "indexing_code_file":
       return {
-        label: `indexing code in ${progress.repo}`,
+        key: `code:${progress.repo}`,
+        phase: "Code",
+        label: "Indexing code",
         current: progress.current,
         total: progress.total,
         detail: progress.filePath,
       };
     case "indexed_code_file":
       return {
-        label: `indexed code in ${progress.repo}`,
+        key: `code:${progress.repo}`,
+        phase: "Code",
+        label: "Indexed code",
         current: progress.current,
         total: progress.total,
+        state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.filePath} (${progress.chunks} chunks)`,
       };
     case "indexed_architecture":
       return {
-        label: `indexed architecture in ${progress.repo}`,
+        key: `architecture:${progress.repo}`,
+        phase: "Architecture",
+        label: "Indexed architecture memory",
+        state: "done",
         detail: `${progress.components} components, ${progress.patterns} patterns, ${progress.imports} imports`,
       };
   }
@@ -562,57 +824,87 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
   switch (progress.stage) {
     case "loading_package_manifests":
       return {
-        label: `reading org manifests for ${progress.org}`,
+        key: `graph:manifests:${progress.org}`,
+        phase: "Org graph",
+        label: "Reading package manifests",
         current: 0,
         total: progress.totalRepos,
       };
     case "loaded_package_manifests":
       return {
-        label: `loaded org manifests for ${progress.org}`,
+        key: `graph:manifests:${progress.org}`,
+        phase: "Org graph",
+        label: "Loaded package manifests",
         current: progress.repos,
         total: progress.repos,
+        state: "done",
         detail: `${progress.packageNames} package names`,
       };
     case "building_package_edges":
       return {
-        label: `building package edges for ${progress.org}`,
+        key: `graph:package-edges:${progress.org}`,
+        phase: "Org graph",
+        label: "Building package edges",
         current: progress.current,
         total: progress.total,
+        state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.repo} (${progress.edges} edges)`,
       };
     case "loading_imports":
-      return { label: `loading imports for ${progress.org}` };
+      return {
+        key: `graph:imports:${progress.org}`,
+        phase: "Org graph",
+        label: "Loading imports",
+      };
     case "building_import_edges":
       return {
-        label: `building import edges for ${progress.org}`,
+        key: `graph:imports:${progress.org}`,
+        phase: "Org graph",
+        label: "Building import edges",
         current: progress.current,
         total: progress.total,
+        state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.edges} edges`,
       };
     case "loading_code_chunks":
-      return { label: `loading code chunks for ${progress.org}` };
+      return {
+        key: `graph:chunks:${progress.org}`,
+        phase: "Org graph",
+        label: "Loading code chunks",
+      };
     case "extracting_api_contracts":
       return {
-        label: `extracting API contracts for ${progress.org}`,
+        key: `graph:contracts:${progress.org}`,
+        phase: "Org graph",
+        label: "Extracting API contracts",
         current: progress.current,
         total: progress.total,
+        state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.contracts} contracts`,
       };
     case "matching_api_consumers":
       return {
-        label: `matching API consumers for ${progress.org}`,
+        key: `graph:consumers:${progress.org}`,
+        phase: "Org graph",
+        label: "Matching API consumers",
         current: progress.current,
         total: progress.total,
+        state: progress.current >= progress.total ? "done" : "active",
         detail: `${progress.matches} new matches`,
       };
     case "writing_org_graph":
       return {
-        label: `writing org graph for ${progress.org}`,
+        key: `graph:write:${progress.org}`,
+        phase: "Org graph",
+        label: "Writing graph",
         detail: `${progress.edges} edges, ${progress.apiContracts} contracts, ${progress.apiConsumers} consumers`,
       };
     case "completed_org_graph":
       return {
-        label: `completed org graph for ${progress.org}`,
+        key: `graph:write:${progress.org}`,
+        phase: "Org graph",
+        label: "Graph complete",
+        state: "done",
         detail: `${progress.edges} edges, ${progress.apiConsumers} consumers in ${(progress.durationMs / 1000).toFixed(1)}s`,
       };
   }
@@ -621,16 +913,21 @@ function graphTask(progress: OrgGraphProgress): ProgressTask {
 function cloneTask(progress: OrgCloneProgress): ProgressTask {
   if (progress.stage === "cloning_or_pulling_repo") {
     return {
-      label: `cloning/pulling org repos for ${progress.org}`,
+      key: `clone:${progress.org}`,
+      phase: "Git",
+      label: "Cloning/pulling org repos",
       current: progress.current,
       total: progress.total,
       detail: progress.repo,
     };
   }
   return {
-    label: `cloned/pulled org repos for ${progress.org}`,
+    key: `clone:${progress.org}`,
+    phase: "Git",
+    label: "Cloned/pulled org repos",
     current: progress.current,
     total: progress.total,
+    state: progress.error ? "warn" : progress.current >= progress.total ? "done" : "active",
     detail: progress.error
       ? `${progress.repo} failed`
       : `${progress.repo} ${progress.cloned ? "cloned" : "pulled"}`,

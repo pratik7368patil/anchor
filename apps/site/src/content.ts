@@ -116,7 +116,7 @@ export const workflowRecipes: WorkflowRecipe[] = [
       "anchor org impact --org my-org --repo my-org/backend-api --strict",
     ],
     notes:
-      "Org Memory is explicit allowlist only. It checks cross-repo consumers, regressions, stale indexes, and required tests.",
+      "Org Memory is explicit allowlist only. If a recent sync is interrupted after PR/code indexing, rerunning sync resumes unfinished graph work without redundant PR fetches for completed repos.",
   },
   {
     title: "Share context with the team",
@@ -398,14 +398,6 @@ const diffFileOption = (example: string): CommandOption => ({
   example,
 });
 
-const progressOption = (example: string): CommandOption => ({
-  name: "--progress pretty|plain|off",
-  description: "Control long-running terminal progress output.",
-  useWhen:
-    "Use pretty in interactive terminals, plain for CI logs, and off when another tool wraps output.",
-  example,
-});
-
 export const commandDetails: Record<string, CommandDetail> = {
   "anchor init": {
     recommendedUse:
@@ -503,7 +495,6 @@ export const commandDetails: Record<string, CommandDetail> = {
           "Use lower values for rate-limit safety and higher values for faster patch enrichment.",
         example: "anchor index --limit 200 --concurrency 2",
       },
-      progressOption("anchor index --progress pretty"),
     ],
   },
   "anchor index-all": {
@@ -541,7 +532,6 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use 1-2 for safest full-history runs; use 5 only when rate limits are healthy.",
         example: "anchor index-all --concurrency 1",
       },
-      progressOption("anchor index-all --progress plain"),
     ],
   },
   "anchor index-code": {
@@ -562,7 +552,6 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use it after ignored-file changes, generated index issues, or health warnings.",
         example: "anchor index-code --force",
       },
-      progressOption("anchor index-code --progress pretty"),
     ],
   },
   "anchor sync": {
@@ -606,7 +595,6 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use lower values if GitHub rate limits or secondary limits are close.",
         example: "anchor sync --concurrency 2",
       },
-      progressOption("anchor sync --progress off"),
     ],
   },
   "anchor health": {
@@ -972,7 +960,6 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use 1-3 for safer local/network load.",
         example: "anchor org clone --org my-org --concurrency 2",
       },
-      progressOption("anchor org clone --org my-org --progress pretty"),
     ],
   },
   "anchor org index": {
@@ -1017,7 +1004,6 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use it after failed runs, schema changes, or stale org status warnings.",
         example: "anchor org index --org my-org --repo my-org/backend-api --force",
       },
-      progressOption("anchor org index --org my-org --progress pretty"),
     ],
   },
   "anchor org sync": {
@@ -1062,7 +1048,6 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use it when status reports stale or inconsistent org data.",
         example: "anchor org sync --org my-org --repo my-org/backend-api --force",
       },
-      progressOption("anchor org sync --org my-org --progress plain"),
     ],
   },
   "anchor org graph": {
@@ -1101,7 +1086,6 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use it when saving graph snapshots for local docs or demos.",
         example: "anchor org graph --org my-org --html --output /tmp/anchor-org-graph.html",
       },
-      progressOption("anchor org graph --org my-org --progress pretty"),
       jsonOption("anchor org graph --org my-org --json"),
     ],
   },
