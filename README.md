@@ -661,6 +661,15 @@ anchor sync --concurrency 2
 
 Use `anchor index-all --concurrency 1` when you want the safest full-history run. Anchor indexes locally, so you do not need to refetch unchanged history often.
 
+GraphQL returned HTML / `Unexpected token '<'`:
+This means the GraphQL endpoint, a proxy, or an auth/SSO layer returned an HTML page instead of GitHub's JSON response. Update Anchor to a version that reports this as a non-JSON GraphQL response instead of falling back to REST, then retry after checking network/VPN/proxy/auth state:
+
+```bash
+npm install -g @pratik7368patil/anchor@latest
+gh auth status
+anchor doctor
+```
+
 Malformed `.cursor/mcp.json`:
 Fix the JSON syntax, then rerun `anchor init`. Anchor merges safely but will not guess through invalid JSON.
 

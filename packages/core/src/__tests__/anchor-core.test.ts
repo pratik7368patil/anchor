@@ -407,7 +407,8 @@ describe("GitHub GraphQL PR fetching", () => {
           data: [
             {
               filename: "src/resources/api.ts",
-              patch: "@@ -1 +1 @@\n-export const oldValue = 1;\n+export const getResource = () => 1;",
+              patch:
+                "@@ -1 +1 @@\n-export const oldValue = 1;\n+export const getResource = () => 1;",
               additions: 1,
               deletions: 1,
             },
@@ -540,7 +541,11 @@ describe("GitHub GraphQL PR fetching", () => {
 
   it("defers before exhausting GraphQL budget and returns a resumable checkpoint", async () => {
     let checkpoint:
-      | Parameters<NonNullable<Parameters<typeof fetchMergedPullRequestsWithGraphQL>[0]["onGraphQLCheckpoint"]>>[0]
+      | Parameters<
+          NonNullable<
+            Parameters<typeof fetchMergedPullRequestsWithGraphQL>[0]["onGraphQLCheckpoint"]
+          >
+        >[0]
       | undefined;
     const progress: string[] = [];
     const fetchImpl: typeof fetch = async (_input, init) => {
@@ -655,7 +660,14 @@ describe("GitHub GraphQL PR fetching", () => {
           },
         }),
         listFiles: async () => ({
-          data: [{ filename: "src/fallback.ts", patch: "@@ +1 @@\n+export {}", additions: 1, deletions: 0 }],
+          data: [
+            {
+              filename: "src/fallback.ts",
+              patch: "@@ +1 @@\n+export {}",
+              additions: 1,
+              deletions: 0,
+            },
+          ],
           headers: {},
         }),
         listReviews: async () => ({ data: [], headers: {} }),
@@ -702,9 +714,9 @@ describe("GitHub GraphQL PR fetching", () => {
         }),
       ),
     ).toBe(false);
-    expect(shouldFallbackToRestAfterGraphQLError(new Error("GraphQL resource limit exceeded"))).toBe(
-      false,
-    );
+    expect(
+      shouldFallbackToRestAfterGraphQLError(new Error("GraphQL resource limit exceeded")),
+    ).toBe(false);
     expect(
       shouldFallbackToRestAfterGraphQLError(
         new Error(
@@ -712,7 +724,46 @@ describe("GitHub GraphQL PR fetching", () => {
         ),
       ),
     ).toBe(false);
+    expect(
+      shouldFallbackToRestAfterGraphQLError(
+        new GitHubGraphQLError(
+          "GitHub GraphQL returned a non-JSON response with status 502 and content-type text/html. Response preview: <!DOCTYPE html>",
+          {
+            status: 502,
+            headers: { "content-type": "text/html" },
+          },
+        ),
+      ),
+    ).toBe(false);
     expect(shouldFallbackToRestAfterGraphQLError(new Error("GraphQL unavailable"))).toBe(true);
+  });
+
+  it("fails clearly instead of falling back when GraphQL returns HTML", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response("<!DOCTYPE html><html><body>Proxy error</body></html>", {
+        status: 502,
+        headers: { "content-type": "text/html" },
+      });
+    let restCalled = false;
+    const restClient = {
+      pulls: {
+        list: async () => {
+          restCalled = true;
+          return { data: [], headers: {} };
+        },
+      },
+    } as never;
+
+    await expect(
+      fetchMergedPullRequests({
+        token: "token",
+        repo: "acme/widgets",
+        limit: 1,
+        fetchImpl,
+        restClient,
+      }),
+    ).rejects.toThrow(/non-JSON response/);
+    expect(restCalled).toBe(false);
   });
 
   it("sanitizes GraphQL-fetched prompt injection and secrets before indexed output", async () => {
@@ -742,7 +793,9 @@ describe("GitHub GraphQL PR fetching", () => {
     try {
       indexPullRequests(db, records, { cwd, repo: "acme/widgets" });
       const row = db
-        .prepare("SELECT body_text, sanitized_text FROM pr_comments WHERE source_type = 'issue_comment'")
+        .prepare(
+          "SELECT body_text, sanitized_text FROM pr_comments WHERE source_type = 'issue_comment'",
+        )
         .get() as { body_text: string; sanitized_text: string };
       expect(row.body_text).toContain("[REDACTED_GITHUB_TOKEN]");
       expect(row.sanitized_text).not.toContain("ignore previous instructions");
