@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AnchorOrgConfig, OrgGraphResult } from "@pratik7368patil/anchor-core";
@@ -9,22 +10,43 @@ type GraphNode = {
   edgeCount: number;
 };
 
-type GraphEdge = {
+type GraphFileEdge = {
+  sourceRepo: string;
+  targetRepo: string;
+  sourcePath: string;
+  targetPath?: string;
+  relationship: string;
+  confidence: number;
+  evidenceCount: number;
+  matchReasons: string[];
+  hidden: boolean;
+};
+
+type GraphRepoEdge = {
+  id: string;
   source: string;
   target: string;
   relationship: string;
   confidence: number;
-  sourcePath: string;
-  targetPath?: string;
+  evidenceCount: number;
+  matchReasons: string[];
+  hidden: boolean;
+  fileEdgeCount: number;
+  examples: GraphFileEdge[];
 };
 
 type GraphData = {
   org: string;
   generatedAt: string;
+  layoutHash: string;
   nodes: GraphNode[];
-  edges: GraphEdge[];
+  repoEdges: GraphRepoEdge[];
+  fileEdges: GraphFileEdge[];
+  hiddenRepoEdges: number;
+  hiddenFileEdges: number;
   apiConsumers: number;
   apiContracts: number;
+  quality: OrgGraphResult["quality"];
 };
 
 export type OrgGraphHtmlResult = {
@@ -45,36 +67,111 @@ function htmlEscape(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function buildGraphData(config: AnchorOrgConfig, graph: OrgGraphResult): GraphData {
-  const repoGroups = new Map(config.repos.map((repo) => [repo.fullName, repo.group]));
-  const edgeCounts = new Map<string, number>();
-  for (const edge of graph.edges) {
-    edgeCounts.set(edge.sourceRepo, (edgeCounts.get(edge.sourceRepo) ?? 0) + 1);
-    edgeCounts.set(edge.targetRepo, (edgeCounts.get(edge.targetRepo) ?? 0) + 1);
-  }
-  const repos = new Set([
-    ...config.repos.filter((repo) => repo.enabled).map((repo) => repo.fullName),
-    ...graph.edges.flatMap((edge) => [edge.sourceRepo, edge.targetRepo]),
-  ]);
-  return {
+function makeLayoutHash(config: AnchorOrgConfig, graph: OrgGraphResult): string {
+  const key = JSON.stringify({
     org: config.org,
-    generatedAt: new Date().toISOString(),
-    nodes: [...repos].sort().map((repo) => ({
-      id: repo,
-      label: repo.split("/")[1] ?? repo,
-      group: repoGroups.get(repo) ?? "unknown",
-      edgeCount: edgeCounts.get(repo) ?? 0,
-    })),
-    edges: graph.edges.map((edge) => ({
+    repos: config.repos
+      .filter((repo) => repo.enabled)
+      .map((repo) => repo.fullName)
+      .sort(),
+    visibleRepoEdges: graph.repoEdges.map((edge) => ({
       source: edge.sourceRepo,
       target: edge.targetRepo,
       relationship: edge.relationship,
       confidence: edge.confidence,
+      evidenceCount: edge.evidenceCount,
+    })),
+    hiddenRepoEdges: graph.hiddenRepoEdges.map((edge) => ({
+      source: edge.sourceRepo,
+      target: edge.targetRepo,
+      relationship: edge.relationship,
+      confidence: edge.confidence,
+      evidenceCount: edge.evidenceCount,
+    })),
+  });
+  return crypto.createHash("sha1").update(key).digest("hex").slice(0, 14);
+}
+
+function buildGraphData(config: AnchorOrgConfig, graph: OrgGraphResult): GraphData {
+  const repoGroups = new Map(config.repos.map((repo) => [repo.fullName, repo.group]));
+  const allFileEdges = graph.fileEdges
+    .map((edge) => ({ ...edge, hidden: false }))
+    .concat(graph.hiddenFileEdges.map((edge) => ({ ...edge, hidden: true })))
+    .map((edge) => ({
+      sourceRepo: edge.sourceRepo,
+      targetRepo: edge.targetRepo,
       sourcePath: edge.sourcePath,
       targetPath: edge.targetPath,
-    })),
+      relationship: edge.relationship,
+      confidence: edge.confidence,
+      evidenceCount: edge.evidenceCount,
+      matchReasons: edge.matchReasons,
+      hidden: edge.hidden,
+    }));
+  const fileEdgeMap = new Map<string, GraphFileEdge[]>();
+  for (const edge of allFileEdges) {
+    const key = `${edge.sourceRepo}\0${edge.targetRepo}\0${edge.relationship}`;
+    const bucket = fileEdgeMap.get(key) ?? [];
+    bucket.push(edge);
+    fileEdgeMap.set(key, bucket);
+  }
+  const repoEdgesRaw = graph.repoEdges
+    .map((edge) => ({ ...edge, hidden: false }))
+    .concat(graph.hiddenRepoEdges.map((edge) => ({ ...edge, hidden: true })));
+  const repoEdges: GraphRepoEdge[] = repoEdgesRaw
+    .map((edge, index) => {
+      const key = `${edge.sourceRepo}\0${edge.targetRepo}\0${edge.relationship}`;
+      const examples = (fileEdgeMap.get(key) ?? [])
+        .slice()
+        .sort((a, b) => b.confidence - a.confidence || b.evidenceCount - a.evidenceCount)
+        .slice(0, 25);
+      return {
+        id: `e${index}_${edge.sourceRepo}_${edge.targetRepo}_${edge.relationship}`.replace(
+          /[^A-Za-z0-9_]/g,
+          "_",
+        ),
+        source: edge.sourceRepo,
+        target: edge.targetRepo,
+        relationship: edge.relationship,
+        confidence: edge.confidence,
+        evidenceCount: edge.evidenceCount,
+        matchReasons: edge.matchReasons,
+        hidden: edge.hidden,
+        fileEdgeCount: (fileEdgeMap.get(key) ?? []).length,
+        examples,
+      };
+    })
+    .sort((a, b) => Number(a.hidden) - Number(b.hidden) || b.confidence - a.confidence);
+  const edgeCounts = new Map<string, number>();
+  for (const edge of repoEdges) {
+    edgeCounts.set(edge.source, (edgeCounts.get(edge.source) ?? 0) + 1);
+    edgeCounts.set(edge.target, (edgeCounts.get(edge.target) ?? 0) + 1);
+  }
+  const repos = new Set([
+    ...config.repos.filter((repo) => repo.enabled).map((repo) => repo.fullName),
+    ...repoEdges.flatMap((edge) => [edge.source, edge.target]),
+  ]);
+  const nodes: GraphNode[] = [...repos]
+    .sort()
+    .map((repo) => ({
+      id: repo,
+      label: repo.split("/")[1] ?? repo,
+      group: repoGroups.get(repo) ?? "unknown",
+      edgeCount: edgeCounts.get(repo) ?? 0,
+    }));
+
+  return {
+    org: config.org,
+    generatedAt: new Date().toISOString(),
+    layoutHash: makeLayoutHash(config, graph),
+    nodes,
+    repoEdges,
+    fileEdges: allFileEdges,
+    hiddenRepoEdges: graph.hiddenRepoEdges.length,
+    hiddenFileEdges: graph.hiddenFileEdges.length,
     apiConsumers: graph.apiConsumers.length,
     apiContracts: graph.apiContracts.length,
+    quality: graph.quality,
   };
 }
 
@@ -89,20 +186,21 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
   <style>
     :root {
       color-scheme: light;
-      --bg: #f6f7f9;
+      --bg: #f5f7fb;
       --panel: #ffffff;
-      --text: #17202a;
-      --muted: #657180;
       --line: #d7dce2;
-      --accent: #1f7a5b;
-      --accent-2: #2457a6;
-      --warn: #a85d00;
-      --shadow: 0 10px 28px rgba(23, 32, 42, 0.08);
+      --text: #15212b;
+      --muted: #66727f;
+      --accent: #206356;
+      --accent2: #285da8;
+      --warn: #9a6a00;
+      --danger: #8c2b2b;
+      --shadow: 0 10px 30px rgba(14, 22, 30, 0.08);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
       background: var(--bg);
       color: var(--text);
     }
@@ -113,18 +211,17 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
     }
     header {
       grid-column: 1 / -1;
-      padding: 18px 22px;
+      padding: 16px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 18px;
+      gap: 12px;
       background: var(--panel);
       border-bottom: 1px solid var(--line);
     }
     h1 {
       margin: 0;
       font-size: 20px;
-      line-height: 1.2;
       letter-spacing: 0;
     }
     .subtitle {
@@ -134,151 +231,160 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
     }
     .stats {
       display: flex;
-      gap: 10px;
       flex-wrap: wrap;
+      gap: 8px;
       justify-content: flex-end;
     }
     .stat {
-      background: #eef2f4;
       border: 1px solid var(--line);
+      background: #eff3f8;
       border-radius: 8px;
       padding: 8px 10px;
-      min-width: 92px;
+      min-width: 96px;
     }
     .stat strong {
       display: block;
-      font-size: 18px;
+      font-size: 16px;
+      line-height: 1.2;
     }
     .stat span {
-      color: var(--muted);
       font-size: 12px;
+      color: var(--muted);
     }
     main {
       min-width: 0;
       padding: 16px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
     }
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(180px, 1fr) 190px 150px;
+      grid-template-columns: minmax(200px, 1fr) 220px 160px 160px 120px;
       gap: 10px;
-      margin-bottom: 12px;
+      align-items: center;
     }
     input, select, button {
-      min-height: 38px;
+      min-height: 36px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 0 11px;
+      padding: 0 10px;
       font: inherit;
       background: var(--panel);
       color: var(--text);
     }
     button {
       cursor: pointer;
-      background: #eef5f2;
+      background: #edf5ef;
       color: var(--accent);
       font-weight: 650;
     }
-    .canvas-wrap {
+    label.toggle {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    label.toggle input { min-height: auto; }
+    .graph-wrap {
       position: relative;
-      height: calc(100vh - 148px);
-      min-height: 560px;
-      background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 12px;
       overflow: hidden;
+      background: var(--panel);
       box-shadow: var(--shadow);
+      min-height: 620px;
+      height: calc(100vh - 166px);
     }
-    svg {
+    canvas, svg {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       display: block;
-      cursor: grab;
+    }
+    canvas {
       background:
-        linear-gradient(rgba(23, 32, 42, 0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(23, 32, 42, 0.035) 1px, transparent 1px);
+        linear-gradient(rgba(23, 32, 42, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(23, 32, 42, 0.03) 1px, transparent 1px);
       background-size: 28px 28px;
+      cursor: grab;
     }
-    svg.dragging { cursor: grabbing; }
-    .edge {
-      stroke: #aeb8c2;
-      stroke-width: 1.4;
-      opacity: 0.65;
-    }
-    .edge.active {
-      stroke: var(--accent-2);
-      stroke-width: 2.8;
-      opacity: 1;
-    }
+    canvas.dragging { cursor: grabbing; }
     .node circle {
       stroke: #ffffff;
       stroke-width: 2;
-      filter: drop-shadow(0 4px 8px rgba(23, 32, 42, 0.16));
+      filter: drop-shadow(0 4px 8px rgba(12, 18, 25, 0.2));
+      cursor: pointer;
     }
     .node text {
       font-size: 12px;
       font-weight: 650;
+      fill: var(--text);
       paint-order: stroke;
       stroke: #ffffff;
       stroke-width: 4px;
-      stroke-linecap: round;
       stroke-linejoin: round;
       pointer-events: none;
     }
-    .node.dim, .edge.dim { opacity: 0.12; }
+    .node.dim { opacity: 0.18; }
     aside {
       border-left: 1px solid var(--line);
       background: var(--panel);
-      padding: 18px;
-      overflow: auto;
-      max-height: calc(100vh - 75px);
+      padding: 16px;
+      overflow-y: auto;
+      max-height: calc(100vh - 73px);
     }
     .panel-title {
       margin: 0 0 8px;
       font-size: 16px;
     }
-    .empty {
+    .muted {
       color: var(--muted);
-      font-size: 14px;
+      font-size: 13px;
       line-height: 1.5;
     }
-    .pill {
+    .chip {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       border: 1px solid var(--line);
       border-radius: 999px;
-      padding: 4px 8px;
-      margin: 4px 4px 0 0;
+      padding: 4px 9px;
+      margin: 4px 5px 0 0;
       font-size: 12px;
       color: var(--muted);
-      background: #f8fafb;
+      background: #f7fafb;
     }
-    .edge-list {
+    .card-list {
       display: grid;
       gap: 10px;
-      margin-top: 14px;
+      margin-top: 12px;
     }
-    .edge-card {
+    .card {
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 10px;
       background: #fbfcfd;
+      padding: 10px;
     }
-    .edge-card strong {
+    .card strong {
       display: block;
-      margin-bottom: 4px;
       font-size: 13px;
+      margin-bottom: 4px;
+      overflow-wrap: anywhere;
     }
-    .edge-card div {
-      color: var(--muted);
+    .card div {
       font-size: 12px;
+      color: var(--muted);
       line-height: 1.45;
       overflow-wrap: anywhere;
     }
     .legend {
       display: flex;
       flex-wrap: wrap;
-      gap: 7px;
+      gap: 8px;
       margin-top: 14px;
     }
     .dot {
@@ -287,7 +393,9 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
       border-radius: 999px;
       display: inline-block;
     }
-    @media (max-width: 900px) {
+    .warn { color: var(--warn); }
+    .danger { color: var(--danger); }
+    @media (max-width: 980px) {
       .app { grid-template-columns: 1fr; }
       aside {
         border-left: 0;
@@ -295,8 +403,8 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
         max-height: none;
       }
       .toolbar { grid-template-columns: 1fr; }
-      .canvas-wrap { height: 620px; }
-      header { align-items: flex-start; flex-direction: column; }
+      .graph-wrap { min-height: 540px; height: 68vh; }
+      header { flex-direction: column; align-items: flex-start; }
       .stats { justify-content: flex-start; }
     }
   </style>
@@ -306,28 +414,32 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
     <header>
       <div>
         <h1>Anchor Org Graph</h1>
-        <div class="subtitle">${htmlEscape(config.org)} - generated locally from SQLite evidence</div>
+        <div class="subtitle">${htmlEscape(config.org)} • repo-level summary with on-demand file drilldown</div>
       </div>
       <div class="stats">
-        <div class="stat"><strong id="node-count">0</strong><span>repos</span></div>
-        <div class="stat"><strong id="edge-count">0</strong><span>edges</span></div>
+        <div class="stat"><strong id="repo-count">0</strong><span>repos</span></div>
+        <div class="stat"><strong id="edge-count">0</strong><span>repo edges</span></div>
+        <div class="stat"><strong id="hidden-count">0</strong><span>weak hidden</span></div>
         <div class="stat"><strong id="consumer-count">0</strong><span>API consumers</span></div>
         <div class="stat"><strong id="contract-count">0</strong><span>API contracts</span></div>
       </div>
     </header>
     <main>
       <div class="toolbar">
-        <input id="search" type="search" placeholder="Search repo, path, relationship..." />
+        <input id="search" type="search" placeholder="Search repo, relationship, path, reason..." />
         <select id="relationship"></select>
-        <button id="reset" type="button">Reset view</button>
+        <label class="toggle"><input id="show-weak" type="checkbox" /> Show weak edges</label>
+        <label class="toggle"><input id="drilldown" type="checkbox" /> File drilldown</label>
+        <button id="reset" type="button">Reset</button>
       </div>
-      <div class="canvas-wrap">
-        <svg id="graph" role="img" aria-label="Interactive org dependency graph"></svg>
+      <div class="graph-wrap" id="graph-wrap">
+        <canvas id="edge-canvas" aria-label="Org graph edges"></canvas>
+        <svg id="node-overlay" role="img" aria-label="Interactive org dependency graph"></svg>
       </div>
     </main>
     <aside>
       <h2 class="panel-title">Graph details</h2>
-      <div id="details" class="empty">Click a repo node to see connected relationships. Drag nodes to rearrange the map.</div>
+      <div id="details" class="muted">Select a repo node to inspect connected relationships and evidence reasons.</div>
       <div class="legend" id="legend"></div>
     </aside>
   </div>
@@ -341,28 +453,32 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
       docs: "#657180",
       unknown: "#53606d"
     };
-    const svg = document.getElementById("graph");
-    const search = document.getElementById("search");
-    const relationship = document.getElementById("relationship");
-    const details = document.getElementById("details");
+    const canvas = document.getElementById("edge-canvas");
+    const overlay = document.getElementById("node-overlay");
+    const graphWrap = document.getElementById("graph-wrap");
+    const ctx = canvas.getContext("2d");
+    const searchInput = document.getElementById("search");
+    const relationshipSelect = document.getElementById("relationship");
+    const showWeakToggle = document.getElementById("show-weak");
+    const drilldownToggle = document.getElementById("drilldown");
     const resetButton = document.getElementById("reset");
-    const width = () => svg.clientWidth || 900;
-    const height = () => svg.clientHeight || 620;
-    let selected = null;
-    let dragged = null;
-    let positions = new Map();
-
-    document.getElementById("node-count").textContent = graphData.nodes.length;
-    document.getElementById("edge-count").textContent = graphData.edges.length;
-    document.getElementById("consumer-count").textContent = graphData.apiConsumers;
-    document.getElementById("contract-count").textContent = graphData.apiContracts;
-
-    function relationshipOptions() {
-      const values = [...new Set(graphData.edges.map(edge => edge.relationship))].sort();
-      relationship.innerHTML = '<option value="">All relationships</option>' + values.map(value =>
-        '<option value="' + escapeHtml(value) + '">' + escapeHtml(value.replaceAll("_", " ")) + '</option>'
-      ).join("");
-    }
+    const details = document.getElementById("details");
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const layoutStorageKey = "anchor-org-layout:" + graphData.layoutHash;
+    const state = {
+      selectedNode: null,
+      selectedEdgeId: null,
+      draggingNode: null,
+      panning: false,
+      pointerId: null,
+      scale: 1,
+      offsetX: 0,
+      offsetY: 0,
+      lastPointerX: 0,
+      lastPointerY: 0,
+      positions: new Map(),
+      animationQueued: false
+    };
 
     function escapeHtml(value) {
       return String(value)
@@ -372,156 +488,568 @@ export function renderOrgGraphHtml(config: AnchorOrgConfig, graph: OrgGraphResul
         .replaceAll('"', "&quot;");
     }
 
+    function width() {
+      return graphWrap.clientWidth || 900;
+    }
+
+    function height() {
+      return graphWrap.clientHeight || 640;
+    }
+
+    function setStats() {
+      document.getElementById("repo-count").textContent = String(graphData.nodes.length);
+      document.getElementById("edge-count").textContent = String(graphData.repoEdges.length);
+      document.getElementById("hidden-count").textContent = String(graphData.hiddenRepoEdges);
+      document.getElementById("consumer-count").textContent = String(graphData.apiConsumers);
+      document.getElementById("contract-count").textContent = String(graphData.apiContracts);
+    }
+
+    function relationshipOptions() {
+      const values = [...new Set(graphData.repoEdges.map((edge) => edge.relationship))].sort();
+      relationshipSelect.innerHTML =
+        '<option value="">All relationships</option>' +
+        values
+          .map((value) => '<option value="' + escapeHtml(value) + '">' + escapeHtml(value.replaceAll("_", " ")) + '</option>')
+          .join("");
+    }
+
+    function resizeCanvas() {
+      const w = width();
+      const h = height();
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+      overlay.setAttribute("viewBox", "0 0 " + w + " " + h);
+      overlay.setAttribute("width", String(w));
+      overlay.setAttribute("height", String(h));
+      scheduleRender();
+    }
+
+    function nodeRadius(node) {
+      return 14 + Math.min(16, Math.sqrt(node.edgeCount || 1) * 4);
+    }
+
     function initializePositions() {
+      const fromCache = readLayout();
+      if (fromCache) {
+        state.positions = fromCache;
+        return;
+      }
       const cx = width() / 2;
       const cy = height() / 2;
-      const radius = Math.max(180, Math.min(width(), height()) * 0.36);
-      graphData.nodes.forEach((node, index) => {
-        const angle = (Math.PI * 2 * index) / Math.max(1, graphData.nodes.length) - Math.PI / 2;
-        positions.set(node.id, {
+      const radius = Math.max(170, Math.min(width(), height()) * 0.34);
+      const sorted = graphData.nodes.slice().sort((a, b) => a.id.localeCompare(b.id));
+      sorted.forEach((node, index) => {
+        const angle = (Math.PI * 2 * index) / Math.max(1, sorted.length) - Math.PI / 2;
+        state.positions.set(node.id, {
           x: cx + Math.cos(angle) * radius,
           y: cy + Math.sin(angle) * radius
         });
       });
+      persistLayout();
     }
 
-    function nodeRadius(node) {
-      return 15 + Math.min(18, Math.sqrt(node.edgeCount || 1) * 4);
+    function readLayout() {
+      try {
+        const raw = localStorage.getItem(layoutStorageKey);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || !parsed.positions) return null;
+        const map = new Map();
+        const nodeIds = new Set(graphData.nodes.map((node) => node.id));
+        for (const [key, value] of Object.entries(parsed.positions)) {
+          if (!nodeIds.has(key)) continue;
+          if (!value || typeof value !== "object") continue;
+          const x = Number(value.x);
+          const y = Number(value.y);
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          map.set(key, { x, y });
+        }
+        if (map.size !== graphData.nodes.length) return null;
+        return map;
+      } catch {
+        return null;
+      }
     }
 
-    function visibleData() {
-      const term = search.value.trim().toLowerCase();
-      const rel = relationship.value;
-      const edges = graphData.edges.filter(edge => {
-        const haystack = [edge.source, edge.target, edge.relationship, edge.sourcePath, edge.targetPath || ""].join(" ").toLowerCase();
-        return (!rel || edge.relationship === rel) && (!term || haystack.includes(term));
+    let persistTimer = 0;
+    function persistLayout() {
+      window.clearTimeout(persistTimer);
+      persistTimer = window.setTimeout(() => {
+        try {
+          const positions = {};
+          for (const [key, value] of state.positions.entries()) {
+            positions[key] = { x: Number(value.x.toFixed(2)), y: Number(value.y.toFixed(2)) };
+          }
+          localStorage.setItem(
+            layoutStorageKey,
+            JSON.stringify({
+              hash: graphData.layoutHash,
+              updatedAt: Date.now(),
+              positions
+            }),
+          );
+        } catch {
+          // Best effort cache only.
+        }
+      }, 250);
+    }
+
+    function worldToScreen(point) {
+      return {
+        x: point.x * state.scale + state.offsetX,
+        y: point.y * state.scale + state.offsetY
+      };
+    }
+
+    function screenToWorld(point) {
+      return {
+        x: (point.x - state.offsetX) / state.scale,
+        y: (point.y - state.offsetY) / state.scale
+      };
+    }
+
+    function zoomAt(screenX, screenY, zoomFactor) {
+      const before = screenToWorld({ x: screenX, y: screenY });
+      state.scale = Math.max(0.25, Math.min(3.4, state.scale * zoomFactor));
+      const after = worldToScreen(before);
+      state.offsetX += screenX - after.x;
+      state.offsetY += screenY - after.y;
+      scheduleRender();
+    }
+
+    function filters() {
+      return {
+        term: searchInput.value.trim().toLowerCase(),
+        relationship: relationshipSelect.value,
+        showWeak: showWeakToggle.checked,
+        drilldown: drilldownToggle.checked
+      };
+    }
+
+    function visibleRepoEdges() {
+      const f = filters();
+      return graphData.repoEdges.filter((edge) => {
+        if (!f.showWeak && edge.hidden) return false;
+        if (f.relationship && edge.relationship !== f.relationship) return false;
+        if (!f.term) return true;
+        const haystack = [
+          edge.source,
+          edge.target,
+          edge.relationship,
+          edge.matchReasons.join(" "),
+          edge.examples.map((item) => item.sourcePath + " " + (item.targetPath || "")).join(" "),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(f.term);
       });
-      const visibleNodeIds = new Set(edges.flatMap(edge => [edge.source, edge.target]));
-      const nodes = graphData.nodes.filter(node => {
-        const ownMatch = !term || [node.id, node.label, node.group].join(" ").toLowerCase().includes(term);
-        return visibleNodeIds.has(node.id) || (ownMatch && !rel);
-      });
-      return { nodes, edges };
     }
 
-    function render() {
-      const { nodes, edges } = visibleData();
-      const nodeIds = new Set(nodes.map(node => node.id));
-      const connected = selected
-        ? new Set(edges.filter(edge => edge.source === selected || edge.target === selected).flatMap(edge => [edge.source, edge.target]))
-        : null;
-      svg.innerHTML = "";
-      const edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      svg.append(edgeLayer, nodeLayer);
+    function visibleFileEdgesForSelection() {
+      const f = filters();
+      if (!f.drilldown || !state.selectedNode) return [];
+      return graphData.fileEdges.filter((edge) => {
+        if (!f.showWeak && edge.hidden) return false;
+        if (f.relationship && edge.relationship !== f.relationship) return false;
+        if (edge.sourceRepo !== state.selectedNode && edge.targetRepo !== state.selectedNode) return false;
+        if (!f.term) return true;
+        const haystack = [
+          edge.sourceRepo,
+          edge.targetRepo,
+          edge.sourcePath,
+          edge.targetPath || "",
+          edge.relationship,
+          edge.matchReasons.join(" ")
+        ].join(" ").toLowerCase();
+        return haystack.includes(f.term);
+      });
+    }
+
+    function activeEdgeSet() {
+      const fileDrilldownEdges = visibleFileEdgesForSelection();
+      if (fileDrilldownEdges.length > 0) {
+        return {
+          type: "file",
+          edges: fileDrilldownEdges.map((edge, index) => ({
+            id: "f_" + index + "_" + edge.sourceRepo + "_" + edge.targetRepo + "_" + edge.relationship,
+            source: edge.sourceRepo,
+            target: edge.targetRepo,
+            relationship: edge.relationship,
+            confidence: edge.confidence,
+            evidenceCount: edge.evidenceCount,
+            hidden: edge.hidden,
+            matchReasons: edge.matchReasons,
+            sourcePath: edge.sourcePath,
+            targetPath: edge.targetPath || "",
+          })),
+        };
+      }
+      return {
+        type: "repo",
+        edges: visibleRepoEdges().map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          relationship: edge.relationship,
+          confidence: edge.confidence,
+          evidenceCount: edge.evidenceCount,
+          hidden: edge.hidden,
+          matchReasons: edge.matchReasons,
+          sourcePath: "",
+          targetPath: "",
+        })),
+      };
+    }
+
+    function visibleNodes(edgeSet) {
+      const ids = new Set(edgeSet.edges.flatMap((edge) => [edge.source, edge.target]));
+      const f = filters();
+      return graphData.nodes.filter((node) => {
+        if (ids.has(node.id)) return true;
+        if (!f.term) return edgeSet.edges.length === 0;
+        return [node.id, node.label, node.group].join(" ").toLowerCase().includes(f.term);
+      });
+    }
+
+    function adjacency(edges) {
+      const map = new Map();
       for (const edge of edges) {
-        if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue;
-        const source = positions.get(edge.source);
-        const target = positions.get(edge.target);
-        if (!source || !target) continue;
-        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", source.x);
-        line.setAttribute("y1", source.y);
-        line.setAttribute("x2", target.x);
-        line.setAttribute("y2", target.y);
-        line.setAttribute("class", "edge" + (selected && (edge.source === selected || edge.target === selected) ? " active" : selected ? " dim" : ""));
-        line.dataset.source = edge.source;
-        line.dataset.target = edge.target;
-        edgeLayer.append(line);
+        const source = map.get(edge.source) || new Set();
+        source.add(edge.target);
+        map.set(edge.source, source);
+        const target = map.get(edge.target) || new Set();
+        target.add(edge.source);
+        map.set(edge.target, target);
       }
+      return map;
+    }
+
+    function edgeVisibleInViewport(from, to, margin) {
+      const w = width();
+      const h = height();
+      if (from.x < -margin && to.x < -margin) return false;
+      if (from.y < -margin && to.y < -margin) return false;
+      if (from.x > w + margin && to.x > w + margin) return false;
+      if (from.y > h + margin && to.y > h + margin) return false;
+      return true;
+    }
+
+    function drawEdges(edgeSet, nodes) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width(), height());
+      const visibleIds = new Set(nodes.map((node) => node.id));
+      const activeEdges = edgeSet.edges.filter(
+        (edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target),
+      );
+      const connectedSet = state.selectedNode
+        ? new Set(
+            activeEdges
+              .filter((edge) => edge.source === state.selectedNode || edge.target === state.selectedNode)
+              .flatMap((edge) => [edge.source, edge.target]),
+          )
+        : null;
+
+      for (const edge of activeEdges) {
+        const sourcePos = state.positions.get(edge.source);
+        const targetPos = state.positions.get(edge.target);
+        if (!sourcePos || !targetPos) continue;
+        const source = worldToScreen(sourcePos);
+        const target = worldToScreen(targetPos);
+        if (!edgeVisibleInViewport(source, target, 90)) continue;
+
+        const selected = state.selectedEdgeId === edge.id;
+        const dimmed =
+          state.selectedNode &&
+          edge.source !== state.selectedNode &&
+          edge.target !== state.selectedNode &&
+          !selected;
+        let stroke = "#a9b6c4";
+        if (edge.confidence >= 0.82) stroke = "#1f7a5b";
+        else if (edge.confidence >= 0.68) stroke = "#2d5da8";
+        else stroke = "#8c6b1f";
+        if (selected) stroke = "#8f36b7";
+        ctx.strokeStyle = stroke;
+        ctx.globalAlpha = dimmed ? 0.16 : selected ? 0.98 : 0.72;
+        ctx.lineWidth = selected ? 2.9 : 1.3 + Math.min(1.7, edge.confidence * 1.2);
+        ctx.beginPath();
+        ctx.moveTo(source.x, source.y);
+        ctx.lineTo(target.x, target.y);
+        ctx.stroke();
+
+        if (selected || (connectedSet && connectedSet.has(edge.source) && connectedSet.has(edge.target))) {
+          const midX = (source.x + target.x) / 2;
+          const midY = (source.y + target.y) / 2;
+          ctx.fillStyle = "#334254";
+          ctx.globalAlpha = 0.84;
+          ctx.font = "11px Inter, system-ui, sans-serif";
+          const label = edge.relationship.replaceAll("_", " ");
+          ctx.fillText(label, midX + 4, midY - 4);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function renderNodes(edgeSet, nodes) {
+      const connectedMap = adjacency(edgeSet.edges);
+      const selectedConnected =
+        state.selectedNode && connectedMap.has(state.selectedNode)
+          ? new Set([state.selectedNode, ...connectedMap.get(state.selectedNode)])
+          : null;
+
+      overlay.innerHTML = "";
+      const fragment = document.createDocumentFragment();
       for (const node of nodes) {
-        const pos = positions.get(node.id);
-        if (!pos) continue;
+        const world = state.positions.get(node.id);
+        if (!world) continue;
+        const pos = worldToScreen(world);
+        const radius = nodeRadius(node);
+        const dimmed = selectedConnected && !selectedConnected.has(node.id);
+
         const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        const dim = connected && !connected.has(node.id) && selected !== node.id;
-        group.setAttribute("class", "node" + (dim ? " dim" : ""));
-        group.setAttribute("transform", "translate(" + pos.x + " " + pos.y + ")");
+        group.setAttribute("class", "node" + (dimmed ? " dim" : ""));
+        group.setAttribute("transform", "translate(" + pos.x.toFixed(2) + " " + pos.y.toFixed(2) + ")");
         group.dataset.id = node.id;
+
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("r", nodeRadius(node));
+        circle.setAttribute("r", String(radius));
         circle.setAttribute("fill", colors[node.group] || colors.unknown);
-        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-        label.setAttribute("x", nodeRadius(node) + 8);
-        label.setAttribute("y", 4);
-        label.textContent = node.label;
-        group.append(circle, label);
-        group.addEventListener("pointerdown", event => {
-          dragged = node.id;
-          selected = node.id;
-          svg.classList.add("dragging");
-          group.setPointerCapture(event.pointerId);
-          showDetails(node.id);
-          render();
+
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", String(radius + 7));
+        text.setAttribute("y", "4");
+        text.textContent = node.label;
+
+        group.addEventListener("pointerdown", (event) => {
+          event.stopPropagation();
+          state.pointerId = event.pointerId;
+          state.draggingNode = node.id;
+          state.selectedNode = node.id;
+          state.selectedEdgeId = null;
+          state.lastPointerX = event.clientX;
+          state.lastPointerY = event.clientY;
+          canvas.classList.add("dragging");
+          showDetails(edgeSet, nodes);
+          scheduleRender();
         });
-        group.addEventListener("pointermove", event => {
-          if (dragged !== node.id) return;
-          const rect = svg.getBoundingClientRect();
-          positions.set(node.id, { x: event.clientX - rect.left, y: event.clientY - rect.top });
-          render();
+        group.addEventListener("pointermove", (event) => {
+          if (state.draggingNode !== node.id || state.pointerId !== event.pointerId) return;
+          const rect = overlay.getBoundingClientRect();
+          const screenX = event.clientX - rect.left;
+          const screenY = event.clientY - rect.top;
+          state.positions.set(node.id, screenToWorld({ x: screenX, y: screenY }));
+          state.lastPointerX = event.clientX;
+          state.lastPointerY = event.clientY;
+          persistLayout();
+          scheduleRender();
         });
-        group.addEventListener("pointerup", () => {
-          dragged = null;
-          svg.classList.remove("dragging");
+        group.addEventListener("pointerup", (event) => {
+          if (state.pointerId !== event.pointerId) return;
+          state.draggingNode = null;
+          state.pointerId = null;
+          canvas.classList.remove("dragging");
+          persistLayout();
         });
-        nodeLayer.append(group);
+        group.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (state.selectedNode === node.id) state.selectedNode = null;
+          else state.selectedNode = node.id;
+          state.selectedEdgeId = null;
+          showDetails(edgeSet, nodes);
+          scheduleRender();
+        });
+
+        group.append(circle, text);
+        fragment.append(group);
       }
-      if (!selected) showOverview(nodes, edges);
+      overlay.append(fragment);
     }
 
-    function showOverview(nodes, edges) {
-      details.className = "";
-      details.innerHTML =
-        '<p class="empty">Showing ' + nodes.length + ' repo(s) and ' + edges.length + ' relationship(s). Click a repo to inspect connected edges.</p>' +
-        '<div class="edge-list">' +
-        edges.slice(0, 10).map(edgeCard).join("") +
-        '</div>';
+    function sortedTopEdges(edgeSet, limit) {
+      return edgeSet.edges
+        .slice()
+        .sort((a, b) => b.confidence - a.confidence || b.evidenceCount - a.evidenceCount)
+        .slice(0, limit);
     }
 
-    function showDetails(nodeId) {
-      const node = graphData.nodes.find(item => item.id === nodeId);
-      const edges = graphData.edges.filter(edge => edge.source === nodeId || edge.target === nodeId);
+    function showOverview(edgeSet, nodes) {
+      const distribution = graphData.quality.edgeConfidenceDistribution;
+      const kind = edgeSet.type === "file" ? "file-level" : "repo-level";
       details.className = "";
       details.innerHTML =
-        '<h3>' + escapeHtml(nodeId) + '</h3>' +
-        '<span class="pill">' + escapeHtml(node?.group || "unknown") + '</span>' +
-        '<span class="pill">' + edges.length + ' relationship(s)</span>' +
-        '<div class="edge-list">' + edges.map(edgeCard).join("") + '</div>';
+        '<div class="muted">Showing ' +
+        nodes.length +
+        " repo(s) and " +
+        edgeSet.edges.length +
+        " " +
+        kind +
+        ' edge(s). Select a repo to inspect exact path-level evidence.</div>' +
+        '<div class="chip">strong ' + distribution.strong + '</div>' +
+        '<div class="chip">moderate ' + distribution.moderate + '</div>' +
+        '<div class="chip">weak hidden ' + graphData.hiddenRepoEdges + '</div>' +
+        '<div class="card-list">' +
+        sortedTopEdges(edgeSet, 8).map(edgeCard).join("") +
+        "</div>";
+    }
+
+    function collectNodeEdges(edgeSet, nodeId) {
+      return edgeSet.edges.filter((edge) => edge.source === nodeId || edge.target === nodeId);
+    }
+
+    function fileEvidenceCards(nodeId, limit) {
+      const files = graphData.fileEdges
+        .filter((edge) => edge.sourceRepo === nodeId || edge.targetRepo === nodeId)
+        .slice()
+        .sort((a, b) => b.confidence - a.confidence || b.evidenceCount - a.evidenceCount)
+        .slice(0, limit);
+      return files.map((edge) => {
+        return (
+          '<div class="card">' +
+          '<strong>' + escapeHtml(edge.sourceRepo) + " → " + escapeHtml(edge.targetRepo) + "</strong>" +
+          "<div>" + escapeHtml(edge.relationship.replaceAll("_", " ")) + " • confidence " + Math.round(edge.confidence * 100) + "% • evidence " + edge.evidenceCount + "</div>" +
+          "<div>" + escapeHtml(edge.sourcePath) + (edge.targetPath ? " → " + escapeHtml(edge.targetPath) : "") + "</div>" +
+          (edge.matchReasons.length ? "<div>" + escapeHtml(edge.matchReasons.join(", ")) + "</div>" : "") +
+          "</div>"
+        );
+      });
+    }
+
+    function showDetails(edgeSet, nodes) {
+      if (!state.selectedNode) {
+        showOverview(edgeSet, nodes);
+        return;
+      }
+      const node = graphData.nodes.find((item) => item.id === state.selectedNode);
+      const edges = collectNodeEdges(edgeSet, state.selectedNode);
+      details.className = "";
+      details.innerHTML =
+        "<h3>" + escapeHtml(state.selectedNode) + "</h3>" +
+        '<span class="chip">' + escapeHtml(node ? node.group : "unknown") + "</span>" +
+        '<span class="chip">' + edges.length + " active edge(s)</span>" +
+        '<span class="chip">file drilldown ' + (drilldownToggle.checked ? "on" : "off") + "</span>" +
+        '<div class="card-list">' + edges.slice(0, 10).map(edgeCard).join("") + "</div>" +
+        "<h4 style='margin:14px 0 8px;font-size:14px;'>Codepath evidence</h4>" +
+        '<div class="card-list">' + fileEvidenceCards(state.selectedNode, 10).join("") + "</div>";
     }
 
     function edgeCard(edge) {
-      return '<div class="edge-card">' +
-        '<strong>' + escapeHtml(edge.source) + ' -> ' + escapeHtml(edge.target) + '</strong>' +
-        '<div>' + escapeHtml(edge.relationship.replaceAll("_", " ")) + ' - confidence ' + Math.round(edge.confidence * 100) + '%</div>' +
-        '<div>' + escapeHtml(edge.sourcePath) + (edge.targetPath ? ' -> ' + escapeHtml(edge.targetPath) : '') + '</div>' +
-      '</div>';
+      const sourcePath = edge.sourcePath ? "<div>" + escapeHtml(edge.sourcePath) + (edge.targetPath ? " → " + escapeHtml(edge.targetPath) : "") + "</div>" : "";
+      const reasons = edge.matchReasons && edge.matchReasons.length
+        ? "<div>" + escapeHtml(edge.matchReasons.join(", ")) + "</div>"
+        : "";
+      return (
+        '<div class="card">' +
+        "<strong>" + escapeHtml(edge.source) + " → " + escapeHtml(edge.target) + "</strong>" +
+        "<div>" + escapeHtml(edge.relationship.replaceAll("_", " ")) + " • confidence " + Math.round(edge.confidence * 100) + "% • evidence " + edge.evidenceCount + "</div>" +
+        sourcePath +
+        reasons +
+        "</div>"
+      );
     }
 
     function renderLegend() {
       const legend = document.getElementById("legend");
-      const groups = [...new Set(graphData.nodes.map(node => node.group))].sort();
-      legend.innerHTML = groups.map(group =>
-        '<span class="pill"><span class="dot" style="background:' + (colors[group] || colors.unknown) + '"></span>' + escapeHtml(group) + '</span>'
-      ).join("");
+      const groups = [...new Set(graphData.nodes.map((node) => node.group))].sort();
+      legend.innerHTML = groups
+        .map(
+          (group) =>
+            '<span class="chip"><span class="dot" style="background:' +
+            (colors[group] || colors.unknown) +
+            '"></span>' +
+            escapeHtml(group) +
+            "</span>",
+        )
+        .join("");
     }
 
-    search.addEventListener("input", () => { selected = null; render(); });
-    relationship.addEventListener("change", () => { selected = null; render(); });
-    resetButton.addEventListener("click", () => {
-      selected = null;
-      search.value = "";
-      relationship.value = "";
-      initializePositions();
-      render();
-    });
-    window.addEventListener("resize", () => {
-      initializePositions();
-      render();
+    function scheduleRender() {
+      if (state.animationQueued) return;
+      state.animationQueued = true;
+      window.requestAnimationFrame(() => {
+        state.animationQueued = false;
+        render();
+      });
+    }
+
+    function render() {
+      const edgeSet = activeEdgeSet();
+      const nodes = visibleNodes(edgeSet);
+      drawEdges(edgeSet, nodes);
+      renderNodes(edgeSet, nodes);
+      showDetails(edgeSet, nodes);
+    }
+
+    graphWrap.addEventListener("pointerdown", (event) => {
+      if (event.target !== canvas) return;
+      state.panning = true;
+      state.pointerId = event.pointerId;
+      state.lastPointerX = event.clientX;
+      state.lastPointerY = event.clientY;
+      canvas.classList.add("dragging");
     });
 
+    graphWrap.addEventListener("pointermove", (event) => {
+      if (!state.panning || state.pointerId !== event.pointerId) return;
+      const dx = event.clientX - state.lastPointerX;
+      const dy = event.clientY - state.lastPointerY;
+      state.lastPointerX = event.clientX;
+      state.lastPointerY = event.clientY;
+      state.offsetX += dx;
+      state.offsetY += dy;
+      scheduleRender();
+    });
+
+    graphWrap.addEventListener("pointerup", (event) => {
+      if (state.pointerId !== event.pointerId) return;
+      state.panning = false;
+      state.pointerId = null;
+      canvas.classList.remove("dragging");
+    });
+
+    graphWrap.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const rect = graphWrap.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const factor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
+      zoomAt(x, y, factor);
+    }, { passive: false });
+
+    searchInput.addEventListener("input", () => {
+      state.selectedEdgeId = null;
+      scheduleRender();
+    });
+    relationshipSelect.addEventListener("change", () => {
+      state.selectedEdgeId = null;
+      scheduleRender();
+    });
+    showWeakToggle.addEventListener("change", () => scheduleRender());
+    drilldownToggle.addEventListener("change", () => scheduleRender());
+    resetButton.addEventListener("click", () => {
+      searchInput.value = "";
+      relationshipSelect.value = "";
+      showWeakToggle.checked = false;
+      drilldownToggle.checked = false;
+      state.selectedNode = null;
+      state.selectedEdgeId = null;
+      state.scale = 1;
+      state.offsetX = 0;
+      state.offsetY = 0;
+      initializePositions();
+      scheduleRender();
+    });
+    window.addEventListener("resize", () => {
+      resizeCanvas();
+      scheduleRender();
+    });
+
+    setStats();
     relationshipOptions();
     renderLegend();
+    resizeCanvas();
     initializePositions();
-    render();
+    scheduleRender();
   </script>
 </body>
 </html>
@@ -537,7 +1065,9 @@ export function writeOrgGraphHtml(
   fs.writeFileSync(filePath, renderOrgGraphHtml(config, graph));
   return {
     filePath,
-    nodes: new Set(graph.edges.flatMap((edge) => [edge.sourceRepo, edge.targetRepo])).size,
-    edges: graph.edges.length,
+    nodes: graph.repoEdges.length > 0
+      ? new Set(graph.repoEdges.flatMap((edge) => [edge.sourceRepo, edge.targetRepo])).size
+      : new Set(graph.edges.flatMap((edge) => [edge.sourceRepo, edge.targetRepo])).size,
+    edges: graph.repoEdges.length,
   };
 }

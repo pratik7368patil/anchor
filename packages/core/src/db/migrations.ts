@@ -349,8 +349,12 @@ CREATE TABLE IF NOT EXISTS org_cross_repo_edges (
   source_path TEXT NOT NULL,
   target_repo TEXT NOT NULL,
   target_path TEXT,
+  layer TEXT NOT NULL DEFAULT 'file',
   relationship TEXT NOT NULL,
   evidence_json TEXT NOT NULL,
+  match_reasons_json TEXT NOT NULL DEFAULT '[]',
+  evidence_count INTEGER NOT NULL DEFAULT 0,
+  is_weak INTEGER NOT NULL DEFAULT 0,
   confidence REAL NOT NULL,
   created_at TEXT NOT NULL
 );
@@ -375,6 +379,9 @@ CREATE TABLE IF NOT EXISTS org_api_consumers (
   consumer_path TEXT NOT NULL,
   contract TEXT NOT NULL,
   evidence_json TEXT NOT NULL,
+  match_reasons_json TEXT NOT NULL DEFAULT '[]',
+  evidence_count INTEGER NOT NULL DEFAULT 0,
+  is_weak INTEGER NOT NULL DEFAULT 0,
   confidence REAL NOT NULL,
   created_at TEXT NOT NULL
 );
@@ -399,6 +406,10 @@ CREATE TABLE IF NOT EXISTS org_graph_state (
   last_status TEXT NOT NULL DEFAULT 'unknown',
   last_duration_ms INTEGER,
   edge_count INTEGER NOT NULL DEFAULT 0,
+  visible_edge_count INTEGER NOT NULL DEFAULT 0,
+  weak_edge_count INTEGER NOT NULL DEFAULT 0,
+  edge_confidence_json TEXT NOT NULL DEFAULT '{"strong":0,"moderate":0,"weak":0}',
+  last_render_prep_ms INTEGER,
   api_contract_count INTEGER NOT NULL DEFAULT 0,
   api_consumer_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
@@ -439,8 +450,11 @@ CREATE INDEX IF NOT EXISTS idx_org_repositories_org ON org_repositories(org);
 CREATE INDEX IF NOT EXISTS idx_org_repo_state_org ON org_repo_state(org);
 CREATE INDEX IF NOT EXISTS idx_org_edges_source ON org_cross_repo_edges(org, source_repo);
 CREATE INDEX IF NOT EXISTS idx_org_edges_target ON org_cross_repo_edges(org, target_repo);
+CREATE INDEX IF NOT EXISTS idx_org_edges_layer ON org_cross_repo_edges(org, layer, confidence);
+CREATE INDEX IF NOT EXISTS idx_org_edges_repo_pair ON org_cross_repo_edges(org, layer, source_repo, target_repo, relationship);
 CREATE INDEX IF NOT EXISTS idx_org_consumers_provider ON org_api_consumers(org, provider_repo);
 CREATE INDEX IF NOT EXISTS idx_org_consumers_consumer ON org_api_consumers(org, consumer_repo);
+CREATE INDEX IF NOT EXISTS idx_org_consumers_contract ON org_api_consumers(org, contract);
 CREATE INDEX IF NOT EXISTS idx_org_anomalies_org ON org_anomaly_events(org, severity);
 CREATE INDEX IF NOT EXISTS idx_org_graph_state_status ON org_graph_state(org, last_status);
 

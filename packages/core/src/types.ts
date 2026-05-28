@@ -423,14 +423,21 @@ export type OrgCrossRepoRelationship =
   | "tested_by"
   | "historical_cochange";
 
+export type OrgGraphLayer = "file" | "repo";
+export type OrgEdgeConfidenceBucket = "strong" | "moderate" | "weak";
+
 export type OrgCrossRepoEdge = {
   org: string;
   sourceRepo: string;
   sourcePath: string;
   targetRepo: string;
   targetPath?: string;
+  layer: OrgGraphLayer;
   relationship: OrgCrossRepoRelationship;
   evidence: EvidenceRef[];
+  matchReasons: string[];
+  evidenceCount: number;
+  weak: boolean;
   confidence: number;
 };
 
@@ -442,7 +449,18 @@ export type OrgApiConsumer = {
   consumerPath: string;
   contract: string;
   evidence: EvidenceRef[];
+  matchReasons: string[];
+  evidenceCount: number;
+  weak: boolean;
   confidence: number;
+};
+
+export type OrgGraphQualityStats = {
+  edgeConfidenceDistribution: Record<OrgEdgeConfidenceBucket, number>;
+  weakEdgesFiltered: number;
+  minVisibleConfidence: number;
+  minVisibleEvidence: number;
+  lastRenderPrepMs?: number;
 };
 
 export type OrgAnomalyCategory =
@@ -487,6 +505,10 @@ export type OrgStatus = {
   graphLastStatus?: "success" | "failed" | "skipped" | "unknown";
   graphLastDurationMs?: number;
   graphLastError?: string;
+  graphVisibleEdgeCount: number;
+  graphWeakEdgeCount: number;
+  graphRenderPrepMs?: number;
+  graphEdgeConfidenceDistribution: Record<OrgEdgeConfidenceBucket, number>;
   coverageScore: number;
   coverageGrade: CoverageGrade;
   coverageReasons: string[];

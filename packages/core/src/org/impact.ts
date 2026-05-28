@@ -31,6 +31,9 @@ type ConsumerRow = {
   consumer_path: string;
   contract: string;
   evidence_json: string;
+  match_reasons_json?: string;
+  evidence_count?: number;
+  is_weak?: number;
   confidence: number;
 };
 
@@ -39,8 +42,12 @@ type EdgeRow = {
   source_path: string;
   target_repo: string;
   target_path?: string | null;
+  layer: "file" | "repo";
   relationship: string;
   evidence_json: string;
+  match_reasons_json?: string;
+  evidence_count?: number;
+  is_weak?: number;
   confidence: number;
 };
 
@@ -88,6 +95,18 @@ function parseEvidence(value: string): EvidenceRef[] {
   }
 }
 
+function parseStringArray(value?: string): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 function fileEvidence(repo: string, filePath: string, note: string): EvidenceRef {
   return {
     prNumber: 0,
@@ -130,7 +149,7 @@ function affectedConsumers(
     .prepare(
       `SELECT provider_repo, provider_path, consumer_repo, consumer_path, contract, evidence_json, confidence
        FROM org_api_consumers
-       WHERE org = ?`,
+       WHERE org = ? AND is_weak = 0`,
     )
     .all(org) as ConsumerRow[];
   return rows
@@ -153,6 +172,9 @@ function affectedConsumers(
       consumerPath: row.consumer_path,
       contract: sanitizeHistoricalText(row.contract),
       evidence: parseEvidence(row.evidence_json),
+      matchReasons: parseStringArray(row.match_reasons_json),
+      evidenceCount: row.evidence_count ?? parseEvidence(row.evidence_json).length,
+      weak: (row.is_weak ?? 0) === 1,
       confidence: row.confidence,
     }));
 }
@@ -165,9 +187,10 @@ function affectedEdges(
 ): OrgCrossRepoEdge[] {
   const rows = db
     .prepare(
-      `SELECT source_repo, source_path, target_repo, target_path, relationship, evidence_json, confidence
+      `SELECT source_repo, source_path, target_repo, target_path, layer, relationship, evidence_json,
+              match_reasons_json, evidence_count, is_weak, confidence
        FROM org_cross_repo_edges
-       WHERE org = ?`,
+       WHERE org = ? AND layer = 'file'`,
     )
     .all(org) as EdgeRow[];
   return rows
@@ -182,8 +205,12 @@ function affectedEdges(
       sourcePath: row.source_path,
       targetRepo: row.target_repo,
       targetPath: row.target_path ?? undefined,
+      layer: row.layer,
       relationship: row.relationship as OrgCrossRepoEdge["relationship"],
       evidence: parseEvidence(row.evidence_json),
+      matchReasons: parseStringArray(row.match_reasons_json),
+      evidenceCount: row.evidence_count ?? parseEvidence(row.evidence_json).length,
+      weak: (row.is_weak ?? 0) === 1,
       confidence: row.confidence,
     }));
 }
