@@ -441,6 +441,8 @@ export async function indexOrgRepos(
       org: config.org,
       status: "skipped",
       edgeCount: counts.edges,
+      visibleEdgeCount: counts.visibleEdges,
+      weakEdgeCount: counts.weakEdges,
       apiContractCount: counts.apiContracts,
       apiConsumerCount: counts.apiConsumers,
     });
@@ -450,7 +452,12 @@ export async function indexOrgRepos(
       command,
       reason: "Graph skipped because --no-graph was passed.",
     });
-    graph = { ...counts, skipped: true };
+    graph = {
+      edges: counts.visibleEdges,
+      apiConsumers: counts.apiConsumers,
+      apiContracts: counts.apiContracts,
+      skipped: true,
+    };
   } else {
     try {
       const rebuiltGraph = rebuildOrgGraph(db, config, {
@@ -465,7 +472,12 @@ export async function indexOrgRepos(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const counts = getOrgGraphCounts(db, config.org);
-      graph = { ...counts, error: message };
+      graph = {
+        edges: counts.visibleEdges,
+        apiConsumers: counts.apiConsumers,
+        apiContracts: counts.apiContracts,
+        error: message,
+      };
     }
   }
   recordOrgIndexRun(db, {

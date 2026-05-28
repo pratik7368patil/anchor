@@ -8,6 +8,7 @@ import {
 import type {
   AnchorOrgConfig,
   CoverageGrade,
+  OrgEdgeConfidenceBucket,
   OrgRepoCloneState,
   OrgRunHeartbeatStatus,
   OrgStatus,
@@ -33,6 +34,10 @@ type OrgGraphStateRow = {
   last_status?: "success" | "failed" | "skipped" | "unknown" | null;
   last_duration_ms?: number | null;
   edge_count?: number | null;
+  visible_edge_count?: number | null;
+  weak_edge_count?: number | null;
+  edge_confidence_json?: string | null;
+  last_render_prep_ms?: number | null;
   api_contract_count?: number | null;
   api_consumer_count?: number | null;
   last_error?: string | null;
@@ -44,10 +49,34 @@ export type OrgGraphState = {
   lastStatus?: "success" | "failed" | "skipped" | "unknown";
   lastDurationMs?: number;
   edgeCount?: number;
+  visibleEdgeCount?: number;
+  weakEdgeCount?: number;
+  edgeConfidenceDistribution: Record<OrgEdgeConfidenceBucket, number>;
+  lastRenderPrepMs?: number;
   apiContractCount?: number;
   apiConsumerCount?: number;
   lastError?: string;
 };
+
+const DEFAULT_EDGE_DISTRIBUTION: Record<OrgEdgeConfidenceBucket, number> = {
+  strong: 0,
+  moderate: 0,
+  weak: 0,
+};
+
+function parseEdgeDistribution(value?: string | null): Record<OrgEdgeConfidenceBucket, number> {
+  if (!value) return { ...DEFAULT_EDGE_DISTRIBUTION };
+  try {
+    const parsed = JSON.parse(value) as Partial<Record<OrgEdgeConfidenceBucket, number>>;
+    return {
+      strong: Number(parsed.strong ?? 0),
+      moderate: Number(parsed.moderate ?? 0),
+      weak: Number(parsed.weak ?? 0),
+    };
+  } catch {
+    return { ...DEFAULT_EDGE_DISTRIBUTION };
+  }
+}
 
 export function openOrgDatabase(org: string, baseDir?: string): AnchorDatabase {
   const root = orgRoot(org, baseDir);
@@ -209,6 +238,10 @@ export function recordOrgGraphState(
     builtAt?: string;
     durationMs?: number;
     edgeCount?: number;
+    visibleEdgeCount?: number;
+    weakEdgeCount?: number;
+    edgeConfidenceDistribution?: Record<OrgEdgeConfidenceBucket, number>;
+    lastRenderPrepMs?: number;
     apiContractCount?: number;
     apiConsumerCount?: number;
     error?: string;
@@ -219,8 +252,9 @@ export function recordOrgGraphState(
   db.prepare(
     `INSERT INTO org_graph_state
      (org, last_built_at, last_status, last_duration_ms, edge_count, api_contract_count,
-      api_consumer_count, last_error, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      api_consumer_count, visible_edge_count, weak_edge_count, edge_confidence_json,
+      last_render_prep_ms, last_error, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(org) DO UPDATE SET
        last_built_at = COALESCE(excluded.last_built_at, org_graph_state.last_built_at),
        last_status = excluded.last_status,
@@ -228,6 +262,10 @@ export function recordOrgGraphState(
        edge_count = excluded.edge_count,
        api_contract_count = excluded.api_contract_count,
        api_consumer_count = excluded.api_consumer_count,
+       visible_edge_count = excluded.visible_edge_count,
+       weak_edge_count = excluded.weak_edge_count,
+       edge_confidence_json = excluded.edge_confidence_json,
+       last_render_prep_ms = excluded.last_render_prep_ms,
        last_error = excluded.last_error,
        updated_at = excluded.updated_at`,
   ).run(
@@ -238,6 +276,10 @@ export function recordOrgGraphState(
     input.edgeCount ?? 0,
     input.apiContractCount ?? 0,
     input.apiConsumerCount ?? 0,
+    input.visibleEdgeCount ?? input.edgeCount ?? 0,
+    input.weakEdgeCount ?? 0,
+    JSON.stringify(input.edgeConfidenceDistribution ?? DEFAULT_EDGE_DISTRIBUTION),
+    input.lastRenderPrepMs ?? null,
     input.error ?? null,
     now,
   );
@@ -255,6 +297,10 @@ export function getOrgGraphState(db: AnchorDatabase, org: string): OrgGraphState
     lastStatus: row.last_status ?? undefined,
     lastDurationMs: row.last_duration_ms ?? undefined,
     edgeCount: row.edge_count ?? undefined,
+    visibleEdgeCount: row.visible_edge_count ?? undefined,
+    weakEdgeCount: row.weak_edge_count ?? undefined,
+    edgeConfidenceDistribution: parseEdgeDistribution(row.edge_confidence_json),
+    lastRenderPrepMs: row.last_render_prep_ms ?? undefined,
     apiContractCount: row.api_contract_count ?? undefined,
     apiConsumerCount: row.api_consumer_count ?? undefined,
     lastError: row.last_error ?? undefined,
@@ -271,10 +317,28 @@ function count(db: AnchorDatabase, table: string, where = "", params: unknown[] 
 export function getOrgGraphCounts(
   db: AnchorDatabase,
   org: string,
-): { edges: number; apiContracts: number; apiConsumers: number } {
+): {
+  edges: number;
+  visibleEdges: number;
+  weakEdges: number;
+  apiContracts: number;
+  apiConsumers: number;
+} {
   initializeSchema(db);
   return {
-    edges: count(db, "org_cross_repo_edges", "WHERE org = ?", [org]),
+    edges: count(db, "org_cross_repo_edges", "WHERE org = ? AND layer = 'repo'", [org]),
+    visibleEdges: count(
+      db,
+      "org_cross_repo_edges",
+      "WHERE org = ? AND layer = 'repo' AND is_weak = 0",
+      [org],
+    ),
+    weakEdges: count(
+      db,
+      "org_cross_repo_edges",
+      "WHERE org = ? AND layer = 'repo' AND is_weak = 1",
+      [org],
+    ),
     apiContracts: count(db, "org_api_contracts", "WHERE org = ?", [org]),
     apiConsumers: count(db, "org_api_consumers", "WHERE org = ?", [org]),
   };
@@ -310,13 +374,22 @@ export function getOrgStatus(
   const codeFileCount = count(db, "code_files");
   const codeChunkCount = count(db, "code_chunks");
   const wisdomUnitCount = count(db, "wisdom_units");
-  const crossRepoEdgeCount = count(db, "org_cross_repo_edges", "WHERE org = ?", [config.org]);
+  const crossRepoEdgeCount = count(
+    db,
+    "org_cross_repo_edges",
+    "WHERE org = ? AND layer = 'repo' AND is_weak = 0",
+    [config.org],
+  );
+  const graphWeakEdgeCount = count(
+    db,
+    "org_cross_repo_edges",
+    "WHERE org = ? AND layer = 'repo' AND is_weak = 1",
+    [config.org],
+  );
   const apiContractCount = count(db, "org_api_contracts", "WHERE org = ?", [config.org]);
   const apiConsumerCount = count(db, "org_api_consumers", "WHERE org = ?", [config.org]);
   const anomalyCount = count(db, "org_anomaly_events", "WHERE org = ?", [config.org]);
-  const graphState = db.prepare("SELECT * FROM org_graph_state WHERE org = ?").get(config.org) as
-    | OrgGraphStateRow
-    | undefined;
+  const graphState = getOrgGraphState(db, config.org);
   let score = 0;
   const reasons: string[] = [];
   if (enabledRepos.length > 0) {
@@ -361,10 +434,15 @@ export function getOrgStatus(
     apiContractCount,
     apiConsumerCount,
     anomalyCount,
-    graphLastBuiltAt: graphState?.last_built_at ?? undefined,
-    graphLastStatus: graphState?.last_status ?? undefined,
-    graphLastDurationMs: graphState?.last_duration_ms ?? undefined,
-    graphLastError: graphState?.last_error ?? undefined,
+    graphLastBuiltAt: graphState?.lastBuiltAt,
+    graphLastStatus: graphState?.lastStatus,
+    graphLastDurationMs: graphState?.lastDurationMs,
+    graphLastError: graphState?.lastError,
+    graphVisibleEdgeCount: graphState?.visibleEdgeCount ?? crossRepoEdgeCount,
+    graphWeakEdgeCount: graphState?.weakEdgeCount ?? graphWeakEdgeCount,
+    graphRenderPrepMs: graphState?.lastRenderPrepMs,
+    graphEdgeConfidenceDistribution:
+      graphState?.edgeConfidenceDistribution ?? { ...DEFAULT_EDGE_DISTRIBUTION },
     coverageScore: score,
     coverageGrade: grade(score),
     coverageReasons: reasons,

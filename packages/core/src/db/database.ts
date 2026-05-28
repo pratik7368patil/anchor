@@ -189,6 +189,41 @@ export function initializeSchema(db: AnchorDatabase): void {
   ensureColumn(db, "sync_state", "graphql_cursor_reason", "TEXT");
   ensureColumn(db, "sync_state", "graphql_cursor_updated_at", "TEXT");
   ensureColumn(db, "code_index_state", "last_indexed_commit", "TEXT");
+  ensureColumn(db, "org_cross_repo_edges", "layer", "TEXT NOT NULL DEFAULT 'file'");
+  ensureColumn(
+    db,
+    "org_cross_repo_edges",
+    "match_reasons_json",
+    "TEXT NOT NULL DEFAULT '[]'",
+  );
+  ensureColumn(db, "org_cross_repo_edges", "evidence_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "org_cross_repo_edges", "is_weak", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(
+    db,
+    "org_api_consumers",
+    "match_reasons_json",
+    "TEXT NOT NULL DEFAULT '[]'",
+  );
+  ensureColumn(db, "org_api_consumers", "evidence_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "org_api_consumers", "is_weak", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "org_graph_state", "visible_edge_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(db, "org_graph_state", "weak_edge_count", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(
+    db,
+    "org_graph_state",
+    "edge_confidence_json",
+    "TEXT NOT NULL DEFAULT '{\"strong\":0,\"moderate\":0,\"weak\":0}'",
+  );
+  ensureColumn(db, "org_graph_state", "last_render_prep_ms", "INTEGER");
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_org_edges_layer ON org_cross_repo_edges(org, layer, confidence)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_org_edges_repo_pair ON org_cross_repo_edges(org, layer, source_repo, target_repo, relationship)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_org_consumers_contract ON org_api_consumers(org, contract)",
+  );
 }
 
 function ensureColumn(

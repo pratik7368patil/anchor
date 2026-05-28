@@ -27,7 +27,23 @@ describe("org graph HTML", () => {
       ],
     };
     const graph: OrgGraphResult = {
-      edges: [
+      edges: [],
+      repoEdges: [
+        {
+          org: "acme",
+          sourceRepo: "acme/frontend</script><script>alert(1)</script>",
+          sourcePath: "*",
+          targetRepo: "acme/backend",
+          relationship: "api_consumer",
+          layer: "repo",
+          evidence: [],
+          matchReasons: ["matched_contract_token"],
+          evidenceCount: 2,
+          weak: false,
+          confidence: 0.86,
+        },
+      ],
+      fileEdges: [
         {
           org: "acme",
           sourceRepo: "acme/frontend</script><script>alert(1)</script>",
@@ -35,10 +51,16 @@ describe("org graph HTML", () => {
           targetRepo: "acme/backend",
           targetPath: "src/api/access.ts",
           relationship: "api_consumer",
+          layer: "file",
           evidence: [],
+          matchReasons: ["matched_contract_token"],
+          evidenceCount: 2,
+          weak: false,
           confidence: 0.86,
         },
       ],
+      hiddenFileEdges: [],
+      hiddenRepoEdges: [],
       apiConsumers: [
         {
           org: "acme",
@@ -48,6 +70,9 @@ describe("org graph HTML", () => {
           consumerPath: "src/api/client.ts",
           contract: "/api/access",
           evidence: [],
+          matchReasons: ["matched_contract_token"],
+          evidenceCount: 2,
+          weak: false,
           confidence: 0.86,
         },
       ],
@@ -60,6 +85,12 @@ describe("org graph HTML", () => {
           confidence: 0.74,
         },
       ],
+      quality: {
+        edgeConfidenceDistribution: { strong: 1, moderate: 0, weak: 0 },
+        weakEdgesFiltered: 0,
+        minVisibleConfidence: 0.7,
+        minVisibleEvidence: 2,
+      },
       durationMs: 12,
     };
 
@@ -67,6 +98,8 @@ describe("org graph HTML", () => {
 
     expect(html).toContain("Anchor Org Graph");
     expect(html).toContain("graphData");
+    expect(html).toContain("edge-canvas");
+    expect(html).toContain("requestAnimationFrame");
     expect(html).toContain("\\u003c/script\\u003e");
     expect(html).not.toContain("</script><script>alert(1)</script>");
   });

@@ -50,6 +50,9 @@ type ConsumerRow = {
   consumer_path: string;
   contract: string;
   evidence_json: string;
+  match_reasons_json?: string;
+  evidence_count?: number;
+  is_weak?: number;
   confidence: number;
 };
 
@@ -229,9 +232,10 @@ export function findOrgApiConsumers(
   const repoParams = input.repo ? [input.repo, input.repo] : [];
   const rows = db
     .prepare(
-      `SELECT provider_repo, provider_path, consumer_repo, consumer_path, contract, evidence_json, confidence
+      `SELECT provider_repo, provider_path, consumer_repo, consumer_path, contract, evidence_json,
+              match_reasons_json, evidence_count, is_weak, confidence
        FROM org_api_consumers
-       WHERE org = ?${repoClause}
+       WHERE org = ? AND is_weak = 0${repoClause}
        ORDER BY confidence DESC`,
     )
     .all(config.org, ...repoParams) as ConsumerRow[];
@@ -254,6 +258,9 @@ export function findOrgApiConsumers(
       consumerPath: row.consumer_path,
       contract: sanitizeHistoricalText(row.contract),
       evidence: parseEvidence(row.evidence_json),
+      matchReasons: parseStringArray(row.match_reasons_json ?? "[]"),
+      evidenceCount: row.evidence_count ?? parseEvidence(row.evidence_json).length,
+      weak: (row.is_weak ?? 0) === 1,
       confidence: row.confidence,
     }));
 }
@@ -268,7 +275,7 @@ export function getOrgArchitectureMap(
     .prepare(
       `SELECT source_repo, source_path, target_repo, target_path, relationship, confidence
        FROM org_cross_repo_edges
-       WHERE org = ?
+       WHERE org = ? AND layer = 'repo' AND is_weak = 0
        ORDER BY confidence DESC, source_repo, target_repo`,
     )
     .all(config.org) as EdgeRow[];

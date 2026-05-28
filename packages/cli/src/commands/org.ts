@@ -236,6 +236,10 @@ export function runOrgStatus(options: OrgOptions) {
       apiContractCount: 0,
       apiConsumerCount: 0,
       anomalyCount: 0,
+      graphVisibleEdgeCount: 0,
+      graphWeakEdgeCount: 0,
+      graphRenderPrepMs: undefined,
+      graphEdgeConfidenceDistribution: { strong: 0, moderate: 0, weak: 0 },
       coverageScore: 0,
       coverageGrade: "empty" as const,
       coverageReasons: [
@@ -264,11 +268,18 @@ export function runOrgGraph(options: OrgOptions) {
     const graph = rebuildOrgGraph(db, config, {
       onProgress: progress.onGraphProgress,
     });
+    const totalRepoEdges = graph.repoEdges.length + graph.hiddenRepoEdges.length;
     const metadata = {
       org: config.org,
       edges: graph.edges.length,
+      totalRepoEdges,
+      weakEdgesHidden: graph.hiddenRepoEdges.length,
+      fileEdges: graph.fileEdges.length,
+      hiddenFileEdges: graph.hiddenFileEdges.length,
       apiContracts: graph.apiContracts.length,
       apiConsumers: graph.apiConsumers.length,
+      edgeConfidenceDistribution: graph.quality.edgeConfidenceDistribution,
+      renderPrepMs: graph.quality.lastRenderPrepMs,
       durationMs: graph.durationMs,
       databasePath: orgDatabasePath(config.org),
     };
@@ -283,10 +294,16 @@ export function runOrgGraph(options: OrgOptions) {
         "# Anchor Org Graph",
         "",
         `Org: ${metadata.org}`,
-        `Cross-repo edges: ${metadata.edges}`,
+        `Cross-repo edges: ${metadata.edges} visible (${metadata.totalRepoEdges} total)`,
+        `Weak edges hidden: ${metadata.weakEdgesHidden}`,
+        `File-level edges: ${metadata.fileEdges} visible (${metadata.hiddenFileEdges} hidden)`,
         `API contracts: ${metadata.apiContracts}`,
         `API consumers: ${metadata.apiConsumers}`,
+        `Confidence: strong ${metadata.edgeConfidenceDistribution.strong}, moderate ${metadata.edgeConfidenceDistribution.moderate}, weak ${metadata.edgeConfidenceDistribution.weak}`,
         `Duration: ${(metadata.durationMs / 1000).toFixed(1)}s`,
+        ...(metadata.renderPrepMs !== undefined
+          ? [`Render prep: ${(metadata.renderPrepMs / 1000).toFixed(2)}s`]
+          : []),
         `Database: ${metadata.databasePath}`,
         ...(htmlResult
           ? [
@@ -445,6 +462,10 @@ export function printJsonOrMarkdown(
       graphLastStatus?: string;
       graphLastDurationMs?: number;
       graphLastError?: string;
+      graphVisibleEdgeCount: number;
+      graphWeakEdgeCount: number;
+      graphRenderPrepMs?: number;
+      graphEdgeConfidenceDistribution: { strong: number; moderate: number; weak: number };
       statusReadError?: string;
       activeRun?: {
         pid: number;
@@ -469,12 +490,19 @@ export function printJsonOrMarkdown(
     console.log(`Cross-repo edges: ${status.crossRepoEdgeCount}`);
     console.log(`API contracts: ${status.apiContractCount}`);
     console.log(`API consumers: ${status.apiConsumerCount}`);
+    console.log(`Weak edges filtered: ${status.graphWeakEdgeCount}`);
     console.log(
       `Graph: ${status.graphLastStatus ?? "unknown"}${status.graphLastBuiltAt ? ` at ${status.graphLastBuiltAt}` : ""}`,
     );
     if (status.graphLastDurationMs !== undefined) {
       console.log(`Graph duration: ${(status.graphLastDurationMs / 1000).toFixed(1)}s`);
     }
+    if (status.graphRenderPrepMs !== undefined) {
+      console.log(`Graph render prep: ${(status.graphRenderPrepMs / 1000).toFixed(2)}s`);
+    }
+    console.log(
+      `Graph confidence: strong ${status.graphEdgeConfidenceDistribution.strong}, moderate ${status.graphEdgeConfidenceDistribution.moderate}, weak ${status.graphEdgeConfidenceDistribution.weak}`,
+    );
     if (status.graphLastError) console.log(`Graph error: ${status.graphLastError}`);
     if (status.statusReadError) console.log(`Status warning: ${status.statusReadError}`);
     if (status.activeRun) {

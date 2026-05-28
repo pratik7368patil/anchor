@@ -25,10 +25,12 @@ export async function handleAnchorOrgIndexStatus(input: unknown) {
         `Code chunks: ${status.codeChunkCount}`,
         `Wisdom units: ${status.wisdomUnitCount}`,
         `Cross-repo edges: ${status.crossRepoEdgeCount}`,
+        `Weak edges filtered: ${status.graphWeakEdgeCount}`,
         `API contracts: ${status.apiContractCount}`,
         `API consumers: ${status.apiConsumerCount}`,
         `Graph: ${status.graphLastStatus ?? "unknown"}`,
         `Last graph build: ${status.graphLastBuiltAt ?? "never"}`,
+        `Graph confidence: strong ${status.graphEdgeConfidenceDistribution.strong}, moderate ${status.graphEdgeConfidenceDistribution.moderate}, weak ${status.graphEdgeConfidenceDistribution.weak}`,
         `Coverage: ${status.coverageScore}% (${status.coverageGrade})`,
       ];
       if (status.graphLastError) lines.push(`Graph error: ${status.graphLastError}`);
