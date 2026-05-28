@@ -1134,6 +1134,8 @@ describe("SQLite indexing and retrieval", () => {
       expect(stages).toContain("building_architecture_patterns");
       expect(stages).toContain("inferring_test_awareness");
       expect(stages).toContain("deleting_existing_code_index");
+      expect(stages).toContain("deleting_code_fts");
+      expect(stages).toContain("deleting_architecture_fts");
       expect(stages).toContain("writing_code_files");
       expect(stages).toContain("writing_code_chunks");
       expect(stages).toContain("writing_test_awareness");
@@ -2119,10 +2121,22 @@ describe("code index re-indexing", () => {
         (db.prepare("SELECT COUNT(*) AS c FROM code_chunks").get() as { c: number }).c;
       const ftsCount = () =>
         (db.prepare("SELECT COUNT(*) AS c FROM code_chunks_fts").get() as { c: number }).c;
+      const alignedFtsCount = () =>
+        (
+          db
+            .prepare(
+              `SELECT COUNT(*) AS c
+               FROM code_chunks_fts f
+               JOIN code_chunks cc ON cc.id = f.chunkId
+               WHERE f.rowid = cc.rowid`,
+            )
+            .get() as { c: number }
+        ).c;
 
       indexCodebase(db, { cwd, repo: "owner/repo" });
       expect(chunkCount()).toBeGreaterThan(0);
       expect(ftsCount()).toBe(chunkCount());
+      expect(alignedFtsCount()).toBe(chunkCount());
 
       // Change existing content and add a file, then re-index the same repo.
       writeFileEnsuringDir(path.join(cwd, "src/a.ts"), "export function beta() { return 2; }\n");
@@ -2133,6 +2147,7 @@ describe("code index re-indexing", () => {
       // FTS row count must match the current chunk count exactly — no stale rows
       // left behind by the bulk delete, and no double-counting.
       expect(ftsCount()).toBe(chunkCount());
+      expect(alignedFtsCount()).toBe(chunkCount());
     } finally {
       db.close();
     }
