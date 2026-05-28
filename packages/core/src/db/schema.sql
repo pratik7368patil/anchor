@@ -441,3 +441,17 @@ CREATE INDEX IF NOT EXISTS idx_org_consumers_provider ON org_api_consumers(org, 
 CREATE INDEX IF NOT EXISTS idx_org_consumers_consumer ON org_api_consumers(org, consumer_repo);
 CREATE INDEX IF NOT EXISTS idx_org_anomalies_org ON org_anomaly_events(org, severity);
 CREATE INDEX IF NOT EXISTS idx_org_graph_state_status ON org_graph_state(org, last_status);
+
+-- Foreign-key indexes backing per-repo / per-PR bulk deletes and re-index scans.
+CREATE INDEX IF NOT EXISTS idx_code_chunks_repo ON code_chunks(repo_id);
+CREATE INDEX IF NOT EXISTS idx_code_files_repo ON code_files(repo_id);
+CREATE INDEX IF NOT EXISTS idx_code_imports_repo ON code_imports(repo_id);
+CREATE INDEX IF NOT EXISTS idx_test_files_repo ON test_files(repo_id);
+CREATE INDEX IF NOT EXISTS idx_test_links_repo ON test_links(repo_id);
+CREATE INDEX IF NOT EXISTS idx_architecture_components_repo ON architecture_components(repo_id);
+CREATE INDEX IF NOT EXISTS idx_architecture_patterns_repo ON architecture_patterns(repo_id);
+CREATE INDEX IF NOT EXISTS idx_architecture_map_edges_repo ON architecture_map_edges(repo_id);
+CREATE INDEX IF NOT EXISTS idx_wisdom_units_repo ON wisdom_units(repo_id);
+CREATE INDEX IF NOT EXISTS idx_regression_events_repo ON regression_events(repo_id);
+CREATE INDEX IF NOT EXISTS idx_pr_files_pr ON pr_files(pr_id);
+CREATE INDEX IF NOT EXISTS idx_pr_comments_pr ON pr_comments(pr_id);

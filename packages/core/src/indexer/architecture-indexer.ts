@@ -181,6 +181,7 @@ type RelatedTestIndex = {
   testPaths: string[];
   byBase: Map<string, string[]>;
   byDirectory: Map<string, string[]>;
+  byDotPrefix: Map<string, string[]>;
 };
 
 function addToStringMap(map: Map<string, string[]>, key: string, value: string): void {
@@ -197,14 +198,26 @@ function buildRelatedTestIndex(allPaths: string[]): RelatedTestIndex {
   const testPaths = allPaths.filter((candidate) => isTestFilePath(candidate));
   const byBase = new Map<string, string[]>();
   const byDirectory = new Map<string, string[]>();
+  const byDotPrefix = new Map<string, string[]>();
   for (const testPath of testPaths) {
     addToStringMap(byBase, testBaseFor(testPath), testPath);
-    const segments = path.posix.dirname(testPath).split("/").filter(Boolean);
-    for (let index = 1; index <= segments.length; index += 1) {
-      addToStringMap(byDirectory, segments.slice(0, index).join("/"), testPath);
+    const dirSegments = path.posix.dirname(testPath).split("/").filter(Boolean);
+    for (let index = 1; index <= dirSegments.length; index += 1) {
+      addToStringMap(byDirectory, dirSegments.slice(0, index).join("/"), testPath);
     }
+    // Pre-index the substring match `path.includes('/<name>.')` as O(1) lookups:
+    // every prefix of a slash-preceded segment ending at a '.' would have matched.
+    const pathSegments = testPath.split("/");
+    const dotPrefixes = new Set<string>();
+    for (let i = 1; i < pathSegments.length; i += 1) {
+      const segment = pathSegments[i] ?? "";
+      for (let dot = segment.indexOf("."); dot >= 0; dot = segment.indexOf(".", dot + 1)) {
+        dotPrefixes.add(segment.slice(0, dot));
+      }
+    }
+    for (const prefix of dotPrefixes) addToStringMap(byDotPrefix, prefix, testPath);
   }
-  return { testPaths, byBase, byDirectory };
+  return { testPaths, byBase, byDirectory, byDotPrefix };
 }
 
 function relatedTestsFor(filePath: string, index: RelatedTestIndex): string[] {
@@ -223,8 +236,8 @@ function relatedTestsFor(filePath: string, index: RelatedTestIndex): string[] {
   if (parsed.dir) {
     for (const testPath of index.byDirectory.get(parsed.dir) ?? []) add(testPath);
   }
-  for (const testPath of index.testPaths) {
-    if (testPath.includes(`/${basename}.`)) add(testPath);
+  for (const testPath of index.byDotPrefix.get(basename) ?? []) {
+    add(testPath);
     if (related.length >= 8) break;
   }
   return related.slice(0, 8);

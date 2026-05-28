@@ -129,8 +129,7 @@ function symbolMatch(unit: WisdomUnit, querySymbols: string[]): number {
     const lower = symbol.toLowerCase();
     if (unitSymbols.includes(lower)) best = Math.max(best, 1);
     else if (text.includes(`\`${lower}\``)) best = Math.max(best, 1);
-    else if (new RegExp(`\\b${escapeRegExp(lower)}\\b`, "i").test(text))
-      best = Math.max(best, 0.66);
+    else if (symbolBoundaryRegex(lower).test(text)) best = Math.max(best, 0.66);
     else if (
       unitSymbols.some((candidate) => candidate.includes(lower) || lower.includes(candidate))
     ) {
@@ -243,6 +242,18 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Word-boundary symbol regexes are reused across every candidate in a query;
+// compile each once instead of per candidate × per symbol.
+const symbolBoundaryRegexCache = new Map<string, RegExp>();
+function symbolBoundaryRegex(lower: string): RegExp {
+  let regex = symbolBoundaryRegexCache.get(lower);
+  if (!regex) {
+    regex = new RegExp(`\\b${escapeRegExp(lower)}\\b`, "i");
+    symbolBoundaryRegexCache.set(lower, regex);
+  }
+  return regex;
+}
+
 function loadCandidates(
   db: AnchorDatabase,
   input: AnchorContextInput | SearchHistoryInput,
@@ -293,11 +304,15 @@ function loadClaimRepetitionCounts(db: AnchorDatabase): Map<string, number> {
   return new Map([...grouped.entries()].map(([key, prs]) => [key, prs.size]));
 }
 
-function loadFeedbackAdjustments(db: AnchorDatabase): Map<string, number> {
-  const rows = db
-    .prepare("SELECT result_id, rating FROM feedback_events")
-    .all() as FeedbackAdjustmentRow[];
+function loadFeedbackAdjustments(db: AnchorDatabase, resultIds: string[]): Map<string, number> {
   const adjustments = new Map<string, number>();
+  if (resultIds.length === 0) return adjustments;
+  // Only the candidate units' feedback is ever read; scope the query to them so this
+  // doesn't scan the monotonically-growing feedback_events table on every search.
+  const placeholders = resultIds.map(() => "?").join(", ");
+  const rows = db
+    .prepare(`SELECT result_id, rating FROM feedback_events WHERE result_id IN (${placeholders})`)
+    .all(...resultIds) as FeedbackAdjustmentRow[];
   for (const row of rows) {
     const delta = row.rating === "useful" ? 0.03 : -0.03;
     adjustments.set(row.result_id, (adjustments.get(row.result_id) ?? 0) + delta);
@@ -326,7 +341,10 @@ export function rankWisdomUnits(
   const candidates = loadCandidates(db, input);
   const codeSnapshot = loadCurrentCodeSnapshot(db);
   const repetitionCounts = loadClaimRepetitionCounts(db);
-  const feedbackAdjustments = loadFeedbackAdjustments(db);
+  const feedbackAdjustments = loadFeedbackAdjustments(
+    db,
+    candidates.map((unit) => unit.id),
+  );
   const duplicates = new Map<string, number>();
   for (const unit of candidates) {
     const key = claimKeyFor(unit.category, unit.sanitizedText);

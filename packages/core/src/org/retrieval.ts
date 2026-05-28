@@ -118,8 +118,12 @@ function rowScore(
   text: string,
   files: string[],
   symbols: string[],
+  lowerTerms: string[],
 ): number {
   let score = 0;
+  // Lowercase the row text once; callers pass pre-lowercased query terms so we don't
+  // rebuild the term list or re-lowercase per row across hundreds of candidates.
+  const lowerText = text.toLowerCase();
   for (const file of input.files ?? []) {
     if (files.includes(file)) score += 5;
     else if (files.some((candidate) => candidate.endsWith(`/${file.split("/").pop() ?? file}`)))
@@ -127,10 +131,10 @@ function rowScore(
   }
   for (const symbol of input.symbols ?? []) {
     if (symbols.includes(symbol)) score += 4;
-    else if (text.toLowerCase().includes(symbol.toLowerCase())) score += 1;
+    else if (lowerText.includes(symbol.toLowerCase())) score += 1;
   }
-  for (const term of queryTerms(input)) {
-    if (text.toLowerCase().includes(term.toLowerCase())) score += 0.5;
+  for (const term of lowerTerms) {
+    if (lowerText.includes(term)) score += 0.5;
   }
   return score;
 }
@@ -144,11 +148,12 @@ function getWisdom(db: AnchorDatabase, input: OrgContextInput, limit: number): W
        LIMIT 500`,
     )
     .all() as WisdomRow[];
+  const lowerTerms = queryTerms(input).map((term) => term.toLowerCase());
   return rows
     .filter((row) => matchesRepo(row.repo, input.repos))
     .map((row) => ({
       row,
-      score: rowScore(input, row.sanitized_text, parseStringArray(row.file_paths_json), []),
+      score: rowScore(input, row.sanitized_text, parseStringArray(row.file_paths_json), [], lowerTerms),
     }))
     .filter((item) => item.score > 0 || (input.files ?? []).length === 0)
     .sort((a, b) => b.score - a.score || b.row.confidence - a.row.confidence)
@@ -165,6 +170,7 @@ function getCodeEvidence(db: AnchorDatabase, input: OrgContextInput, limit: numb
        LIMIT 800`,
     )
     .all() as CodeRow[];
+  const lowerTerms = queryTerms(input).map((term) => term.toLowerCase());
   return rows
     .filter((row) => matchesRepo(row.repo, input.repos))
     .map((row) => ({
@@ -174,6 +180,7 @@ function getCodeEvidence(db: AnchorDatabase, input: OrgContextInput, limit: numb
         row.sanitized_text,
         [row.file_path],
         parseStringArray(row.symbols_json),
+        lowerTerms,
       ),
     }))
     .filter((item) => item.score > 0)
@@ -191,11 +198,18 @@ function getArchitecture(db: AnchorDatabase, input: OrgContextInput, limit: numb
        LIMIT 300`,
     )
     .all() as PatternRow[];
+  const lowerTerms = queryTerms(input).map((term) => term.toLowerCase());
   return rows
     .filter((row) => matchesRepo(row.repo, input.repos))
     .map((row) => ({
       row,
-      score: rowScore(input, row.summary_sanitized, parseStringArray(row.source_files_json), []),
+      score: rowScore(
+        input,
+        row.summary_sanitized,
+        parseStringArray(row.source_files_json),
+        [],
+        lowerTerms,
+      ),
     }))
     .filter((item) => item.score > 0 || (input.files ?? []).length === 0)
     .sort((a, b) => b.score - a.score || b.row.confidence - a.row.confidence)
@@ -209,19 +223,20 @@ export function findOrgApiConsumers(
   input: { repo?: string; files?: string[]; query?: string; maxResults?: number },
 ): OrgApiConsumer[] {
   initializeSchema(db);
+  // Push the repo filter into SQL so the (org, provider_repo)/(org, consumer_repo)
+  // composite indexes are used instead of loading every consumer row for the org.
+  const repoClause = input.repo ? " AND (provider_repo = ? OR consumer_repo = ?)" : "";
+  const repoParams = input.repo ? [input.repo, input.repo] : [];
   const rows = db
     .prepare(
       `SELECT provider_repo, provider_path, consumer_repo, consumer_path, contract, evidence_json, confidence
        FROM org_api_consumers
-       WHERE org = ?
+       WHERE org = ?${repoClause}
        ORDER BY confidence DESC`,
     )
-    .all(config.org) as ConsumerRow[];
+    .all(config.org, ...repoParams) as ConsumerRow[];
   const limit = Math.max(1, Math.min(input.maxResults ?? 8, 25));
   return rows
-    .filter(
-      (row) => !input.repo || row.provider_repo === input.repo || row.consumer_repo === input.repo,
-    )
     .filter((row) => {
       const files = input.files ?? [];
       if (files.length === 0 && !input.query) return true;

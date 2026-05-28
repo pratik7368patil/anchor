@@ -71,6 +71,7 @@ export function openAnchorDatabase(
   db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  applyPerformancePragmas(db);
   return db;
 }
 
@@ -78,7 +79,17 @@ export function openAnchorDatabaseReadOnly(databasePath: string): AnchorDatabase
   const db = new Database(databasePath, { readonly: true, fileMustExist: true });
   db.pragma("busy_timeout = 5000");
   db.pragma("foreign_keys = ON");
+  applyPerformancePragmas(db);
   return db;
+}
+
+// Throughput tuning shared by both openers. synchronous=NORMAL is safe under WAL
+// for a local, rebuildable index; cache_size is in KiB (negative), mmap_size in bytes.
+function applyPerformancePragmas(db: AnchorDatabase): void {
+  db.pragma("synchronous = NORMAL");
+  db.pragma("cache_size = -65536");
+  db.pragma("mmap_size = 268435456");
+  db.pragma("temp_store = MEMORY");
 }
 
 export function initializeSchema(db: AnchorDatabase): void {
