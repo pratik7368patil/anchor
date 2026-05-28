@@ -2137,4 +2137,31 @@ describe("code index re-indexing", () => {
       db.close();
     }
   });
+
+  it("creates foreign-key indexes that back per-repo and per-PR bulk operations", () => {
+    const cwd = tempDir();
+    const db = openAnchorDatabase(cwd);
+    try {
+      initializeSchema(db);
+      const indexNames = new Set(
+        (
+          db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{
+            name: string;
+          }>
+        ).map((row) => row.name),
+      );
+      for (const expected of [
+        "idx_code_chunks_repo",
+        "idx_code_files_repo",
+        "idx_architecture_patterns_repo",
+        "idx_architecture_map_edges_repo",
+        "idx_pr_files_pr",
+        "idx_pr_comments_pr",
+      ]) {
+        expect(indexNames.has(expected)).toBe(true);
+      }
+    } finally {
+      db.close();
+    }
+  });
 });
