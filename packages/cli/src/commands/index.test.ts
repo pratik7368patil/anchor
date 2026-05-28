@@ -589,3 +589,38 @@ describe("org HTML report commands", () => {
     }
   });
 });
+
+describe("org map output", () => {
+  it("prints plain mermaid text by default instead of markdown wrapper", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    try {
+      runOrgInit({ org: "acme" });
+      const result = runOrgMap({ org: "acme", progress: "off" });
+      expect(result.markdown.trim()).toBe("graph LR");
+      expect(result.markdown).not.toContain("# Anchor Org Architecture");
+      expect(result.markdown).not.toContain("```mermaid");
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+
+  it("keeps json output for org map when format=json is used", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    try {
+      runOrgInit({ org: "acme" });
+      const result = runOrgMap({ org: "acme", format: "json", progress: "off" });
+      expect(() => JSON.parse(result.markdown)).not.toThrow();
+      const parsed = JSON.parse(result.markdown) as { nodes: unknown[]; edges: unknown[] };
+      expect(Array.isArray(parsed.nodes)).toBe(true);
+      expect(Array.isArray(parsed.edges)).toBe(true);
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+});

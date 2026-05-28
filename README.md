@@ -323,7 +323,7 @@ Use `--repo owner/name` to identify the repo being checked, `--diff-file change.
 Use `--strict` to fail on blocker/high anomalies and `--min-coverage 70` to enforce an org coverage threshold. Add `--html` to write a standalone local CI report, `--open` to open it in your browser, and `--output path/to/ci.html` to choose the file path.
 
 `anchor org map`:
-Use `--format mermaid|json` to choose CLI output. Add `--html` to write a standalone local map report, `--open` to open it in your browser, and `--output path/to/map.html` to choose the file path.
+Use `--format mermaid|json` to choose CLI output. Mermaid format now prints raw Mermaid text (no Markdown wrapper) so you can paste directly into Mermaid renderers. Add `--html` to write a standalone local map report, `--open` to open it in your browser, and `--output path/to/map.html` to choose the file path.
 
 Org Memory indexes current code and, when GitHub auth is available, PR history for each allowlisted repo into one local SQLite database. Re-runs are idempotent: unchanged code indexes are skipped, changed repos replace their current-code records, PRs are upserted by repo and number, recently completed PR syncs are reused when resuming unfinished graph work, and successful repos stay intact when another repo fails.
 

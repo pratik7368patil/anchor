@@ -262,7 +262,8 @@ describe("org memory", () => {
       expect(impact.metadata.apiConsumers[0]?.consumerRepo).toBe("acme/frontend-app");
 
       const map = getOrgArchitectureMap(db, config, "mermaid");
-      expect(map.markdown).toContain("```mermaid");
+      expect(map.markdown).toContain("graph LR");
+      expect(map.markdown).not.toContain("```mermaid");
       expect(JSON.stringify(map.metadata)).toContain("acme/frontend-app");
     } finally {
       db.close();
