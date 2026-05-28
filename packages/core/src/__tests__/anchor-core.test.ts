@@ -1866,6 +1866,77 @@ describe("codebase indexing and retrieval", () => {
     }
   });
 
+  it("keeps test awareness rows idempotent across incremental source-only reindex runs", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    configureGitIdentity(cwd);
+    writeFileEnsuringDir(
+      path.join(cwd, "src/api/access.ts"),
+      "export function canAccess() { return true; }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/api/access.test.ts"),
+      "import { canAccess } from './access';\ntest('access', () => expect(canAccess()).toBe(true));\n",
+    );
+    commitAll(cwd, "initial");
+
+    const db = openAnchorDatabase(cwd);
+    try {
+      const repo = "owner/repo";
+      indexCodebase(db, { cwd, repo });
+      const initialTestFileCount = (
+        db.prepare("SELECT COUNT(*) AS count FROM test_files").get() as { count: number }
+      ).count;
+      const initialTestLinkCount = (
+        db.prepare("SELECT COUNT(*) AS count FROM test_links").get() as { count: number }
+      ).count;
+      expect(initialTestFileCount).toBeGreaterThan(0);
+      expect(initialTestLinkCount).toBeGreaterThan(0);
+
+      writeFileEnsuringDir(
+        path.join(cwd, "src/api/access.ts"),
+        "export function canAccess() { return Math.random() >= -1; }\n",
+      );
+      commitAll(cwd, "source change 1");
+      expect(() => indexCodebase(db, { cwd, repo })).not.toThrow();
+
+      writeFileEnsuringDir(
+        path.join(cwd, "src/api/access.ts"),
+        "export function canAccess() { return 2 > 1; }\n",
+      );
+      commitAll(cwd, "source change 2");
+      expect(() => indexCodebase(db, { cwd, repo })).not.toThrow();
+
+      const testFileCountAfter = (
+        db.prepare("SELECT COUNT(*) AS count FROM test_files").get() as { count: number }
+      ).count;
+      const testLinkCountAfter = (
+        db.prepare("SELECT COUNT(*) AS count FROM test_links").get() as { count: number }
+      ).count;
+      expect(testFileCountAfter).toBe(initialTestFileCount);
+      expect(testLinkCountAfter).toBe(initialTestLinkCount);
+
+      const duplicateTestFiles = db
+        .prepare(
+          `SELECT path FROM test_files
+           GROUP BY path
+           HAVING COUNT(*) > 1`,
+        )
+        .all() as Array<{ path: string }>;
+      const duplicateTestLinks = db
+        .prepare(
+          `SELECT source_path, test_path, reason FROM test_links
+           GROUP BY source_path, test_path, reason
+           HAVING COUNT(*) > 1`,
+        )
+        .all() as Array<{ source_path: string; test_path: string; reason: string }>;
+      expect(duplicateTestFiles).toEqual([]);
+      expect(duplicateTestLinks).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("reports index health and local semantic fallback without network setup", () => {
     const { cwd, db } = createIndexedFixtureDb();
     try {
