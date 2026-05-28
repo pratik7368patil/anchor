@@ -2356,4 +2356,68 @@ describe("code index re-indexing", () => {
       db.close();
     }
   });
+
+  it("migrates legacy org edge tables before creating layer-based indexes", () => {
+    const cwd = tempDir();
+    const db = openAnchorDatabase(cwd);
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS org_cross_repo_edges (
+          id TEXT PRIMARY KEY,
+          org TEXT NOT NULL,
+          source_repo TEXT NOT NULL,
+          source_path TEXT NOT NULL,
+          target_repo TEXT NOT NULL,
+          target_path TEXT,
+          relationship TEXT NOT NULL,
+          evidence_json TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          created_at TEXT NOT NULL
+        );
+      `);
+      db.prepare(
+        `INSERT INTO org_cross_repo_edges
+         (id, org, source_repo, source_path, target_repo, target_path, relationship, evidence_json, confidence, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        "edge-1",
+        "my-org",
+        "org/backend",
+        "src/api.ts",
+        "org/frontend",
+        "src/client.ts",
+        "api_consumer",
+        "[]",
+        0.9,
+        new Date().toISOString(),
+      );
+
+      expect(() => initializeSchema(db)).not.toThrow();
+
+      const columns = db
+        .prepare("PRAGMA table_info(org_cross_repo_edges)")
+        .all() as Array<{ name: string }>;
+      expect(columns.some((column) => column.name === "layer")).toBe(true);
+      expect(columns.some((column) => column.name === "is_weak")).toBe(true);
+
+      const row = db
+        .prepare(
+          "SELECT layer, is_weak, evidence_count, match_reasons_json FROM org_cross_repo_edges WHERE id = ?",
+        )
+        .get("edge-1") as
+        | {
+            layer: string;
+            is_weak: number;
+            evidence_count: number;
+            match_reasons_json: string;
+          }
+        | undefined;
+      expect(row?.layer).toBe("file");
+      expect(row?.is_weak).toBe(0);
+      expect(row?.evidence_count).toBe(0);
+      expect(row?.match_reasons_json).toBe("[]");
+    } finally {
+      db.close();
+    }
+  });
 });
