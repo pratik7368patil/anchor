@@ -31,6 +31,7 @@ type CountRow = { count: number };
 type RepoRow = { id: number; full_name: string };
 type PrRow = { id: number };
 type CodeFileRow = { id: number; path: string };
+type RowIdRow = { rowid: number };
 type SyncRow = {
   last_sync_at?: string | null;
   history_coverage?: "limited" | "all" | "unknown" | null;
@@ -49,6 +50,7 @@ type ArchitectureIndexStateRow = { last_indexed_at?: string | null };
 type WisdomFilePathsRow = { file_paths_json: string };
 type LastRunRow = { finished_at?: string | null; failures_json?: string | null };
 const CODE_WRITE_PROGRESS_INTERVAL = 150;
+const FTS_DELETE_BATCH_SIZE = 500;
 
 type CodeIndexWriteOptions = {
   onProgress?: (progress: CodeIndexProgress) => void;
@@ -56,6 +58,31 @@ type CodeIndexWriteOptions = {
 
 function shouldEmitCodeWriteProgress(current: number, total: number): boolean {
   return current === 0 || current === 1 || current === total || current % CODE_WRITE_PROGRESS_INTERVAL === 0;
+}
+
+function shouldEmitFtsDeleteProgress(current: number, total: number): boolean {
+  return current === 0 || current === 1 || current === total || current % FTS_DELETE_BATCH_SIZE === 0;
+}
+
+function deleteFtsRowsByRowId(
+  db: AnchorDatabase,
+  ftsTable: "wisdom_units_fts" | "code_chunks_fts" | "architecture_patterns_fts",
+  rowIds: number[],
+  onProgress?: (current: number, total: number) => void,
+): void {
+  if (rowIds.length === 0) {
+    onProgress?.(0, 0);
+    return;
+  }
+  const deleteRow = db.prepare(`DELETE FROM ${ftsTable} WHERE rowid = ?`);
+  onProgress?.(0, rowIds.length);
+  for (const [index, rowId] of rowIds.entries()) {
+    deleteRow.run(rowId);
+    const current = index + 1;
+    if (shouldEmitFtsDeleteProgress(current, rowIds.length)) {
+      onProgress?.(current, rowIds.length);
+    }
+  }
 }
 
 export function defaultDatabasePath(cwd: string): string {
@@ -328,9 +355,14 @@ export function clearGraphQLFetchCheckpoint(
 }
 
 function deleteExistingPrData(db: AnchorDatabase, prId: number): void {
-  db.prepare(
-    "DELETE FROM wisdom_units_fts WHERE unitId IN (SELECT id FROM wisdom_units WHERE pr_id = ?)",
-  ).run(prId);
+  const wisdomRowIds = db
+    .prepare("SELECT rowid FROM wisdom_units WHERE pr_id = ?")
+    .all(prId) as RowIdRow[];
+  deleteFtsRowsByRowId(
+    db,
+    "wisdom_units_fts",
+    wisdomRowIds.map((row) => row.rowid),
+  );
   db.prepare("DELETE FROM regression_events WHERE pr_id = ?").run(prId);
   db.prepare("DELETE FROM wisdom_units WHERE pr_id = ?").run(prId);
   db.prepare("DELETE FROM pr_comments WHERE pr_id = ?").run(prId);
@@ -466,12 +498,12 @@ export function upsertPullRequest(
     );
     const insertFts = db.prepare(
       `INSERT INTO wisdom_units_fts
-       (unitId, sanitizedText, filePaths, symbols, prTitle, prBody, category)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (rowid, unitId, sanitizedText, filePaths, symbols, prTitle, prBody, category)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
     for (const unit of wisdomUnits) {
-      insertWisdom.run(
+      const wisdomInsert = insertWisdom.run(
         unit.id,
         repoId,
         prRow.id,
@@ -490,6 +522,7 @@ export function upsertPullRequest(
         unit.confidence,
       );
       insertFts.run(
+        Number(wisdomInsert.lastInsertRowid),
         unit.id,
         unit.sanitizedText,
         unit.filePaths.join(" "),
@@ -561,29 +594,36 @@ export function replaceCodeIndex(
   options.onProgress?.({ stage: "writing_code_index", repo, phase: "Writing code index" });
 
   const transaction = db.transaction(() => {
-    const existingChunkCount = (
-      db.prepare("SELECT COUNT(*) AS count FROM code_chunks WHERE repo_id = ?").get(repoId) as CountRow
-    ).count;
-    const existingPatternCount = (
-      db.prepare("SELECT COUNT(*) AS count FROM architecture_patterns WHERE repo_id = ?").get(repoId) as CountRow
-    ).count;
+    const existingChunkRowIds = db
+      .prepare("SELECT rowid FROM code_chunks WHERE repo_id = ?")
+      .all(repoId) as RowIdRow[];
+    const existingPatternRowIds = db
+      .prepare("SELECT rowid FROM architecture_patterns WHERE repo_id = ?")
+      .all(repoId) as RowIdRow[];
     options.onProgress?.({
       stage: "deleting_existing_code_index",
       repo,
-      chunks: existingChunkCount,
-      patterns: existingPatternCount,
+      chunks: existingChunkRowIds.length,
+      patterns: existingPatternRowIds.length,
     });
-    // Clear this repo's FTS rows in one scan. Deleting row-by-row by the UNINDEXED
-    // chunkId forces a full FTS scan per row (O(n^2)), which froze large org
-    // re-indexes for tens of seconds with no progress.
-    db.prepare(
-      "DELETE FROM code_chunks_fts WHERE chunkId IN (SELECT id FROM code_chunks WHERE repo_id = ?)",
-    ).run(repoId);
+    deleteFtsRowsByRowId(
+      db,
+      "code_chunks_fts",
+      existingChunkRowIds.map((row) => row.rowid),
+      (current, total) =>
+        options.onProgress?.({
+          stage: "deleting_code_fts",
+          repo,
+          current,
+          total,
+          chunks: existingChunkRowIds.length,
+        }),
+    );
     db.prepare("DELETE FROM code_chunks WHERE repo_id = ?").run(repoId);
     db.prepare("DELETE FROM code_files WHERE repo_id = ?").run(repoId);
     db.prepare("DELETE FROM test_links WHERE repo_id = ? AND reason != 'PR co-change'").run(repoId);
     db.prepare("DELETE FROM test_files WHERE repo_id = ?").run(repoId);
-    deleteExistingArchitectureData(db, repoId);
+    deleteExistingArchitectureData(db, repoId, repo, existingPatternRowIds, options);
 
     const insertFile = db.prepare(
       `INSERT INTO code_files
@@ -630,8 +670,8 @@ export function replaceCodeIndex(
     );
     const insertFts = db.prepare(
       `INSERT INTO code_chunks_fts
-       (chunkId, sanitizedText, filePath, symbols, language)
-       VALUES (?, ?, ?, ?, ?)`,
+       (rowid, chunkId, sanitizedText, filePath, symbols, language)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
 
     options.onProgress?.({
@@ -645,7 +685,7 @@ export function replaceCodeIndex(
     for (const [index, chunk] of codeChunks.entries()) {
       const fileId = fileIds.get(chunk.filePath);
       if (!fileId) continue;
-      insertChunk.run(
+      const chunkInsert = insertChunk.run(
         chunk.id,
         repoId,
         fileId,
@@ -660,6 +700,7 @@ export function replaceCodeIndex(
         chunk.updatedAt,
       );
       insertFts.run(
+        Number(chunkInsert.lastInsertRowid),
         chunk.id,
         chunk.sanitizedText,
         chunk.filePath,
@@ -727,10 +768,26 @@ export function replaceCodeIndex(
   };
 }
 
-function deleteExistingArchitectureData(db: AnchorDatabase, repoId: number): void {
-  db.prepare(
-    "DELETE FROM architecture_patterns_fts WHERE patternId IN (SELECT id FROM architecture_patterns WHERE repo_id = ?)",
-  ).run(repoId);
+function deleteExistingArchitectureData(
+  db: AnchorDatabase,
+  repoId: number,
+  repo: string,
+  patternRowIds: RowIdRow[],
+  options: CodeIndexWriteOptions = {},
+): void {
+  deleteFtsRowsByRowId(
+    db,
+    "architecture_patterns_fts",
+    patternRowIds.map((row) => row.rowid),
+    (current, total) =>
+      options.onProgress?.({
+        stage: "deleting_architecture_fts",
+        repo,
+        current,
+        total,
+        patterns: patternRowIds.length,
+      }),
+  );
   db.prepare("DELETE FROM architecture_patterns WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM architecture_components WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM code_imports WHERE repo_id = ?").run(repoId);
@@ -822,8 +879,8 @@ function insertArchitectureData(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   const insertFts = db.prepare(
-    `INSERT INTO architecture_patterns_fts (patternId, summary, area, sourceFiles, symbols)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO architecture_patterns_fts (rowid, patternId, summary, area, sourceFiles, symbols)
+     VALUES (?, ?, ?, ?, ?, ?)`,
   );
   options.onProgress?.({
     stage: "writing_architecture_data",
@@ -833,7 +890,7 @@ function insertArchitectureData(
     kind: "patterns",
   });
   for (const [index, pattern] of architecture.patterns.entries()) {
-    insertPattern.run(
+    const patternInsert = insertPattern.run(
       pattern.id,
       repoId,
       pattern.repo,
@@ -847,6 +904,7 @@ function insertArchitectureData(
       pattern.createdAt,
     );
     insertFts.run(
+      Number(patternInsert.lastInsertRowid),
       pattern.id,
       pattern.sanitizedSummary,
       pattern.area,

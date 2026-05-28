@@ -1054,6 +1054,10 @@ function heartbeatPatchFromCodeProgress(
       return { repo: progress.repo, phase: "Inferring test awareness" };
     case "deleting_existing_code_index":
       return { repo: progress.repo, phase: "Deleting old code index" };
+    case "deleting_code_fts":
+      return { repo: progress.repo, phase: "Deleting code search index" };
+    case "deleting_architecture_fts":
+      return { repo: progress.repo, phase: "Deleting architecture search index" };
     case "writing_code_files":
       return { repo: progress.repo, phase: "Writing code files" };
     case "writing_code_chunks":
@@ -1341,6 +1345,18 @@ export function printCodeIndexProgress(progress: CodeIndexProgress): void {
     case "deleting_existing_code_index":
       console.error(
         `[anchor] deleting existing code index for ${progress.repo}: ${progress.chunks} chunks, ${progress.patterns} architecture patterns...`,
+      );
+      return;
+    case "deleting_code_fts":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] deleting code search index ${progress.current}/${progress.total}: ${progress.chunks} old chunk(s)`,
+      );
+      return;
+    case "deleting_architecture_fts":
+      if (!shouldPrintCodeProgress(progress)) return;
+      console.error(
+        `[anchor] deleting architecture search index ${progress.current}/${progress.total}: ${progress.patterns} old pattern(s)`,
       );
       return;
     case "writing_code_files":
@@ -1983,6 +1999,30 @@ function codeTask(progress: CodeIndexProgress): ProgressTask {
         label: "Deleting old code index",
         state: "active",
         detail: `${progress.chunks} chunks, ${progress.patterns} patterns`,
+        timelineStepId: "sqlite_code_delete",
+        timelineLabel: "Delete old code index",
+        timelineRepo: progress.repo,
+      };
+    case "deleting_code_fts":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Deleting code search index",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.chunks} old chunks`,
+        timelineStepId: "sqlite_code_delete",
+        timelineLabel: "Delete old code index",
+        timelineRepo: progress.repo,
+      };
+    case "deleting_architecture_fts":
+      return {
+        key: `code-write:${progress.repo}`,
+        phase: "SQLite",
+        label: "Deleting architecture search index",
+        current: progress.current,
+        total: progress.total,
+        detail: `${progress.patterns} old patterns`,
         timelineStepId: "sqlite_code_delete",
         timelineLabel: "Delete old code index",
         timelineRepo: progress.repo,

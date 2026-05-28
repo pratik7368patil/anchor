@@ -933,6 +933,20 @@ export type CodeIndexProgress =
       patterns: number;
     }
   | {
+      stage: "deleting_code_fts";
+      repo: string;
+      current: number;
+      total: number;
+      chunks: number;
+    }
+  | {
+      stage: "deleting_architecture_fts";
+      repo: string;
+      current: number;
+      total: number;
+      patterns: number;
+    }
+  | {
       stage: "writing_code_files";
       repo: string;
       current: number;
