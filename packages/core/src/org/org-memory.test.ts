@@ -390,6 +390,14 @@ describe("org memory", () => {
       const backend = config.repos.find((item) => item.fullName === "acme/backend-api");
       expect(backend).toBeDefined();
       const localPath = orgRepoLocalPath("acme", backend!, baseDir);
+      execFileSync("git", ["config", "user.email", "anchor@example.test"], {
+        cwd: localPath,
+        stdio: "ignore",
+      });
+      execFileSync("git", ["config", "user.name", "Anchor Test"], {
+        cwd: localPath,
+        stdio: "ignore",
+      });
       writeFile(
         localPath,
         "src/api/user-access.ts",
