@@ -60,7 +60,9 @@ anchor architecture --check
 anchor review --share
 anchor org sync --org my-org --no-graph
 anchor org graph --org my-org --open
-anchor org impact --org my-org --repo my-org/backend-api --strict
+anchor org map --org my-org --open
+anchor org impact --org my-org --repo my-org/backend-api --strict --open
+anchor org ci --org my-org --strict --min-coverage 70 --html
 anchor onboarding --area api
 anchor ci`;
 
@@ -113,7 +115,8 @@ export const workflowRecipes: WorkflowRecipe[] = [
     commands: [
       "anchor org sync --org my-org --no-graph",
       "anchor org graph --org my-org --open",
-      "anchor org impact --org my-org --repo my-org/backend-api --strict",
+      "anchor org map --org my-org --open",
+      "anchor org impact --org my-org --repo my-org/backend-api --strict --open",
     ],
     notes:
       "Org Memory is explicit allowlist only. Long runs show live repo/phase progress and `anchor org status` can read the heartbeat while sync is running. If a recent sync is interrupted after PR/code indexing, rerunning sync resumes unfinished graph work without redundant PR fetches for completed repos.",
@@ -1120,6 +1123,25 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use mermaid for docs and json for tooling.",
         example: "anchor org map --org my-org --format json",
       },
+      {
+        name: "--html",
+        description: "Write a standalone local HTML map report.",
+        useWhen: "Use it when sharing map context with non-CLI users.",
+        example: "anchor org map --org my-org --html",
+      },
+      {
+        name: "--open",
+        description: "Write the HTML map report and open it in the default browser.",
+        useWhen: "Use it for demos and quick visual map reviews.",
+        example: "anchor org map --org my-org --open",
+      },
+      {
+        name: "--output path",
+        description: "Choose where the generated HTML map report is written.",
+        useWhen: "Use it when saving snapshots for docs or handoffs.",
+        example: "anchor org map --org my-org --html --output /tmp/anchor-org-map.html",
+      },
+      jsonOption("anchor org map --org my-org --json"),
     ],
   },
   "anchor org impact": {
@@ -1142,6 +1164,24 @@ export const commandDetails: Record<string, CommandDetail> = {
       },
       diffFileOption("anchor org impact --org my-org --diff-file change.diff"),
       strictOption("anchor org impact --org my-org --strict"),
+      {
+        name: "--html",
+        description: "Write a standalone local HTML impact report.",
+        useWhen: "Use it when you want a readable risk report for teammates or reviewers.",
+        example: "anchor org impact --org my-org --strict --html",
+      },
+      {
+        name: "--open",
+        description: "Write the HTML impact report and open it in the default browser.",
+        useWhen: "Use it for local review and demo walkthroughs.",
+        example: "anchor org impact --org my-org --strict --open",
+      },
+      {
+        name: "--output path",
+        description: "Choose where the generated HTML impact report is written.",
+        useWhen: "Use it when archiving impact snapshots alongside release notes.",
+        example: "anchor org impact --org my-org --strict --html --output /tmp/anchor-org-impact.html",
+      },
       jsonOption("anchor org impact --org my-org --json"),
     ],
   },
@@ -1163,6 +1203,25 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen: "Use it when adopting org memory as a merge gate.",
         example: "anchor org ci --org my-org --min-coverage 70",
       },
+      {
+        name: "--html",
+        description: "Write a standalone local HTML CI report.",
+        useWhen: "Use it when sharing CI reliability context with reviewers.",
+        example: "anchor org ci --org my-org --strict --html",
+      },
+      {
+        name: "--open",
+        description: "Write the HTML CI report and open it in the default browser.",
+        useWhen: "Use it when validating a CI gate run locally.",
+        example: "anchor org ci --org my-org --strict --open",
+      },
+      {
+        name: "--output path",
+        description: "Choose where the generated HTML CI report is written.",
+        useWhen: "Use it when storing local CI snapshots for incident timelines.",
+        example: "anchor org ci --org my-org --strict --html --output /tmp/anchor-org-ci.html",
+      },
+      jsonOption("anchor org ci --org my-org --json"),
     ],
   },
   "anchor rules init": {
