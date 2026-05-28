@@ -8,12 +8,22 @@ export const DEFAULT_MAX_CODE_FILE_BYTES = 512 * 1024;
 
 export type DiscoveredCodeFile = CodeFileRecord & {
   absolutePath: string;
-  content: string;
+  content?: string;
 };
 
 export type CodeFileDiscoveryResult = {
   files: DiscoveredCodeFile[];
   skippedFiles: number;
+};
+
+export type CodeIndexChangePlan = {
+  currentCommit?: string;
+  trackedPaths: string[];
+  changedPaths: string[];
+  deletedPaths: string[];
+  dirtyWorkingTree: boolean;
+  fallbackToFullHashCompare: boolean;
+  reason: string;
 };
 
 const HARD_EXCLUDED_SEGMENTS = new Set([
@@ -111,21 +121,165 @@ function discoverGitFiles(cwd: string): string[] {
     .filter(Boolean);
 }
 
+function discoverGitUntrackedFiles(cwd: string): string[] {
+  const output = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return output
+    .split("\n")
+    .map((line) => normalizeGitPath(line.trim()))
+    .filter(Boolean);
+}
+
+function execGitLines(cwd: string, args: string[]): string[] {
+  const output = execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  return output
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter(Boolean);
+}
+
+export function readGitHeadCommit(cwd: string): string | undefined {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
+export function hasDirtyWorkingTree(cwd: string): boolean {
+  try {
+    const status = execFileSync("git", ["status", "--porcelain"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return status.trim().length > 0;
+  } catch {
+    return true;
+  }
+}
+
+function parseNameStatusLine(
+  line: string,
+): { status: string; previousPath?: string; path?: string } | undefined {
+  const parts = line.split("\t").map((item) => normalizeGitPath(item));
+  if (parts.length < 2) return undefined;
+  const status = parts[0] ?? "";
+  if (!status) return undefined;
+  if (status.startsWith("R") || status.startsWith("C")) {
+    return { status, previousPath: parts[1], path: parts[2] };
+  }
+  return { status, path: parts[1] };
+}
+
+export function planIncrementalCodeIndex(
+  cwd: string,
+  lastIndexedCommit: string | undefined,
+  existingIndexedPaths: Set<string>,
+): CodeIndexChangePlan {
+  const currentCommit = readGitHeadCommit(cwd);
+  const trackedPaths = discoverGitFiles(cwd);
+  const trackedSet = new Set(trackedPaths);
+  const deletedPaths = new Set<string>();
+  const changedPaths = new Set<string>();
+  const dirtyWorkingTree = hasDirtyWorkingTree(cwd);
+
+  if (!lastIndexedCommit) {
+    return {
+      currentCommit,
+      trackedPaths,
+      changedPaths: trackedPaths,
+      deletedPaths: [...existingIndexedPaths].filter((filePath) => !trackedSet.has(filePath)),
+      dirtyWorkingTree,
+      fallbackToFullHashCompare: true,
+      reason: "No previous commit snapshot; using full hash comparison.",
+    };
+  }
+
+  if (dirtyWorkingTree) {
+    return {
+      currentCommit,
+      trackedPaths,
+      changedPaths: trackedPaths,
+      deletedPaths: [...existingIndexedPaths].filter((filePath) => !trackedSet.has(filePath)),
+      dirtyWorkingTree,
+      fallbackToFullHashCompare: true,
+      reason: "Working tree is dirty; using full hash comparison for deterministic results.",
+    };
+  }
+
+  try {
+    const lines = execGitLines(cwd, ["diff", "--name-status", `${lastIndexedCommit}..HEAD`]);
+    for (const line of lines) {
+      const parsed = parseNameStatusLine(line);
+      if (!parsed?.path) continue;
+      const statusCode = parsed.status[0];
+      const normalizedPath = normalizeGitPath(parsed.path);
+      if (statusCode === "D") {
+        deletedPaths.add(normalizedPath);
+        continue;
+      }
+      if (trackedSet.has(normalizedPath)) changedPaths.add(normalizedPath);
+    }
+    for (const untrackedPath of discoverGitUntrackedFiles(cwd)) {
+      if (trackedSet.has(untrackedPath)) changedPaths.add(untrackedPath);
+    }
+    for (const existingPath of existingIndexedPaths) {
+      if (!trackedSet.has(existingPath)) deletedPaths.add(existingPath);
+    }
+    return {
+      currentCommit,
+      trackedPaths,
+      changedPaths: [...changedPaths],
+      deletedPaths: [...deletedPaths],
+      dirtyWorkingTree: false,
+      fallbackToFullHashCompare: false,
+      reason: "Using git diff and untracked files against last indexed commit.",
+    };
+  } catch {
+    return {
+      currentCommit,
+      trackedPaths,
+      changedPaths: trackedPaths,
+      deletedPaths: [...existingIndexedPaths].filter((filePath) => !trackedSet.has(filePath)),
+      dirtyWorkingTree: true,
+      fallbackToFullHashCompare: true,
+      reason: "Unable to compute git diff; falling back to full hash comparison.",
+    };
+  }
+}
+
 const DISCOVERY_SCAN_INTERVAL = 200;
 
-export function discoverCodeFiles(
+function discoverFromPaths(
   cwd: string,
   repo: string,
-  options: { maxFileBytes?: number; onScan?: (scanned: number, total: number) => void } = {},
+  inputPaths: string[],
+  options: {
+    includeContent?: boolean;
+    maxFileBytes?: number;
+    onScan?: (scanned: number, total: number) => void;
+  } = {},
 ): CodeFileDiscoveryResult {
   const maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_CODE_FILE_BYTES;
+  const includeContent = options.includeContent ?? false;
   const rootPath = path.resolve(cwd);
   const files: DiscoveredCodeFile[] = [];
   let skippedFiles = 0;
-
-  const gitFiles = discoverGitFiles(cwd);
-  const total = gitFiles.length;
-  for (const [scanIndex, filePath] of gitFiles.entries()) {
+  const candidatePaths = [...new Set(inputPaths.map((value) => normalizeGitPath(value)).filter(Boolean))];
+  const total = candidatePaths.length;
+  for (const [scanIndex, filePath] of candidatePaths.entries()) {
     const scanned = scanIndex + 1;
     if (scanned % DISCOVERY_SCAN_INTERVAL === 0 || scanned === total) {
       options.onScan?.(scanned, total);
@@ -161,7 +315,6 @@ export function discoverCodeFiles(
       continue;
     }
 
-    const content = buffer.toString("utf8");
     files.push({
       repo,
       path: filePath,
@@ -170,9 +323,38 @@ export function discoverCodeFiles(
       contentHash: crypto.createHash("sha256").update(buffer).digest("hex"),
       updatedAt: stat.mtime.toISOString(),
       absolutePath,
-      content,
+      ...(includeContent ? { content: buffer.toString("utf8") } : {}),
     });
   }
-
   return { files, skippedFiles };
+}
+
+export function discoverCodeFiles(
+  cwd: string,
+  repo: string,
+  options: {
+    includeContent?: boolean;
+    maxFileBytes?: number;
+    onScan?: (scanned: number, total: number) => void;
+  } = {},
+): CodeFileDiscoveryResult {
+  return discoverFromPaths(cwd, repo, discoverGitFiles(cwd), options);
+}
+
+export function discoverCodeFilesByPaths(
+  cwd: string,
+  repo: string,
+  filePaths: string[],
+  options: {
+    includeContent?: boolean;
+    maxFileBytes?: number;
+    onScan?: (scanned: number, total: number) => void;
+  } = {},
+): CodeFileDiscoveryResult {
+  return discoverFromPaths(cwd, repo, filePaths, options);
+}
+
+export function readDiscoveredCodeFileContent(file: DiscoveredCodeFile): string {
+  if (typeof file.content === "string") return file.content;
+  return fs.readFileSync(file.absolutePath, "utf8");
 }

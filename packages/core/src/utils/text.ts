@@ -24,8 +24,11 @@ export function canonicalizeText(text: string): string {
 }
 
 export function tokenizeSearchText(text: string, maxTokens = 32): string[] {
+  const shortSignalTokens = new Set(["id", "db", "api", "key", "sql", "jwt", "ui", "ux"]);
   const tokens = text
     .toLowerCase()
-    .match(/[a-z0-9_./-]{3,}/g);
-  return uniqueStrings(tokens ?? []).slice(0, maxTokens);
+    .match(/[a-z0-9_./-]{2,}/g);
+  return uniqueStrings(
+    (tokens ?? []).filter((token) => token.length >= 3 || shortSignalTokens.has(token)),
+  ).slice(0, maxTokens);
 }

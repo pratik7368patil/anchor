@@ -66,11 +66,25 @@ export function printEvalRun(result: RetrievalEvalRunResult, options: { json?: b
   }
   console.log(`# Anchor Eval`);
   console.log(`${result.passed}/${result.total} eval(s) passed`);
+  console.log(
+    `precision@${result.k}: ${result.precisionAtK.toFixed(4)} | recall@${result.k}: ${result.recallAtK.toFixed(4)} | mrr: ${result.mrr.toFixed(4)}`,
+  );
   for (const item of result.results) {
     console.log(`- ${item.passed ? "PASS" : "FAIL"} ${item.id}: ${item.task}`);
     if (item.missingPrs.length > 0) console.log(`  Missing PRs: ${item.missingPrs.join(", ")}`);
+    const ranked = item.expectedPrRanks.filter((entry) => entry.rank);
+    if (ranked.length > 0) {
+      console.log(
+        `  Expected PR ranks: ${ranked
+          .map((entry) => `#${entry.prNumber}@${entry.rank}`)
+          .join(", ")}`,
+      );
+    }
     if (item.missingCategories.length > 0) {
       console.log(`  Missing categories: ${item.missingCategories.join(", ")}`);
     }
+    console.log(
+      `  precision@${result.k}: ${item.precisionAtK.toFixed(4)} | recall@${result.k}: ${item.recallAtK.toFixed(4)} | rr: ${item.reciprocalRank.toFixed(4)}`,
+    );
   }
 }

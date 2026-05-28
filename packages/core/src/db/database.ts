@@ -6,6 +6,7 @@ import type {
   ArchitectureIndexData,
   CodeChunk,
   CodeFileRecord,
+  CodeImport,
   CodeIndexProgress,
   CodeIndexSummary,
   IndexRunRecord,
@@ -32,6 +33,31 @@ type RepoRow = { id: number; full_name: string };
 type PrRow = { id: number };
 type CodeFileRow = { id: number; path: string };
 type RowIdRow = { rowid: number };
+type CodeFileStateRow = {
+  path: string;
+  language?: string | null;
+  size_bytes: number;
+  content_hash: string;
+  updated_at: string;
+};
+type CodeChunkStateRow = {
+  id: string;
+  file_path: string;
+  language?: string | null;
+  start_line: number;
+  end_line: number;
+  sanitized_text: string;
+  symbols_json: string;
+  content_hash: string;
+  updated_at: string;
+};
+type CodeImportRow = {
+  source_path: string;
+  specifier: string;
+  imported_path?: string | null;
+  imported_symbols_json: string;
+  kind: "static" | "dynamic" | "require";
+};
 type SyncRow = {
   last_sync_at?: string | null;
   history_coverage?: "limited" | "all" | "unknown" | null;
@@ -45,7 +71,14 @@ type SyncRow = {
   graphql_cursor_reason?: string | null;
   graphql_cursor_updated_at?: string | null;
 };
-type CodeIndexStateRow = { last_indexed_at?: string | null };
+type CodeIndexStateRow = {
+  repo?: string | null;
+  last_indexed_at?: string | null;
+  indexed_files?: number | null;
+  code_chunks?: number | null;
+  skipped_files?: number | null;
+  last_indexed_commit?: string | null;
+};
 type ArchitectureIndexStateRow = { last_indexed_at?: string | null };
 type WisdomFilePathsRow = { file_paths_json: string };
 type LastRunRow = { finished_at?: string | null; failures_json?: string | null };
@@ -54,6 +87,19 @@ const FTS_DELETE_BATCH_SIZE = 500;
 
 type CodeIndexWriteOptions = {
   onProgress?: (progress: CodeIndexProgress) => void;
+  deletedPaths?: string[];
+  changedImports?: CodeImport[];
+  currentCommit?: string;
+  testAwareness?: { testFiles: TestFileRecord[]; testLinks: TestLink[] };
+};
+
+export type RepoCodeIndexState = {
+  repo: string;
+  lastIndexedAt?: string;
+  indexedFiles: number;
+  codeChunks: number;
+  skippedFiles: number;
+  lastIndexedCommit?: string;
 };
 
 function shouldEmitCodeWriteProgress(current: number, total: number): boolean {
@@ -119,6 +165,16 @@ function applyPerformancePragmas(db: AnchorDatabase): void {
   db.pragma("temp_store = MEMORY");
 }
 
+export function runDatabaseMaintenance(db: AnchorDatabase): void {
+  try {
+    db.exec("ANALYZE");
+    db.pragma("optimize");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  } catch {
+    // Best effort maintenance only.
+  }
+}
+
 export function initializeSchema(db: AnchorDatabase): void {
   db.exec(SCHEMA_SQL);
   ensureColumn(db, "sync_state", "history_coverage", "TEXT");
@@ -132,6 +188,7 @@ export function initializeSchema(db: AnchorDatabase): void {
   ensureColumn(db, "sync_state", "graphql_cursor_reset_at", "TEXT");
   ensureColumn(db, "sync_state", "graphql_cursor_reason", "TEXT");
   ensureColumn(db, "sync_state", "graphql_cursor_updated_at", "TEXT");
+  ensureColumn(db, "code_index_state", "last_indexed_commit", "TEXT");
 }
 
 function ensureColumn(
@@ -213,11 +270,200 @@ export function ensureRepository(db: AnchorDatabase, fullName: string): number {
   return row.id;
 }
 
+function getRepositoryId(db: AnchorDatabase, fullName: string): number | undefined {
+  const row = db
+    .prepare("SELECT id FROM repositories WHERE full_name = ?")
+    .get(fullName) as { id: number } | undefined;
+  return row?.id;
+}
+
 export function getLastSyncTime(db: AnchorDatabase, repo: string): string | undefined {
   const row = db.prepare("SELECT last_sync_at FROM sync_state WHERE repo = ?").get(repo) as
     | SyncRow
     | undefined;
   return row?.last_sync_at ?? undefined;
+}
+
+export function getCodeIndexStateForRepo(
+  db: AnchorDatabase,
+  repo: string,
+): RepoCodeIndexState | undefined {
+  initializeSchema(db);
+  const row = db
+    .prepare(
+      `SELECT repo, last_indexed_at, indexed_files, code_chunks, skipped_files, last_indexed_commit
+       FROM code_index_state
+       WHERE repo = ?`,
+    )
+    .get(repo) as CodeIndexStateRow | undefined;
+  if (!row?.repo) return undefined;
+  return {
+    repo: row.repo,
+    lastIndexedAt: row.last_indexed_at ?? undefined,
+    indexedFiles: row.indexed_files ?? 0,
+    codeChunks: row.code_chunks ?? 0,
+    skippedFiles: row.skipped_files ?? 0,
+    lastIndexedCommit: row.last_indexed_commit ?? undefined,
+  };
+}
+
+export function getRepoCodeFileHashes(
+  db: AnchorDatabase,
+  repo: string,
+): Map<string, string> {
+  initializeSchema(db);
+  const repoId = getRepositoryId(db, repo);
+  if (!repoId) return new Map();
+  const rows = db
+    .prepare("SELECT path, content_hash FROM code_files WHERE repo_id = ?")
+    .all(repoId) as Array<{ path: string; content_hash: string }>;
+  return new Map(rows.map((row) => [row.path, row.content_hash]));
+}
+
+export function getRepoCodeFiles(db: AnchorDatabase, repo: string): CodeFileRecord[] {
+  initializeSchema(db);
+  const repoId = getRepositoryId(db, repo);
+  if (!repoId) return [];
+  const rows = db
+    .prepare(
+      `SELECT path, language, size_bytes, content_hash, updated_at
+       FROM code_files
+       WHERE repo_id = ?`,
+    )
+    .all(repoId) as CodeFileStateRow[];
+  return rows.map((row) => ({
+    repo,
+    path: row.path,
+    language: row.language ?? undefined,
+    sizeBytes: row.size_bytes,
+    contentHash: row.content_hash,
+    updatedAt: row.updated_at,
+  }));
+}
+
+function parseJsonArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function getRepoCodeChunkSymbols(db: AnchorDatabase, repo: string): CodeChunk[] {
+  initializeSchema(db);
+  const repoId = getRepositoryId(db, repo);
+  if (!repoId) return [];
+  const rows = db
+    .prepare(
+      `SELECT id, file_path, language, start_line, end_line, symbols_json, content_hash, updated_at
+       FROM code_chunks
+       WHERE repo_id = ?`,
+    )
+    .all(repoId) as Array<
+    Omit<CodeChunkStateRow, "sanitized_text"> & { symbols_json: string }
+  >;
+  return rows.map((row) => ({
+    id: row.id,
+    repo,
+    filePath: row.file_path,
+    language: row.language ?? undefined,
+    startLine: row.start_line,
+    endLine: row.end_line,
+    sanitizedText: "",
+    symbols: parseJsonArray(row.symbols_json),
+    contentHash: row.content_hash,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export function getRepoTestChunks(db: AnchorDatabase, repo: string): CodeChunk[] {
+  initializeSchema(db);
+  const repoId = getRepositoryId(db, repo);
+  if (!repoId) return [];
+  const rows = db
+    .prepare(
+      `SELECT id, file_path, language, start_line, end_line, sanitized_text, symbols_json, content_hash, updated_at
+       FROM code_chunks
+       WHERE repo_id = ? AND file_path IN (
+         SELECT path FROM test_files WHERE repo_id = ?
+       )`,
+    )
+    .all(repoId, repoId) as CodeChunkStateRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    repo,
+    filePath: row.file_path,
+    language: row.language ?? undefined,
+    startLine: row.start_line,
+    endLine: row.end_line,
+    sanitizedText: row.sanitized_text,
+    symbols: parseJsonArray(row.symbols_json),
+    contentHash: row.content_hash,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export function getRepoCodeImports(db: AnchorDatabase, repo: string): CodeImport[] {
+  initializeSchema(db);
+  const repoId = getRepositoryId(db, repo);
+  if (!repoId) return [];
+  const rows = db
+    .prepare(
+      `SELECT source_path, specifier, imported_path, imported_symbols_json, kind
+       FROM code_imports
+       WHERE repo_id = ?`,
+    )
+    .all(repoId) as CodeImportRow[];
+  return rows.map((row) => ({
+    repo,
+    sourcePath: row.source_path,
+    specifier: row.specifier,
+    importedPath: row.imported_path ?? undefined,
+    importedSymbols: parseJsonArray(row.imported_symbols_json),
+    kind: row.kind,
+  }));
+}
+
+export function getRepoCodeCounts(
+  db: AnchorDatabase,
+  repo: string,
+): { files: number; chunks: number } {
+  initializeSchema(db);
+  const repoId = getRepositoryId(db, repo);
+  if (!repoId) return { files: 0, chunks: 0 };
+  const files = (
+    db.prepare("SELECT COUNT(*) AS count FROM code_files WHERE repo_id = ?").get(repoId) as CountRow
+  ).count;
+  const chunks = (
+    db.prepare("SELECT COUNT(*) AS count FROM code_chunks WHERE repo_id = ?").get(repoId) as CountRow
+  ).count;
+  return { files, chunks };
+}
+
+export function touchCodeIndexState(
+  db: AnchorDatabase,
+  repo: string,
+  skippedFiles: number,
+  currentCommit?: string,
+): { files: number; chunks: number } {
+  initializeSchema(db);
+  const counts = getRepoCodeCounts(db, repo);
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO code_index_state
+     (repo, last_indexed_at, indexed_files, code_chunks, skipped_files, last_indexed_commit)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(repo) DO UPDATE SET
+       last_indexed_at = excluded.last_indexed_at,
+       indexed_files = excluded.indexed_files,
+       code_chunks = excluded.code_chunks,
+       skipped_files = excluded.skipped_files,
+       last_indexed_commit = excluded.last_indexed_commit`,
+  ).run(repo, now, counts.files, counts.chunks, skippedFiles, currentCommit ?? null);
+  return counts;
 }
 
 export function updateSyncState(
@@ -587,16 +833,29 @@ export function replaceCodeIndex(
   initializeSchema(db);
   const repoId = ensureRepository(db, repo);
   const now = new Date().toISOString();
-  options.onProgress?.({ stage: "writing_code_index", repo, phase: "Inferring test awareness" });
-  const testAwareness = inferTestAwareness(repo, codeFiles, codeChunks, {
-    onProgress: options.onProgress,
-  });
+  const deletedPaths = options.deletedPaths ?? [];
+  const changedImports = options.changedImports;
+  const testAwareness =
+    options.testAwareness ??
+    inferTestAwareness(repo, codeFiles, codeChunks, {
+      onProgress: options.onProgress,
+    });
   options.onProgress?.({ stage: "writing_code_index", repo, phase: "Writing code index" });
+  const changedPaths = [...new Set(codeFiles.map((file) => file.path))];
+  const affectedPaths = [...new Set([...changedPaths, ...deletedPaths])];
 
   const transaction = db.transaction(() => {
-    const existingChunkRowIds = db
-      .prepare("SELECT rowid FROM code_chunks WHERE repo_id = ?")
-      .all(repoId) as RowIdRow[];
+    let existingChunkRowIds: RowIdRow[] = [];
+    if (affectedPaths.length > 0) {
+      const placeholders = affectedPaths.map(() => "?").join(", ");
+      existingChunkRowIds = db
+        .prepare(
+          `SELECT rowid
+           FROM code_chunks
+           WHERE repo_id = ? AND file_path IN (${placeholders})`,
+        )
+        .all(repoId, ...affectedPaths) as RowIdRow[];
+    }
     const existingPatternRowIds = db
       .prepare("SELECT rowid FROM architecture_patterns WHERE repo_id = ?")
       .all(repoId) as RowIdRow[];
@@ -619,11 +878,54 @@ export function replaceCodeIndex(
           chunks: existingChunkRowIds.length,
         }),
     );
-    db.prepare("DELETE FROM code_chunks WHERE repo_id = ?").run(repoId);
-    db.prepare("DELETE FROM code_files WHERE repo_id = ?").run(repoId);
-    db.prepare("DELETE FROM test_links WHERE repo_id = ? AND reason != 'PR co-change'").run(repoId);
-    db.prepare("DELETE FROM test_files WHERE repo_id = ?").run(repoId);
+
+    if (affectedPaths.length > 0) {
+      const placeholders = affectedPaths.map(() => "?").join(", ");
+      db.prepare(
+        `DELETE FROM code_chunks
+         WHERE repo_id = ? AND file_path IN (${placeholders})`,
+      ).run(repoId, ...affectedPaths);
+      db.prepare(
+        `DELETE FROM code_files
+         WHERE repo_id = ? AND path IN (${placeholders})`,
+      ).run(repoId, ...affectedPaths);
+      db.prepare(
+        `DELETE FROM test_links
+         WHERE repo_id = ?
+           AND reason != 'PR co-change'
+           AND (source_path IN (${placeholders}) OR test_path IN (${placeholders}))`,
+      ).run(repoId, ...affectedPaths, ...affectedPaths);
+      db.prepare(
+        `DELETE FROM test_files
+         WHERE repo_id = ? AND path IN (${placeholders})`,
+      ).run(repoId, ...affectedPaths);
+      if (changedImports) {
+        db.prepare(
+          `DELETE FROM code_imports
+           WHERE repo_id = ? AND source_path IN (${placeholders})`,
+        ).run(repoId, ...affectedPaths);
+      }
+    }
+
     deleteExistingArchitectureData(db, repoId, repo, existingPatternRowIds, options);
+
+    if (changedImports) {
+      const insertImport = db.prepare(
+        `INSERT INTO code_imports
+         (repo_id, source_path, specifier, imported_path, imported_symbols_json, kind)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      );
+      for (const item of changedImports) {
+        insertImport.run(
+          repoId,
+          item.sourcePath,
+          item.specifier,
+          item.importedPath ?? null,
+          JSON.stringify(item.importedSymbols),
+          item.kind,
+        );
+      }
+    }
 
     const insertFile = db.prepare(
       `INSERT INTO code_files
@@ -722,19 +1024,27 @@ export function replaceCodeIndex(
     }
 
     insertTestAwareness(db, repoId, repo, testAwareness.testFiles, testAwareness.testLinks, options);
-    insertArchitectureData(db, repoId, repo, architecture, options);
+    insertArchitectureData(db, repoId, repo, architecture, options, !changedImports);
     insertArchitectureMapEdges(db, repoId, repo, architecture, testAwareness.testLinks, options);
 
     options.onProgress?.({ stage: "writing_code_index", repo, phase: "Updating index state" });
+    const totalFileCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM code_files WHERE repo_id = ?").get(repoId) as CountRow
+    ).count;
+    const totalChunkCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM code_chunks WHERE repo_id = ?").get(repoId) as CountRow
+    ).count;
     db.prepare(
-      `INSERT INTO code_index_state (repo, last_indexed_at, indexed_files, code_chunks, skipped_files)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO code_index_state
+       (repo, last_indexed_at, indexed_files, code_chunks, skipped_files, last_indexed_commit)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(repo) DO UPDATE SET
          last_indexed_at = excluded.last_indexed_at,
          indexed_files = excluded.indexed_files,
          code_chunks = excluded.code_chunks,
-         skipped_files = excluded.skipped_files`,
-    ).run(repo, now, codeFiles.length, codeChunks.length, skippedFiles);
+         skipped_files = excluded.skipped_files,
+         last_indexed_commit = excluded.last_indexed_commit`,
+    ).run(repo, now, totalFileCount, totalChunkCount, skippedFiles, options.currentCommit ?? null);
 
     db.prepare(
       `INSERT INTO architecture_index_state (repo, last_indexed_at, components, patterns, imports)
@@ -754,10 +1064,11 @@ export function replaceCodeIndex(
   });
 
   transaction();
+  const counts = getRepoCodeCounts(db, repo);
 
   return {
-    indexedFiles: codeFiles.length,
-    codeChunksCreated: codeChunks.length,
+    indexedFiles: counts.files,
+    codeChunksCreated: counts.chunks,
     testFilesIndexed: testAwareness.testFiles.length,
     testLinksCreated: testAwareness.testLinks.length,
     architectureComponentsIndexed: architecture.components.length,
@@ -790,7 +1101,6 @@ function deleteExistingArchitectureData(
   );
   db.prepare("DELETE FROM architecture_patterns WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM architecture_components WHERE repo_id = ?").run(repoId);
-  db.prepare("DELETE FROM code_imports WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM architecture_map_edges WHERE repo_id = ?").run(repoId);
 }
 
@@ -800,37 +1110,40 @@ function insertArchitectureData(
   repo: string,
   architecture: ArchitectureIndexData,
   options: CodeIndexWriteOptions = {},
+  includeImports = true,
 ): void {
-  const insertImport = db.prepare(
-    `INSERT INTO code_imports
-     (repo_id, source_path, specifier, imported_path, imported_symbols_json, kind)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  );
-  options.onProgress?.({
-    stage: "writing_architecture_data",
-    repo,
-    current: 0,
-    total: architecture.imports.length,
-    kind: "imports",
-  });
-  for (const [index, item] of architecture.imports.entries()) {
-    insertImport.run(
-      repoId,
-      item.sourcePath,
-      item.specifier,
-      item.importedPath ?? null,
-      JSON.stringify(item.importedSymbols),
-      item.kind,
+  if (includeImports) {
+    const insertImport = db.prepare(
+      `INSERT INTO code_imports
+       (repo_id, source_path, specifier, imported_path, imported_symbols_json, kind)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
-    const current = index + 1;
-    if (shouldEmitCodeWriteProgress(current, architecture.imports.length)) {
-      options.onProgress?.({
-        stage: "writing_architecture_data",
-        repo,
-        current,
-        total: architecture.imports.length,
-        kind: "imports",
-      });
+    options.onProgress?.({
+      stage: "writing_architecture_data",
+      repo,
+      current: 0,
+      total: architecture.imports.length,
+      kind: "imports",
+    });
+    for (const [index, item] of architecture.imports.entries()) {
+      insertImport.run(
+        repoId,
+        item.sourcePath,
+        item.specifier,
+        item.importedPath ?? null,
+        JSON.stringify(item.importedSymbols),
+        item.kind,
+      );
+      const current = index + 1;
+      if (shouldEmitCodeWriteProgress(current, architecture.imports.length)) {
+        options.onProgress?.({
+          stage: "writing_architecture_data",
+          repo,
+          current,
+          total: architecture.imports.length,
+          kind: "imports",
+        });
+      }
     }
   }
 

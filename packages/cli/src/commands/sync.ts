@@ -11,6 +11,7 @@ import {
   initializeSchema,
   openAnchorDatabase,
   recordIndexRun,
+  runDatabaseMaintenance,
   resolveGitHubToken,
   saveGraphQLFetchCheckpoint,
   type GitHubGraphQLFetchCheckpoint,
@@ -124,6 +125,7 @@ export async function runSync(cwd: string, options: IndexOptions): Promise<void>
       testFilesIndexed: codeSummary?.testFilesIndexed,
       status: "success",
     });
+    runDatabaseMaintenance(db);
   } catch (error) {
     recordIndexRun(db, {
       command: "sync",

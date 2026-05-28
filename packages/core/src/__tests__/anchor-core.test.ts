@@ -104,6 +104,22 @@ function writeFileEnsuringDir(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content);
 }
 
+function configureGitIdentity(cwd: string): void {
+  execFileSync("git", ["config", "user.email", "anchor-tests@example.com"], {
+    cwd,
+    stdio: "ignore",
+  });
+  execFileSync("git", ["config", "user.name", "Anchor Tests"], {
+    cwd,
+    stdio: "ignore",
+  });
+}
+
+function commitAll(cwd: string, message: string): void {
+  execFileSync("git", ["add", "-A"], { cwd, stdio: "ignore" });
+  execFileSync("git", ["commit", "-m", message], { cwd, stdio: "ignore" });
+}
+
 function looseTokenMigrationPr(): PullRequestRecord {
   return {
     repo: "owner/repo",
@@ -1768,6 +1784,88 @@ describe("codebase indexing and retrieval", () => {
     }
   });
 
+  it("incrementally indexes only changed files and removes deleted paths", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    configureGitIdentity(cwd);
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/cache.ts"),
+      "export function loadAuthCache() { return 'v1'; }\n",
+    );
+    writeFileEnsuringDir(
+      path.join(cwd, "src/auth/guard.ts"),
+      "export function requireAccess() { return true; }\n",
+    );
+    commitAll(cwd, "initial");
+
+    const db = openAnchorDatabase(cwd);
+    try {
+      const repo = "owner/repo";
+      const initial = indexCodebase(db, { cwd, repo });
+      expect(initial.indexedFiles).toBe(2);
+
+      const initialHashes = db
+        .prepare("SELECT path, content_hash AS contentHash FROM code_files ORDER BY path")
+        .all() as Array<{ path: string; contentHash: string }>;
+      const firstCommit = (
+        db
+          .prepare(
+            `SELECT last_indexed_commit AS commitSha
+             FROM code_index_state
+             WHERE repo = ?`,
+          )
+          .get(repo) as { commitSha?: string } | undefined
+      )?.commitSha;
+      expect(firstCommit).toBeTruthy();
+
+      const noop = indexCodebase(db, { cwd, repo });
+      expect(noop.indexedFiles).toBe(2);
+      const hashesAfterNoop = db
+        .prepare("SELECT path, content_hash AS contentHash FROM code_files ORDER BY path")
+        .all() as Array<{ path: string; contentHash: string }>;
+      expect(hashesAfterNoop).toEqual(initialHashes);
+
+      writeFileEnsuringDir(
+        path.join(cwd, "src/auth/cache.ts"),
+        "export function loadAuthCache() { return 'v2'; }\n",
+      );
+      commitAll(cwd, "update cache");
+      const changed = indexCodebase(db, { cwd, repo });
+      expect(changed.indexedFiles).toBe(2);
+
+      const hashesAfterChange = db
+        .prepare("SELECT path, content_hash AS contentHash FROM code_files ORDER BY path")
+        .all() as Array<{ path: string; contentHash: string }>;
+      const beforeByPath = new Map(initialHashes.map((row) => [row.path, row.contentHash]));
+      const afterByPath = new Map(hashesAfterChange.map((row) => [row.path, row.contentHash]));
+      expect(afterByPath.get("src/auth/cache.ts")).not.toBe(beforeByPath.get("src/auth/cache.ts"));
+      expect(afterByPath.get("src/auth/guard.ts")).toBe(beforeByPath.get("src/auth/guard.ts"));
+
+      fs.rmSync(path.join(cwd, "src/auth/guard.ts"));
+      commitAll(cwd, "remove guard");
+      const removed = indexCodebase(db, { cwd, repo });
+      expect(removed.indexedFiles).toBe(1);
+      const remainingPaths = (
+        db.prepare("SELECT path FROM code_files ORDER BY path").all() as Array<{ path: string }>
+      ).map((row) => row.path);
+      expect(remainingPaths).toEqual(["src/auth/cache.ts"]);
+
+      const latestCommit = (
+        db
+          .prepare(
+            `SELECT last_indexed_commit AS commitSha
+             FROM code_index_state
+             WHERE repo = ?`,
+          )
+          .get(repo) as { commitSha?: string } | undefined
+      )?.commitSha;
+      expect(latestCommit).toBeTruthy();
+      expect(latestCommit).not.toBe(firstCommit);
+    } finally {
+      db.close();
+    }
+  });
+
   it("reports index health and local semantic fallback without network setup", () => {
     const { cwd, db } = createIndexedFixtureDb();
     try {
@@ -2039,6 +2137,14 @@ describe("developer value workflows", () => {
       });
       const evals = runRetrievalEvals(db, cwd);
       expect(evals.ok).toBe(true);
+      expect(evals.k).toBe(8);
+      expect(evals.precisionAtK).toBeGreaterThan(0);
+      expect(evals.recallAtK).toBeGreaterThan(0);
+      expect(evals.mrr).toBeGreaterThan(0);
+      expect(evals.results[0]?.expectedPrRanks[0]?.rank).toBeGreaterThan(0);
+      expect(evals.results[0]?.precisionAtK).toBeGreaterThan(0);
+      expect(evals.results[0]?.recallAtK).toBeGreaterThan(0);
+      expect(evals.results[0]?.reciprocalRank).toBeGreaterThan(0);
 
       const feedback = recordFeedback(db, {
         resultId: "result-1",

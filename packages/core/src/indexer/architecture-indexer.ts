@@ -6,6 +6,7 @@ import type {
   ArchitectureIndexData,
   ArchitecturePattern,
   CodeChunk,
+  CodeFileRecord,
   CodeIndexProgress,
   CodeImport,
 } from "../types.js";
@@ -292,19 +293,7 @@ export function buildArchitectureIndex(
   chunks: CodeChunk[],
   options: BuildArchitectureIndexOptions = {},
 ): ArchitectureIndexData {
-  const allPaths = files.map((file) => file.path);
-  const codePaths = new Set(allPaths);
-  const relatedTestIndex = buildRelatedTestIndex(allPaths);
-  const symbolSetsByPath = new Map<string, Set<string>>();
-  for (const chunk of chunks) {
-    const existing = symbolSetsByPath.get(chunk.filePath) ?? new Set<string>();
-    for (const symbol of chunk.symbols) {
-      if (existing.size >= 40) break;
-      existing.add(symbol);
-    }
-    symbolSetsByPath.set(chunk.filePath, existing);
-  }
-
+  const codePaths = new Set(files.map((file) => file.path));
   const imports: CodeImport[] = [];
   options.onProgress?.({
     stage: "building_architecture_imports",
@@ -327,6 +316,29 @@ export function buildArchitectureIndex(
       });
     }
   }
+
+  return buildArchitectureFromIndexedData(repo, files, chunks, imports, options);
+}
+
+export function buildArchitectureFromIndexedData(
+  repo: string,
+  files: CodeFileRecord[],
+  chunks: CodeChunk[],
+  imports: CodeImport[],
+  options: BuildArchitectureIndexOptions = {},
+): ArchitectureIndexData {
+  const allPaths = files.map((file) => file.path);
+  const relatedTestIndex = buildRelatedTestIndex(allPaths);
+  const symbolSetsByPath = new Map<string, Set<string>>();
+  for (const chunk of chunks) {
+    const existing = symbolSetsByPath.get(chunk.filePath) ?? new Set<string>();
+    for (const symbol of chunk.symbols) {
+      if (existing.size >= 40) break;
+      existing.add(symbol);
+    }
+    symbolSetsByPath.set(chunk.filePath, existing);
+  }
+
   const importsByPath = new Map<string, CodeImport[]>();
   for (const item of imports) {
     const existing = importsByPath.get(item.sourcePath) ?? [];
@@ -343,7 +355,7 @@ export function buildArchitectureIndex(
     components: 0,
   });
   for (const [index, file] of files.entries()) {
-    const area = classifyArchitectureArea(file.path, file.language, file.content);
+    const area = classifyArchitectureArea(file.path, file.language);
     const fileImports = importsByPath.get(file.path) ?? [];
     const symbols = [...(symbolSetsByPath.get(file.path) ?? [])];
     components.push({

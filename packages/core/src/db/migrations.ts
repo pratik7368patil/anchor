@@ -114,7 +114,8 @@ CREATE TABLE IF NOT EXISTS code_index_state (
   last_indexed_at TEXT NOT NULL,
   indexed_files INTEGER NOT NULL,
   code_chunks INTEGER NOT NULL,
-  skipped_files INTEGER NOT NULL
+  skipped_files INTEGER NOT NULL,
+  last_indexed_commit TEXT
 );
 
 CREATE TABLE IF NOT EXISTS code_imports (
