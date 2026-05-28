@@ -1573,7 +1573,9 @@ function orgLifecycleTask(progress: OrgLifecycleProgress): ProgressTask {
         label: `${progress.current}/${progress.total} ${progress.repo}`,
         current: progress.current,
         total: progress.total,
-        state: progress.error ? "warn" : progress.current >= progress.total ? "done" : "active",
+        // A finished repo is done regardless of its position in the run; keying
+        // off current/total left mid-run repos rendered as an active spinner.
+        state: progress.error ? "warn" : "done",
         detail: `${progress.prsIndexed} PRs, ${progress.codeFilesIndexed} files, ${(progress.durationMs / 1000).toFixed(1)}s`,
         pinned: true,
         timelineStepId: "repo_complete",

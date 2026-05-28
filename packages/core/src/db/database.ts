@@ -317,11 +317,9 @@ export function clearGraphQLFetchCheckpoint(
 }
 
 function deleteExistingPrData(db: AnchorDatabase, prId: number): void {
-  const unitRows = db.prepare("SELECT id FROM wisdom_units WHERE pr_id = ?").all(prId) as Array<{
-    id: string;
-  }>;
-  const deleteFts = db.prepare("DELETE FROM wisdom_units_fts WHERE unitId = ?");
-  for (const row of unitRows) deleteFts.run(row.id);
+  db.prepare(
+    "DELETE FROM wisdom_units_fts WHERE unitId IN (SELECT id FROM wisdom_units WHERE pr_id = ?)",
+  ).run(prId);
   db.prepare("DELETE FROM regression_events WHERE pr_id = ?").run(prId);
   db.prepare("DELETE FROM wisdom_units WHERE pr_id = ?").run(prId);
   db.prepare("DELETE FROM pr_comments WHERE pr_id = ?").run(prId);
@@ -552,22 +550,24 @@ export function replaceCodeIndex(
   options.onProgress?.({ stage: "writing_code_index", repo, phase: "Writing code index" });
 
   const transaction = db.transaction(() => {
-    const existingChunks = db
-      .prepare("SELECT id FROM code_chunks WHERE repo_id = ?")
-      .all(repoId) as Array<{
-      id: string;
-    }>;
+    const existingChunkCount = (
+      db.prepare("SELECT COUNT(*) AS count FROM code_chunks WHERE repo_id = ?").get(repoId) as CountRow
+    ).count;
     const existingPatternCount = (
       db.prepare("SELECT COUNT(*) AS count FROM architecture_patterns WHERE repo_id = ?").get(repoId) as CountRow
     ).count;
     options.onProgress?.({
       stage: "deleting_existing_code_index",
       repo,
-      chunks: existingChunks.length,
+      chunks: existingChunkCount,
       patterns: existingPatternCount,
     });
-    const deleteFts = db.prepare("DELETE FROM code_chunks_fts WHERE chunkId = ?");
-    for (const row of existingChunks) deleteFts.run(row.id);
+    // Clear this repo's FTS rows in one scan. Deleting row-by-row by the UNINDEXED
+    // chunkId forces a full FTS scan per row (O(n^2)), which froze large org
+    // re-indexes for tens of seconds with no progress.
+    db.prepare(
+      "DELETE FROM code_chunks_fts WHERE chunkId IN (SELECT id FROM code_chunks WHERE repo_id = ?)",
+    ).run(repoId);
     db.prepare("DELETE FROM code_chunks WHERE repo_id = ?").run(repoId);
     db.prepare("DELETE FROM code_files WHERE repo_id = ?").run(repoId);
     db.prepare("DELETE FROM test_links WHERE repo_id = ? AND reason != 'PR co-change'").run(repoId);
@@ -717,11 +717,9 @@ export function replaceCodeIndex(
 }
 
 function deleteExistingArchitectureData(db: AnchorDatabase, repoId: number): void {
-  const patternRows = db
-    .prepare("SELECT id FROM architecture_patterns WHERE repo_id = ?")
-    .all(repoId) as Array<{ id: string }>;
-  const deleteFts = db.prepare("DELETE FROM architecture_patterns_fts WHERE patternId = ?");
-  for (const row of patternRows) deleteFts.run(row.id);
+  db.prepare(
+    "DELETE FROM architecture_patterns_fts WHERE patternId IN (SELECT id FROM architecture_patterns WHERE repo_id = ?)",
+  ).run(repoId);
   db.prepare("DELETE FROM architecture_patterns WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM architecture_components WHERE repo_id = ?").run(repoId);
   db.prepare("DELETE FROM code_imports WHERE repo_id = ?").run(repoId);

@@ -2105,3 +2105,36 @@ describe("doctor", () => {
     expect(report.checks.find((item) => item.name === "SQLite schema valid")?.fix).toBeUndefined();
   });
 });
+
+describe("code index re-indexing", () => {
+  it("clears stale FTS rows on re-index instead of accumulating them", () => {
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    writeFileEnsuringDir(path.join(cwd, "src/a.ts"), "export function alpha() { return 1; }\n");
+    execFileSync("git", ["add", "."], { cwd, stdio: "ignore" });
+
+    const db = openAnchorDatabase(cwd);
+    try {
+      const chunkCount = () =>
+        (db.prepare("SELECT COUNT(*) AS c FROM code_chunks").get() as { c: number }).c;
+      const ftsCount = () =>
+        (db.prepare("SELECT COUNT(*) AS c FROM code_chunks_fts").get() as { c: number }).c;
+
+      indexCodebase(db, { cwd, repo: "owner/repo" });
+      expect(chunkCount()).toBeGreaterThan(0);
+      expect(ftsCount()).toBe(chunkCount());
+
+      // Change existing content and add a file, then re-index the same repo.
+      writeFileEnsuringDir(path.join(cwd, "src/a.ts"), "export function beta() { return 2; }\n");
+      writeFileEnsuringDir(path.join(cwd, "src/b.ts"), "export function gamma() { return 3; }\n");
+      execFileSync("git", ["add", "."], { cwd, stdio: "ignore" });
+      indexCodebase(db, { cwd, repo: "owner/repo" });
+
+      // FTS row count must match the current chunk count exactly — no stale rows
+      // left behind by the bulk delete, and no double-counting.
+      expect(ftsCount()).toBe(chunkCount());
+    } finally {
+      db.close();
+    }
+  });
+});
