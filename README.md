@@ -145,8 +145,9 @@ Before API, auth, access, schema, SDK, or shared-package changes:
 
 ```bash
 anchor org sync --org my-org --no-graph
-anchor org graph --org my-org
-anchor org impact --org my-org --repo my-org/backend-api --strict
+anchor org graph --org my-org --open
+anchor org map --org my-org --open
+anchor org impact --org my-org --repo my-org/backend-api --strict --open
 ```
 
 Share context with teammates:
@@ -281,9 +282,9 @@ anchor org sync --org my-org --since 2026-01-01
 anchor org sync --org my-org --no-graph --concurrency 2
 anchor org graph --org my-org
 anchor org graph --org my-org --open
-anchor org map --org my-org --format mermaid
-anchor org impact --org my-org --repo my-org/backend-api --diff-file change.diff --strict
-anchor org ci --org my-org --strict --min-coverage 70
+anchor org map --org my-org --open
+anchor org impact --org my-org --repo my-org/backend-api --strict --open
+anchor org ci --org my-org --strict --min-coverage 70 --html
 ```
 
 ### Org Option Guide
@@ -316,10 +317,13 @@ anchor org status --org my-org
 ```
 
 `anchor org impact`:
-Use `--repo owner/name` to identify the repo being checked, `--diff-file change.diff` in CI or saved-diff review, `--strict` for API/auth/access/shared-package changes, and `--json` for automation.
+Use `--repo owner/name` to identify the repo being checked, `--diff-file change.diff` in CI or saved-diff review, `--strict` for API/auth/access/shared-package changes, and `--json` for automation. Add `--html` to write a standalone local impact report, `--open` to open it in your browser, and `--output path/to/impact.html` to choose the file path.
 
 `anchor org ci`:
-Use `--strict` to fail on blocker/high anomalies and `--min-coverage 70` to enforce an org coverage threshold.
+Use `--strict` to fail on blocker/high anomalies and `--min-coverage 70` to enforce an org coverage threshold. Add `--html` to write a standalone local CI report, `--open` to open it in your browser, and `--output path/to/ci.html` to choose the file path.
+
+`anchor org map`:
+Use `--format mermaid|json` to choose CLI output. Add `--html` to write a standalone local map report, `--open` to open it in your browser, and `--output path/to/map.html` to choose the file path.
 
 Org Memory indexes current code and, when GitHub auth is available, PR history for each allowlisted repo into one local SQLite database. Re-runs are idempotent: unchanged code indexes are skipped, changed repos replace their current-code records, PRs are upserted by repo and number, recently completed PR syncs are reused when resuming unfinished graph work, and successful repos stay intact when another repo fails.
 

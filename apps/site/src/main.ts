@@ -705,8 +705,10 @@ anchor org add-repo my-org/frontend-app --group frontend
 anchor org add-repo my-org/shared-sdk --group shared
 anchor org sync --org my-org --no-graph
 anchor org graph --org my-org --open
+anchor org map --org my-org --open
 anchor org status --org my-org
-anchor org impact --org my-org --repo my-org/backend-api --strict`,
+anchor org impact --org my-org --repo my-org/backend-api --strict --open
+anchor org ci --org my-org --strict --min-coverage 70 --html`,
         true,
       )}
       <div class="doc-callout">

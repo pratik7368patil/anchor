@@ -32,7 +32,9 @@ anchor org add-repo my-org/backend-api --org my-org --group backend
 anchor org sync --org my-org
 anchor org graph --org my-org
 anchor org graph --org my-org --open
-anchor org impact --org my-org --repo my-org/backend-api --strict
+anchor org map --org my-org --open
+anchor org impact --org my-org --repo my-org/backend-api --strict --open
+anchor org ci --org my-org --strict --min-coverage 70 --html
 anchor rules init
 anchor rules validate
 anchor rules suggest
@@ -84,7 +86,7 @@ Before API, auth, access, schema, SDK, shared-package, or cross-repo work:
 ```bash
 anchor org sync --org my-org --no-graph --concurrency 2
 anchor org graph --org my-org
-anchor org impact --org my-org --repo my-org/backend-api --strict
+anchor org impact --org my-org --repo my-org/backend-api --strict --open
 ```
 
 ## Command-specific options
@@ -113,7 +115,7 @@ Use `--share` for Slack or PR-comment Markdown. Use `--diff-file change.diff` on
 Use `--file path` for file-level guidance, `--area api` for one architecture area, `--check` for the current diff, `--diff-file change.diff` for saved diffs, `--map --format mermaid` for docs, `--map --format json` for tooling, and `--write-doc` only when you intentionally want `ANCHOR_ARCHITECTURE.md`.
 
 `anchor org ...`:
-Use `--org my-org` on every org command. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--no-graph` with `org index`/`org sync` to postpone cross-repo graph rebuilds, `org graph` to rebuild only edges/API consumers, `org graph --open` to inspect the graph in a local browser UI, `--concurrency 1-3` with `org clone` and `org sync`, `--diff-file` and `--strict` with `org impact`, and `--min-coverage` with `org ci`.
+Use `--org my-org` on every org command. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--no-graph` with `org index`/`org sync` to postpone cross-repo graph rebuilds, `org graph` to rebuild only edges/API consumers, `org graph --open` to inspect the graph in a local browser UI, `--concurrency 1-3` with `org clone` and `org sync`, `--diff-file` and `--strict` with `org impact`, `--min-coverage` with `org ci`, and `--html`/`--open`/`--output` with `org map`, `org impact`, and `org ci` to generate local human-readable HTML reports.
 
 Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`.
 

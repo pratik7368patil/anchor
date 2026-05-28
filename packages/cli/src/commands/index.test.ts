@@ -17,7 +17,7 @@ import { runTestCommand } from "./test-command.js";
 import { runOnboarding } from "./onboarding.js";
 import { runCi } from "./ci.js";
 import { runEvalAdd, runEvalInit, runEvalRun } from "./eval.js";
-import { runOrgGraph, runOrgInit } from "./org.js";
+import { runOrgCi, runOrgGraph, runOrgImpact, runOrgInit, runOrgMap } from "./org.js";
 import { runPlaybooksInit, runPlaybooksSuggest } from "./playbooks.js";
 import {
   runRulesAdd,
@@ -546,6 +546,43 @@ describe("org graph command", () => {
       expect(result.metadata.apiConsumers).toBe(0);
       expect(result.metadata.htmlPath).toBe(htmlPath);
       expect(fs.existsSync(htmlPath)).toBe(true);
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+});
+
+describe("org HTML report commands", () => {
+  it("writes standalone HTML reports for org map, impact, and ci", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    try {
+      runOrgInit({ org: "acme" });
+
+      const mapPath = path.join(orgHome, "map-report.html");
+      const impactPath = path.join(orgHome, "impact-report.html");
+      const ciPath = path.join(orgHome, "ci-report.html");
+
+      const map = runOrgMap({ org: "acme", html: true, output: mapPath, progress: "off" });
+      const impact = runOrgImpact({
+        org: "acme",
+        html: true,
+        output: impactPath,
+        progress: "off",
+      });
+      const ci = runOrgCi({ org: "acme", html: true, output: ciPath, progress: "off" });
+
+      expect(map.metadata.htmlPath).toBe(mapPath);
+      expect(impact.metadata.htmlPath).toBe(impactPath);
+      expect(ci.metadata.htmlPath).toBe(ciPath);
+      expect(fs.existsSync(mapPath)).toBe(true);
+      expect(fs.existsSync(impactPath)).toBe(true);
+      expect(fs.existsSync(ciPath)).toBe(true);
+      expect(fs.readFileSync(mapPath, "utf8")).toContain("Anchor Org Map Report");
+      expect(fs.readFileSync(impactPath, "utf8")).toContain("Anchor Org Impact Report");
+      expect(fs.readFileSync(ciPath, "utf8")).toContain("Anchor Org CI Report");
     } finally {
       if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
       else process.env.ANCHOR_ORG_HOME = previousOrgHome;

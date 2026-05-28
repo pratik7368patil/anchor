@@ -28,6 +28,7 @@ import {
 import type { OrgRunTimelineSnapshot, OrgRunTimelineStepStatus } from "@pratik7368patil/anchor-core";
 import { createProgressReporter, type ProgressMode } from "./progress.js";
 import { writeOrgGraphHtml } from "./org-graph-html.js";
+import { writeOrgReportHtml } from "./org-report-html.js";
 
 type OrgOptions = {
   org?: string;
@@ -60,6 +61,19 @@ type GitHubRepoMetadata = {
 function requireOrg(options: OrgOptions): string {
   if (!options.org) throw new Error("Pass --org <org>.");
   return options.org;
+}
+
+function shouldWriteHtml(options: OrgOptions): boolean {
+  return Boolean(options.html || options.open || options.output);
+}
+
+function resolveOrgHtmlOutput(
+  org: string,
+  options: OrgOptions,
+  defaultFileName: string,
+): string {
+  if (options.output) return options.output;
+  return path.join(path.dirname(orgDatabasePath(org)), defaultFileName);
 }
 
 function readCurrentDiff(diffFile?: string): string {
@@ -345,7 +359,27 @@ export function runOrgMap(options: OrgOptions) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
   try {
-    return getOrgArchitectureMap(db, config, options.format ?? "mermaid");
+    const result = getOrgArchitectureMap(db, config, options.format ?? "mermaid");
+    if (!shouldWriteHtml(options)) return result;
+    const htmlResult = writeOrgReportHtml(
+      {
+        kind: "map",
+        org: config.org,
+        markdown: result.markdown,
+        metadata: result.metadata,
+      },
+      resolveOrgHtmlOutput(config.org, options, "org-map.html"),
+    );
+    if (options.open) openLocalFile(htmlResult.filePath);
+    return {
+      markdown: [
+        result.markdown,
+        "",
+        `HTML report: ${htmlResult.filePath}`,
+        options.open ? "Opened in your default browser." : "Open this file in a browser.",
+      ].join("\n"),
+      metadata: { ...result.metadata, htmlPath: htmlResult.filePath, opened: Boolean(options.open) },
+    };
   } finally {
     db.close();
   }
@@ -355,11 +389,31 @@ export function runOrgImpact(options: OrgOptions) {
   const config = loadOrgConfig(requireOrg(options));
   const db = openOrgDatabase(config.org);
   try {
-    return checkOrgImpact(db, config, {
+    const result = checkOrgImpact(db, config, {
       repo: options.repo,
       diff: readCurrentDiff(options.diffFile),
       strict: options.strict,
     });
+    if (!shouldWriteHtml(options)) return result;
+    const htmlResult = writeOrgReportHtml(
+      {
+        kind: "impact",
+        org: config.org,
+        markdown: result.markdown,
+        metadata: result.metadata,
+      },
+      resolveOrgHtmlOutput(config.org, options, "org-impact.html"),
+    );
+    if (options.open) openLocalFile(htmlResult.filePath);
+    return {
+      markdown: [
+        result.markdown,
+        "",
+        `HTML report: ${htmlResult.filePath}`,
+        options.open ? "Opened in your default browser." : "Open this file in a browser.",
+      ].join("\n"),
+      metadata: { ...result.metadata, htmlPath: htmlResult.filePath, opened: Boolean(options.open) },
+    };
   } finally {
     db.close();
   }
@@ -381,7 +435,7 @@ export function runOrgCi(options: OrgOptions) {
     );
     const ok =
       status.coverageScore >= minCoverage && (!options.strict || highAnomalies.length === 0);
-    return {
+    const result = {
       markdown: [
         "# Anchor Org CI",
         "",
@@ -391,6 +445,26 @@ export function runOrgCi(options: OrgOptions) {
         impact.markdown,
       ].join("\n"),
       metadata: { ok, status, impact: impact.metadata },
+    };
+    if (!shouldWriteHtml(options)) return result;
+    const htmlResult = writeOrgReportHtml(
+      {
+        kind: "ci",
+        org: config.org,
+        markdown: result.markdown,
+        metadata: result.metadata,
+      },
+      resolveOrgHtmlOutput(config.org, options, "org-ci.html"),
+    );
+    if (options.open) openLocalFile(htmlResult.filePath);
+    return {
+      markdown: [
+        result.markdown,
+        "",
+        `HTML report: ${htmlResult.filePath}`,
+        options.open ? "Opened in your default browser." : "Open this file in a browser.",
+      ].join("\n"),
+      metadata: { ...result.metadata, htmlPath: htmlResult.filePath, opened: Boolean(options.open) },
     };
   } finally {
     db.close();

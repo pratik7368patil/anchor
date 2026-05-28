@@ -625,6 +625,9 @@ org
   .description("Show cross-repo architecture and dependency map")
   .requiredOption("--org <org>", "Org memory namespace")
   .option("--format <format>", "Map format: mermaid or json", parseMapFormatOption, "mermaid")
+  .option("--html", "Write a standalone local HTML map report")
+  .option("--open", "Write the HTML report and open it in the default browser")
+  .option("--output <path>", "Path for the generated HTML report")
   .option("--json", "Print structured metadata as JSON")
   .action((options) => {
     printJsonOrMarkdown(runOrgMap(options), options);
@@ -637,6 +640,9 @@ org
   .option("--repo <owner/name>", "Repo where the diff belongs")
   .option("--diff-file <path>", "Read diff from a file instead of git diff")
   .option("--strict", "Fail metadata when high/blocker anomalies are found")
+  .option("--html", "Write a standalone local HTML impact report")
+  .option("--open", "Write the HTML report and open it in the default browser")
+  .option("--output <path>", "Path for the generated HTML report")
   .option("--json", "Print structured impact as JSON")
   .action((options) => {
     const result = runOrgImpact(options);
@@ -651,6 +657,9 @@ org
   .option("--repo <owner/name>", "Repo where the diff belongs")
   .option("--strict", "Fail on high/blocker anomalies")
   .option("--min-coverage <number>", "Minimum org coverage score", parseIntegerOption, 70)
+  .option("--html", "Write a standalone local HTML CI report")
+  .option("--open", "Write the HTML report and open it in the default browser")
+  .option("--output <path>", "Path for the generated HTML report")
   .option("--json", "Print structured CI result as JSON")
   .action((options) => {
     const result = runOrgCi(options);
