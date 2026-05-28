@@ -10,7 +10,7 @@ import type {
   OrgGraphProgress,
 } from "../types.js";
 import type { AnchorDatabase } from "../db/database.js";
-import { getLastSyncTime, initializeSchema } from "../db/database.js";
+import { getLastSyncTime, initializeSchema, runDatabaseMaintenance } from "../db/database.js";
 import type { AnchorOrgConfig, CodeIndexSummary, IndexSummary } from "../types.js";
 import { resolveGitHubToken } from "../utils/github-token.js";
 import { orgRepoLocalPath } from "./config.js";
@@ -149,7 +149,12 @@ export async function indexOrgRepos(
     totalRepos: repos.length,
   });
 
-  for (const [repoIndex, repo] of repos.entries()) {
+  const maxConcurrency = Math.max(1, Math.min(options.concurrency ?? 3, 4));
+  let nextRepoIndex = 0;
+
+  const processRepo = async (repoIndex: number): Promise<void> => {
+    const repo = repos[repoIndex];
+    if (!repo) return;
     const repoPosition = repoIndex + 1;
     const localPath = orgRepoLocalPath(config.org, repo, options.baseDir);
     const repoStartedAt = new Date().toISOString();
@@ -414,7 +419,20 @@ export async function indexOrgRepos(
         error: message,
       });
     }
-  }
+  };
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const repoIndex = nextRepoIndex;
+      nextRepoIndex += 1;
+      if (repoIndex >= repos.length) return;
+      await processRepo(repoIndex);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(maxConcurrency, repos.length) }, () => worker()),
+  );
 
   let graph: OrgIndexResult["graph"];
   if (options.noGraph) {
@@ -463,6 +481,7 @@ export async function indexOrgRepos(
       .concat(graph.error ? [graph.error] : [])
       .filter((error): error is string => Boolean(error)),
   });
+  runDatabaseMaintenance(db);
   emit({
     stage: "org_sync_completed",
     org: config.org,

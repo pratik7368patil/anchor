@@ -141,15 +141,17 @@ function symbolMatch(unit: WisdomUnit, querySymbols: string[]): number {
 
 function textMatch(unit: WisdomUnit & { bm25?: number }, inputText: string): number {
   const queryTokens = tokenizeSearchText(inputText, 32);
-  if (queryTokens.length === 0) return unit.bm25 === undefined ? 0 : 0.45;
+  if (queryTokens.length === 0) return unit.bm25 === undefined ? 0 : 0.35;
   const haystack =
     `${unit.sanitizedText} ${unit.filePaths.join(" ")} ${unit.symbols.join(" ")}`.toLowerCase();
   const overlap =
     queryTokens.filter((token) => haystack.includes(token.toLowerCase())).length /
     queryTokens.length;
   const bm25Signal =
-    unit.bm25 === undefined ? 0 : Math.max(0.25, Math.min(1, 1 / (1 + Math.abs(unit.bm25))));
-  return Math.max(overlap, bm25Signal);
+    unit.bm25 === undefined ? 0 : Math.max(0, Math.min(1, 1 / (1 + Math.abs(unit.bm25))));
+  return unit.bm25 === undefined
+    ? overlap
+    : Number((0.65 * overlap + 0.35 * bm25Signal).toFixed(4));
 }
 
 function reviewerOrAuthorSignal(unit: WisdomUnit): number {

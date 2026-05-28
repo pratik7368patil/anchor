@@ -333,9 +333,13 @@ export type RetrievalEvalResult = {
   expectedPrs: number[];
   foundPrs: number[];
   missingPrs: number[];
+  expectedPrRanks: Array<{ prNumber: number; rank?: number }>;
   expectedCategories: WisdomCategory[];
   foundCategories: WisdomCategory[];
   missingCategories: WisdomCategory[];
+  precisionAtK: number;
+  recallAtK: number;
+  reciprocalRank: number;
 };
 
 export type RetrievalEvalRunResult = {
@@ -344,6 +348,10 @@ export type RetrievalEvalRunResult = {
   total: number;
   passed: number;
   failed: number;
+  precisionAtK: number;
+  recallAtK: number;
+  mrr: number;
+  k: number;
   results: RetrievalEvalResult[];
 };
 

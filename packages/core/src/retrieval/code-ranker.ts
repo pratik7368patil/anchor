@@ -100,8 +100,10 @@ function textMatch(chunk: CodeChunk & { bm25?: number }, input: AnchorContextInp
     ? tokens.filter((token) => haystack.includes(token.toLowerCase())).length / tokens.length
     : 0;
   const bm25Signal =
-    chunk.bm25 === undefined ? 0 : Math.max(0.25, Math.min(1, 1 / (1 + Math.abs(chunk.bm25))));
-  return Math.max(overlap, bm25Signal);
+    chunk.bm25 === undefined ? 0 : Math.max(0, Math.min(1, 1 / (1 + Math.abs(chunk.bm25))));
+  return chunk.bm25 === undefined
+    ? overlap
+    : Number((0.65 * overlap + 0.35 * bm25Signal).toFixed(4));
 }
 
 function recencyScore(chunk: CodeChunk): number {

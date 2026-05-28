@@ -12,6 +12,7 @@ import {
   initializeSchema,
   openAnchorDatabase,
   recordIndexRun,
+  runDatabaseMaintenance,
   resolveGitHubToken,
   saveGraphQLFetchCheckpoint,
   type GitHubGraphQLFetchCheckpoint,
@@ -148,6 +149,7 @@ export async function runIndex(cwd: string, options: IndexOptions): Promise<void
       testFilesIndexed: codeSummary?.testFilesIndexed,
       status: "success",
     });
+    runDatabaseMaintenance(db);
   } catch (error) {
     recordIndexRun(db, {
       command: options.all ? "index-all" : "index",
@@ -203,6 +205,7 @@ export async function runIndexCode(cwd: string, options: IndexOptions): Promise<
       testFilesIndexed: summary.testFilesIndexed,
       status: "success",
     });
+    runDatabaseMaintenance(db);
   } catch (error) {
     recordIndexRun(db, {
       command: "index-code",
