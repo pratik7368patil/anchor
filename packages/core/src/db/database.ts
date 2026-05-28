@@ -1324,19 +1324,38 @@ function insertTestAwareness(
   testLinks: TestLink[],
   options: CodeIndexWriteOptions = {},
 ): void {
+  const dedupedTestFilesByPath = new Map<string, TestFileRecord>();
+  for (const file of testFiles) dedupedTestFilesByPath.set(file.path, file);
+  const dedupedTestFiles = [...dedupedTestFilesByPath.values()];
+
+  const dedupedTestLinksByKey = new Map<string, TestLink>();
+  for (const link of testLinks) {
+    const key = `${link.sourcePath}\0${link.testPath}\0${link.reason}`;
+    const existing = dedupedTestLinksByKey.get(key);
+    if (!existing || link.strength > existing.strength) {
+      dedupedTestLinksByKey.set(key, link);
+    }
+  }
+  const dedupedTestLinks = [...dedupedTestLinksByKey.values()];
+
   const insertTestFile = db.prepare(
     `INSERT INTO test_files
      (repo_id, path, language, size_bytes, content_hash, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(repo_id, path) DO UPDATE SET
+       language = excluded.language,
+       size_bytes = excluded.size_bytes,
+       content_hash = excluded.content_hash,
+       updated_at = excluded.updated_at`,
   );
   options.onProgress?.({
     stage: "writing_test_awareness",
     repo,
     current: 0,
-    total: testFiles.length,
+    total: dedupedTestFiles.length,
     kind: "test_files",
   });
-  for (const [index, file] of testFiles.entries()) {
+  for (const [index, file] of dedupedTestFiles.entries()) {
     insertTestFile.run(
       repoId,
       file.path,
@@ -1346,12 +1365,12 @@ function insertTestAwareness(
       file.updatedAt,
     );
     const current = index + 1;
-    if (shouldEmitCodeWriteProgress(current, testFiles.length)) {
+    if (shouldEmitCodeWriteProgress(current, dedupedTestFiles.length)) {
       options.onProgress?.({
         stage: "writing_test_awareness",
         repo,
         current,
-        total: testFiles.length,
+        total: dedupedTestFiles.length,
         kind: "test_files",
       });
     }
@@ -1359,24 +1378,26 @@ function insertTestAwareness(
 
   const insertTestLink = db.prepare(
     `INSERT INTO test_links (repo_id, source_path, test_path, reason, strength)
-     VALUES (?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(repo_id, source_path, test_path, reason) DO UPDATE SET
+       strength = excluded.strength`,
   );
   options.onProgress?.({
     stage: "writing_test_awareness",
     repo,
     current: 0,
-    total: testLinks.length,
+    total: dedupedTestLinks.length,
     kind: "test_links",
   });
-  for (const [index, link] of testLinks.entries()) {
+  for (const [index, link] of dedupedTestLinks.entries()) {
     insertTestLink.run(repoId, link.sourcePath, link.testPath, link.reason, link.strength);
     const current = index + 1;
-    if (shouldEmitCodeWriteProgress(current, testLinks.length)) {
+    if (shouldEmitCodeWriteProgress(current, dedupedTestLinks.length)) {
       options.onProgress?.({
         stage: "writing_test_awareness",
         repo,
         current,
-        total: testLinks.length,
+        total: dedupedTestLinks.length,
         kind: "test_links",
       });
     }

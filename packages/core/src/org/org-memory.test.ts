@@ -357,4 +357,91 @@ describe("org memory", () => {
       db.close();
     }
   });
+
+  it("does not fail on repeated org incremental indexing when test awareness rows already exist", async () => {
+    const root = tempDir();
+    const baseDir = path.join(root, "orgs");
+    const backendSource = createBackendRepo(root);
+    let config = initOrgConfig("acme", baseDir);
+    config = addOrgRepoConfig(
+      "acme",
+      "acme/backend-api",
+      {
+        alias: "backend-api",
+        group: "backend",
+        cloneUrl: backendSource,
+        defaultBranch: "main",
+      },
+      baseDir,
+    );
+
+    const db = openOrgDatabase("acme", baseDir);
+    try {
+      await cloneOrgRepos({ config, db, baseDir });
+      const first = await indexOrgRepos(db, config, {
+        command: "org sync",
+        codeOnly: true,
+        noGraph: true,
+        baseDir,
+      });
+      expect(first.repos[0]?.error).toBeUndefined();
+      expect(first.repos[0]?.code?.testFilesIndexed).toBeGreaterThan(0);
+
+      const backend = config.repos.find((item) => item.fullName === "acme/backend-api");
+      expect(backend).toBeDefined();
+      const localPath = orgRepoLocalPath("acme", backend!, baseDir);
+      writeFile(
+        localPath,
+        "src/api/user-access.ts",
+        [
+          'export const USER_ACCESS_ROUTE = "/api/user-access";',
+          "export function getUserAccess() {",
+          "  return { allowed: Math.random() >= -1 };",
+          "}",
+          ...Array.from({ length: 60 }, (_, index) => `export const hotfix${index} = ${index};`),
+        ].join("\n"),
+      );
+      commitAll(localPath, "source-only change");
+
+      const second = await indexOrgRepos(db, config, {
+        command: "org sync",
+        codeOnly: true,
+        noGraph: true,
+        baseDir,
+      });
+      expect(second.repos[0]?.error).toBeUndefined();
+      expect(second.repos[0]?.code?.testFilesIndexed).toBeGreaterThan(0);
+      expect(second.repos[0]?.code?.testLinksCreated).toBeGreaterThan(0);
+
+      const duplicateTestFiles = db
+        .prepare(
+          `SELECT tf.path
+           FROM test_files tf
+           JOIN repositories r ON r.id = tf.repo_id
+           WHERE r.full_name = ?
+           GROUP BY tf.path
+           HAVING COUNT(*) > 1`,
+        )
+        .all("acme/backend-api") as Array<{ path: string }>;
+      const duplicateTestLinks = db
+        .prepare(
+          `SELECT tl.source_path, tl.test_path, tl.reason
+           FROM test_links tl
+           JOIN repositories r ON r.id = tl.repo_id
+           WHERE r.full_name = ?
+           GROUP BY tl.source_path, tl.test_path, tl.reason
+           HAVING COUNT(*) > 1`,
+        )
+        .all("acme/backend-api") as Array<{
+        source_path: string;
+        test_path: string;
+        reason: string;
+      }>;
+
+      expect(duplicateTestFiles).toEqual([]);
+      expect(duplicateTestLinks).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
 });
