@@ -450,8 +450,6 @@ CREATE INDEX IF NOT EXISTS idx_org_repositories_org ON org_repositories(org);
 CREATE INDEX IF NOT EXISTS idx_org_repo_state_org ON org_repo_state(org);
 CREATE INDEX IF NOT EXISTS idx_org_edges_source ON org_cross_repo_edges(org, source_repo);
 CREATE INDEX IF NOT EXISTS idx_org_edges_target ON org_cross_repo_edges(org, target_repo);
-CREATE INDEX IF NOT EXISTS idx_org_edges_layer ON org_cross_repo_edges(org, layer, confidence);
-CREATE INDEX IF NOT EXISTS idx_org_edges_repo_pair ON org_cross_repo_edges(org, layer, source_repo, target_repo, relationship);
 CREATE INDEX IF NOT EXISTS idx_org_consumers_provider ON org_api_consumers(org, provider_repo);
 CREATE INDEX IF NOT EXISTS idx_org_consumers_consumer ON org_api_consumers(org, consumer_repo);
 CREATE INDEX IF NOT EXISTS idx_org_consumers_contract ON org_api_consumers(org, contract);
