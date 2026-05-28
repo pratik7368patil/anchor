@@ -16,6 +16,7 @@ import type {
 import { orgDatabasePath, orgRepoLocalPath, orgRoot } from "./config.js";
 
 type CountRow = { count: number };
+type TableInfoRow = { name: string };
 type RepoStateRow = {
   org: string;
   repo: string;
@@ -314,6 +315,30 @@ function count(db: AnchorDatabase, table: string, where = "", params: unknown[] 
   return row.count;
 }
 
+function tableHasColumn(db: AnchorDatabase, table: string, column: string): boolean {
+  try {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as TableInfoRow[];
+    return rows.some((row) => row.name === column);
+  } catch {
+    return false;
+  }
+}
+
+function orgEdgeCountWhere(
+  hasLayer: boolean,
+  hasWeakFlag: boolean,
+  filter: "all" | "visible" | "weak",
+): string {
+  const clauses: string[] = ["org = ?"];
+  if (hasLayer) clauses.push("layer = 'repo'");
+  if (filter === "visible" && hasWeakFlag) clauses.push("is_weak = 0");
+  if (filter === "weak") {
+    if (hasWeakFlag) clauses.push("is_weak = 1");
+    else clauses.push("1 = 0");
+  }
+  return `WHERE ${clauses.join(" AND ")}`;
+}
+
 export function getOrgGraphCounts(
   db: AnchorDatabase,
   org: string,
@@ -325,18 +350,22 @@ export function getOrgGraphCounts(
   apiConsumers: number;
 } {
   initializeSchema(db);
+  const hasLayer = tableHasColumn(db, "org_cross_repo_edges", "layer");
+  const hasWeakFlag = tableHasColumn(db, "org_cross_repo_edges", "is_weak");
   return {
-    edges: count(db, "org_cross_repo_edges", "WHERE org = ? AND layer = 'repo'", [org]),
+    edges: count(db, "org_cross_repo_edges", orgEdgeCountWhere(hasLayer, hasWeakFlag, "all"), [
+      org,
+    ]),
     visibleEdges: count(
       db,
       "org_cross_repo_edges",
-      "WHERE org = ? AND layer = 'repo' AND is_weak = 0",
+      orgEdgeCountWhere(hasLayer, hasWeakFlag, "visible"),
       [org],
     ),
     weakEdges: count(
       db,
       "org_cross_repo_edges",
-      "WHERE org = ? AND layer = 'repo' AND is_weak = 1",
+      orgEdgeCountWhere(hasLayer, hasWeakFlag, "weak"),
       [org],
     ),
     apiContracts: count(db, "org_api_contracts", "WHERE org = ?", [org]),
@@ -374,16 +403,18 @@ export function getOrgStatus(
   const codeFileCount = count(db, "code_files");
   const codeChunkCount = count(db, "code_chunks");
   const wisdomUnitCount = count(db, "wisdom_units");
+  const hasLayer = tableHasColumn(db, "org_cross_repo_edges", "layer");
+  const hasWeakFlag = tableHasColumn(db, "org_cross_repo_edges", "is_weak");
   const crossRepoEdgeCount = count(
     db,
     "org_cross_repo_edges",
-    "WHERE org = ? AND layer = 'repo' AND is_weak = 0",
+    orgEdgeCountWhere(hasLayer, hasWeakFlag, "visible"),
     [config.org],
   );
   const graphWeakEdgeCount = count(
     db,
     "org_cross_repo_edges",
-    "WHERE org = ? AND layer = 'repo' AND is_weak = 1",
+    orgEdgeCountWhere(hasLayer, hasWeakFlag, "weak"),
     [config.org],
   );
   const apiContractCount = count(db, "org_api_contracts", "WHERE org = ?", [config.org]);
