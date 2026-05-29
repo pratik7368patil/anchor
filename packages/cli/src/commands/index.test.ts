@@ -591,16 +591,16 @@ describe("org HTML report commands", () => {
 });
 
 describe("org map output", () => {
-  it("prints plain mermaid text by default instead of markdown wrapper", () => {
+  it("prints mermaid markdown output by default", () => {
     const previousOrgHome = process.env.ANCHOR_ORG_HOME;
     const orgHome = tempDir();
     process.env.ANCHOR_ORG_HOME = orgHome;
     try {
       runOrgInit({ org: "acme" });
       const result = runOrgMap({ org: "acme", progress: "off" });
-      expect(result.markdown.trim()).toBe("graph LR");
-      expect(result.markdown).not.toContain("# Anchor Org Architecture");
-      expect(result.markdown).not.toContain("```mermaid");
+      expect(result.markdown).toContain("# Anchor Org Architecture");
+      expect(result.markdown).toContain("```mermaid");
+      expect(result.markdown).toContain("graph LR");
     } finally {
       if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
       else process.env.ANCHOR_ORG_HOME = previousOrgHome;

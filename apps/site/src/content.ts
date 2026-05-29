@@ -1108,7 +1108,7 @@ export const commandDetails: Record<string, CommandDetail> = {
   },
   "anchor org map": {
     recommendedUse:
-      "Use to inspect cross-repo architecture, package, import, API, schema, and test relationships. Mermaid format prints raw Mermaid text by default.",
+      "Use to inspect cross-repo architecture, package, import, API, schema, and test relationships. Mermaid format returns a Markdown Mermaid diagram block by default.",
     example: "anchor org map --org my-org --format mermaid",
     options: [
       {

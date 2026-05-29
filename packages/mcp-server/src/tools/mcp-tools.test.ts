@@ -385,7 +385,7 @@ describe("MCP tools", () => {
     expect(status.structuredContent?.apiConsumerCount).toBeGreaterThan(0);
     expect(consumers.content[0]?.text).toContain("acme/frontend-app");
     expect(architecture.content[0]?.text).toContain("graph LR");
-    expect(architecture.content[0]?.text).not.toContain("```mermaid");
+    expect(architecture.content[0]?.text).toContain("```mermaid");
     expect(impact.content[0]?.text).toContain("# Anchor Cross-Repo Impact");
     expect(impact.structuredContent?.apiConsumers).toEqual(
       expect.arrayContaining([expect.objectContaining({ consumerRepo: "acme/frontend-app" })]),

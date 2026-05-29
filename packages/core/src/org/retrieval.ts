@@ -304,7 +304,7 @@ export function getOrgArchitectureMap(
   const markdown =
     format === "json"
       ? JSON.stringify({ nodes, edges }, null, 2)
-      : mermaid;
+      : ["# Anchor Org Architecture", "", "```mermaid", mermaid, "```"].join("\n");
   return {
     markdown,
     metadata: { org: config.org, format, nodes, edges, mermaid },
