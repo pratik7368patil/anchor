@@ -4,7 +4,7 @@ Anchor is a local-first, Cursor-only MCP server that indexes a repository's merg
 
 It helps Cursor notice past architecture decisions, current architecture patterns, constraints, rejected approaches, review comments, regressions, testing expectations, related tests, and file ownership signals from the repo's own history and code.
 
-Anchor is not a SaaS, does not create a dashboard, does not send telemetry, and does not call any LLM API in the MVP.
+Anchor is not a SaaS, does not create a dashboard, does not send CLI or MCP telemetry, and does not call any LLM API in the MVP.
 
 Anchor is evidence-backed, not truth-backed: retrieved history includes confidence, current-code freshness, and a reliability gate so Cursor can see when evidence may be weak, stale, or only loosely matched to the requested file.
 
@@ -27,6 +27,8 @@ Cursor Agent should call this before non-trivial code changes.
 - PR bodies, comments, review comments, issue comments, and commit messages are treated as untrusted evidence.
 - MCP output uses sanitized text only.
 - Common secrets and prompt-injection phrases are redacted or neutralized before indexing and output.
+- Anchor commands and MCP tools do not send telemetry or install-time beacons.
+- Public adoption stats, when enabled, use aggregate npm download counts, GitHub traffic/repo metadata, and optional GoatCounter website analytics for the docs site.
 
 Recommended GitHub token scope: read-only repository access. For private repositories, use the minimum read-only repo permissions your GitHub plan supports.
 
@@ -817,6 +819,36 @@ pnpm site:build
 Then it deploys `apps/site/dist` to the configured Netlify production site with Netlify CLI. The workflow never stores Netlify tokens in the repository and disables Netlify CLI telemetry in CI.
 
 If the deploy fails because secrets are missing, add them in GitHub under Settings > Secrets and variables > Actions. `NETLIFY_AUTH_TOKEN` should be a Netlify personal access token. `NETLIFY_SITE_ID` is the Netlify site API ID for `anchor-mcp.netlify.app`.
+
+## Adoption Analytics
+
+Anchor tracks adoption without adding telemetry to the CLI or MCP server. The scheduled `Collect adoption stats` workflow gathers aggregate public signals and writes them to:
+
+```text
+apps/site/public/stats/adoption.json
+apps/site/public/stats/adoption-history.json
+```
+
+Required repository secret:
+
+```text
+GH_TRAFFIC_TOKEN
+```
+
+Recommended repository variable:
+
+```text
+VITE_GOATCOUNTER_CODE
+```
+
+`GH_TRAFFIC_TOKEN` is used only by GitHub Actions to read aggregate repository traffic. `VITE_GOATCOUNTER_CODE` enables privacy-friendly GoatCounter analytics on the docs site only. npm downloads are directional package download counts and can include CI, mirrors, bots, and repeated installs; GitHub clone/view `uniques` are platform-provided aggregate traffic signals, not exact unique humans.
+
+Local commands:
+
+```bash
+pnpm stats:collect
+pnpm stats:validate
+```
 
 ## Troubleshooting
 

@@ -15,6 +15,7 @@ import {
 import "./styles.css";
 
 const app = document.querySelector<HTMLDivElement>("#app");
+const goatCounterCode = readGoatCounterCode();
 const legacyDocsHashes: Record<string, string> = {
   "#docs": "/docs",
   "#quickstart": "/docs/quickstart",
@@ -28,9 +29,50 @@ const legacyDocsHashes: Record<string, string> = {
   "#commands": "/docs/cli",
   "#options": "/docs/cli",
   "#mcp": "/docs/mcp",
+  "#privacy": "/docs/privacy",
+  "#adoption": "/docs/adoption",
   "#rules": "/docs/rules",
   "#features": "/docs/features",
   "#use-cases": "/docs/use-cases",
+};
+
+type PublicAdoptionStats = {
+  generatedAt: string;
+  project: {
+    packageName: string;
+    statsStartDate: string;
+  };
+  npm: {
+    downloads: {
+      lastDay: number;
+      lastWeek: number;
+      lastMonth: number;
+      sinceStartDate: number;
+    };
+  };
+  github: {
+    stars: number;
+    forks: number;
+    latestRelease: {
+      tagName: string;
+      url: string;
+    } | null;
+    traffic: {
+      clones: { count: number; uniques: number } | null;
+      views: { count: number; uniques: number } | null;
+    };
+  };
+  site: {
+    configured: boolean;
+  };
+  notes: string[];
+  warnings: string[];
+};
+
+type GoatCounterWindow = Window & {
+  goatcounter?: {
+    count?: (event: { path: string; title?: string }) => void;
+  };
 };
 
 if (!app) {
@@ -49,6 +91,31 @@ function escapeHtml(value: string): string {
 function normalizePath(pathname: string): string {
   if (pathname !== "/" && pathname.endsWith("/")) return pathname.slice(0, -1);
   return pathname;
+}
+
+function readGoatCounterCode(): string {
+  const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
+  const code = env?.VITE_GOATCOUNTER_CODE?.trim() ?? "";
+  return /^[a-z0-9-]+$/.test(code) ? code : "";
+}
+
+function installGoatCounter(): void {
+  if (!goatCounterCode) return;
+  if (document.querySelector("script[data-anchor-goatcounter]")) return;
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://gc.zgo.at/count.js";
+  script.dataset.anchorGoatcounter = "true";
+  script.dataset.goatcounter = `https://${goatCounterCode}.goatcounter.com/count`;
+  document.head.appendChild(script);
+}
+
+function trackGoatCounterRoute(): void {
+  if (!goatCounterCode) return;
+  (window as GoatCounterWindow).goatcounter?.count?.({
+    path: window.location.pathname,
+    title: document.title,
+  });
 }
 
 function renderShell(content: string, activeArea: "home" | "docs"): string {
@@ -99,7 +166,7 @@ function renderShell(content: string, activeArea: "home" | "docs"): string {
 
     <footer class="footer">
       <span>Anchor / local-first context for Cursor Agent</span>
-      <span>No SaaS. No telemetry. No write access to GitHub.</span>
+      <span>No SaaS. No CLI telemetry. No write access to GitHub.</span>
     </footer>
   `;
 }
@@ -145,7 +212,7 @@ function renderHome(): string {
         <section class="section trust fade-up" aria-label="Trust points">
           <div class="trust-point"><span aria-hidden="true"></span><strong>Local SQLite index</strong></div>
           <div class="trust-point"><span aria-hidden="true"></span><strong>No SaaS</strong></div>
-          <div class="trust-point"><span aria-hidden="true"></span><strong>No telemetry</strong></div>
+          <div class="trust-point"><span aria-hidden="true"></span><strong>No CLI telemetry</strong></div>
           <div class="trust-point"><span aria-hidden="true"></span><strong>No LLM API calls</strong></div>
           <div class="trust-point"><span aria-hidden="true"></span><strong>Read-only GitHub access</strong></div>
         </section>
@@ -302,6 +369,8 @@ function renderDocsPageContent(path: string): string {
       return renderMcpPage();
     case "/docs/privacy":
       return renderPrivacyPage();
+    case "/docs/adoption":
+      return renderAdoptionPage();
     case "/docs/features":
       return renderFeaturesPage();
     case "/docs/use-cases":
@@ -791,7 +860,11 @@ function renderPrivacyPage(): string {
         </div>
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderDatabaseIcon()}</span>
-          <div><strong>The index stays on your machine</strong><span>.anchor/index.sqlite lives inside the repo. Anchor has no SaaS account, hosted dashboard, telemetry stream, or LLM API path.</span></div>
+          <div><strong>The index stays on your machine</strong><span>.anchor/index.sqlite lives inside the repo. Anchor has no SaaS account, hosted dashboard, CLI telemetry stream, or LLM API path.</span></div>
+        </div>
+        <div class="safety-row">
+          <span class="safety-icon" aria-hidden="true">${renderReadOnlyIcon()}</span>
+          <div><strong>Adoption stats are aggregate</strong><span>The public adoption page uses npm download counts, GitHub aggregate traffic, repo metadata, and optional GoatCounter website analytics. Anchor commands and MCP tools do not send usage events.</span></div>
         </div>
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderShieldIcon()}</span>
@@ -805,6 +878,26 @@ function renderPrivacyPage(): string {
           <span class="safety-icon" aria-hidden="true">${renderReadOnlyIcon()}</span>
           <div><strong>Read-only by design</strong><span>Anchor indexes merged PR history and returns context. It never writes to GitHub.</span></div>
         </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderAdoptionPage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Public Signals</span>
+      <h2>Adoption signals</h2>
+      <p class="section-intro">Anchor tracks aggregate public signals without CLI telemetry. These numbers are useful for trend proof, not exact unique humans.</p>
+      <div class="adoption-stats" data-adoption-stats>
+        <div class="adoption-placeholder">
+          <strong>Stats not collected yet</strong>
+          <span>The scheduled collector writes aggregate npm and GitHub stats to <code>/stats/adoption.json</code>.</span>
+        </div>
+      </div>
+      <div class="doc-callout">
+        <span aria-hidden="true">${renderShieldIcon()}</span>
+        <p>No install hooks, no CLI beacons, no MCP telemetry. Website analytics are loaded only when the site is built with a GoatCounter code.</p>
       </div>
     </article>
   `;
@@ -946,6 +1039,7 @@ function renderDocIcon(path: string): string {
     "/docs/cli": `<path d="M5 7h14"></path><path d="M7 12h4"></path><path d="M7 17h10"></path><rect x="4" y="4" width="16" height="16" rx="2"></rect>`,
     "/docs/mcp": `<path d="M7 8h10v8H7z"></path><path d="M12 4v4"></path><path d="M12 16v4"></path><path d="M4 12h3"></path><path d="M17 12h3"></path>`,
     "/docs/privacy": `<path d="M12 3 5 6v6c0 4.8 2.8 7.6 7 9 4.2-1.4 7-4.2 7-9V6l-7-3Z"></path><path d="m9 12 2 2 4-5"></path>`,
+    "/docs/adoption": `<path d="M5 19V9"></path><path d="M10 19V5"></path><path d="M15 19v-8"></path><path d="M20 19v-5"></path><path d="M4 20h17"></path>`,
     "/docs/features": `<path d="M5 12h14"></path><path d="M12 5v14"></path><path d="m7 7 10 10"></path><path d="m17 7-10 10"></path>`,
     "/docs/use-cases": `<circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle><path d="M12 4v3"></path><path d="M20 12h-3"></path>`,
   };
@@ -1084,6 +1178,108 @@ function renderList(items: string[]): string {
   return items.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
 }
 
+async function hydrateAdoptionStats(): Promise<void> {
+  const container = document.querySelector<HTMLElement>("[data-adoption-stats]");
+  if (!container) return;
+
+  try {
+    const response = await fetch("/stats/adoption.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = (await response.json()) as unknown;
+    if (!isPublicAdoptionStats(data)) throw new Error("Invalid adoption stats shape");
+    container.innerHTML = renderAdoptionStats(data);
+  } catch (error) {
+    container.innerHTML = `<div class="adoption-placeholder">
+      <strong>Stats unavailable</strong>
+      <span>${escapeHtml(error instanceof Error ? error.message : String(error))}</span>
+    </div>`;
+  }
+}
+
+function renderAdoptionStats(stats: PublicAdoptionStats): string {
+  const cloneUniques = stats.github.traffic.clones?.uniques;
+  const viewUniques = stats.github.traffic.views?.uniques;
+  const latestRelease = stats.github.latestRelease?.tagName
+    ? `<a href="${escapeHtml(stats.github.latestRelease.url)}">${escapeHtml(stats.github.latestRelease.tagName)}</a>`
+    : "Not collected yet";
+
+  return `
+    <div class="adoption-grid" aria-label="Anchor adoption signal metrics">
+      ${renderMetricCard("npm last day", formatNumber(stats.npm.downloads.lastDay), "Aggregate tarball downloads.")}
+      ${renderMetricCard("npm last week", formatNumber(stats.npm.downloads.lastWeek), "Directional package demand.")}
+      ${renderMetricCard("npm last month", formatNumber(stats.npm.downloads.lastMonth), "Includes CI, mirrors, and bots.")}
+      ${renderMetricCard("npm since start", formatNumber(stats.npm.downloads.sinceStartDate), `Since ${stats.project.statsStartDate}.`)}
+      ${renderMetricCard("GitHub stars", formatNumber(stats.github.stars), "Community interest signal.")}
+      ${renderMetricCard("GitHub forks", formatNumber(stats.github.forks), "Community reuse signal.")}
+      ${renderMetricCard("Unique cloners", formatNullableNumber(cloneUniques), "GitHub aggregate traffic window.")}
+      ${renderMetricCard("Unique visitors", formatNullableNumber(viewUniques), "GitHub aggregate traffic window.")}
+    </div>
+    <div class="adoption-note">
+      <strong>Latest release</strong>
+      <span>${latestRelease}</span>
+    </div>
+    <div class="adoption-note">
+      <strong>Generated</strong>
+      <span>${escapeHtml(formatDateTime(stats.generatedAt))}</span>
+    </div>
+    <div class="adoption-note">
+      <strong>Website analytics</strong>
+      <span>${stats.site.configured ? "GoatCounter configured for docs traffic." : "GoatCounter not configured for this build."}</span>
+    </div>
+    <div class="adoption-note">
+      <strong>Honest interpretation</strong>
+      <span>These are aggregate adoption signals, not exact unique people or active users.</span>
+    </div>
+    ${stats.warnings.length > 0 ? `<div class="adoption-warning"><strong>Warnings</strong><span>${escapeHtml(stats.warnings.join(" "))}</span></div>` : ""}
+  `;
+}
+
+function renderMetricCard(label: string, value: string, detail: string): string {
+  return `<div class="metric-card">
+    <span>${escapeHtml(label)}</span>
+    <strong>${escapeHtml(value)}</strong>
+    <p>${escapeHtml(detail)}</p>
+  </div>`;
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function formatNullableNumber(value: number | undefined): string {
+  return typeof value === "number" ? formatNumber(value) : "Not collected";
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function isPublicAdoptionStats(value: unknown): value is PublicAdoptionStats {
+  if (!isRecord(value) || typeof value.generatedAt !== "string") return false;
+  if (!isRecord(value.project) || typeof value.project.packageName !== "string") return false;
+  if (!isRecord(value.npm) || !isRecord(value.npm.downloads)) return false;
+  if (!hasNumber(value.npm.downloads, "lastDay")) return false;
+  if (!hasNumber(value.npm.downloads, "lastWeek")) return false;
+  if (!hasNumber(value.npm.downloads, "lastMonth")) return false;
+  if (!hasNumber(value.npm.downloads, "sinceStartDate")) return false;
+  if (!isRecord(value.github) || !hasNumber(value.github, "stars")) return false;
+  if (!isRecord(value.github.traffic)) return false;
+  return isRecord(value.site) && Array.isArray(value.notes) && Array.isArray(value.warnings);
+}
+
+function hasNumber(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === "number";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function renderKeyIcon(): string {
   return `<svg viewBox="0 0 32 32" fill="none">
     <rect class="icon-fill" x="6.5" y="8" width="19" height="16" rx="4.5" stroke-width="1.4"></rect>
@@ -1132,6 +1328,7 @@ function render(): void {
   const path = normalizePath(window.location.pathname);
   app.innerHTML = path.startsWith("/docs") ? renderDocsRoute(path) : renderHome();
   attachInteractions();
+  void hydrateAdoptionStats();
   revealVisibleElements();
 
   if (window.location.hash) {
@@ -1219,6 +1416,7 @@ function navigate(href: string): void {
   const target = new URL(href, window.location.origin);
   window.history.pushState({}, "", `${target.pathname}${target.hash}`);
   render();
+  trackGoatCounterRoute();
 }
 
 function revealVisibleElements(): void {
@@ -1260,5 +1458,9 @@ async function copyWithFeedback(button: HTMLButtonElement, text: string): Promis
   }, 1400);
 }
 
-window.addEventListener("popstate", render);
+installGoatCounter();
+window.addEventListener("popstate", () => {
+  render();
+  trackGoatCounterRoute();
+});
 render();

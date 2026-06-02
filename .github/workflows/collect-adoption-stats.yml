@@ -1,0 +1,62 @@
+name: Collect adoption stats
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: adoption-stats
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Collect public adoption signals
+    runs-on: ubuntu-latest
+    if: github.repository == 'pratik7368patil/anchor'
+    env:
+      ADOPTION_PACKAGE_NAME: "@pratik7368patil/anchor"
+      ADOPTION_REPOSITORY: "pratik7368patil/anchor"
+      ADOPTION_START_DATE: "2026-05-01"
+      GH_TRAFFIC_TOKEN: ${{ secrets.GH_TRAFFIC_TOKEN }}
+      VITE_GOATCOUNTER_CODE: ${{ vars.VITE_GOATCOUNTER_CODE }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.2 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Collect adoption stats
+        run: pnpm stats:collect
+
+      - name: Validate adoption stats
+        run: pnpm stats:validate
+
+      - name: Commit updated stats
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- apps/site/public/stats; then
+            echo "Adoption stats unchanged."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/site/public/stats/adoption.json apps/site/public/stats/adoption-history.json
+          git commit -m "chore(stats): update adoption metrics"
+          git push
