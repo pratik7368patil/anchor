@@ -5,9 +5,11 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "build": "pnpm --filter './packages/**' -r build",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "test": "vitest run scripts && pnpm -r test",
+    "lint": "eslint scripts/**/*.ts && pnpm -r lint",
     "format": "prettier --write .",
+    "stats:collect": "tsx scripts/collect-adoption-stats.ts",
+    "stats:validate": "tsx scripts/validate-adoption-stats.ts",
     "site:dev": "pnpm --filter @pratik7368patil/anchor-site dev",
     "site:build": "pnpm --filter @pratik7368patil/anchor-site build"
   },

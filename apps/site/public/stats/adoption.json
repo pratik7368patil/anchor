@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-02T00:00:00.000Z",
+  "project": {
+    "packageName": "@pratik7368patil/anchor",
+    "repository": "pratik7368patil/anchor",
+    "statsStartDate": "2026-05-01"
+  },
+  "npm": {
+    "downloads": {
+      "lastDay": 0,
+      "lastWeek": 0,
+      "lastMonth": 0,
+      "sinceStartDate": 0
+    }
+  },
+  "github": {
+    "stars": 0,
+    "forks": 0,
+    "watchers": 0,
+    "subscribers": null,
+    "openIssues": 0,
+    "latestRelease": null,
+    "traffic": {
+      "clones": null,
+      "views": null,
+      "referrers": [],
+      "paths": []
+    }
+  },
+  "site": {
+    "analyticsProvider": "goatcounter",
+    "configured": false
+  },
+  "notes": [
+    "Anchor CLI and MCP do not send telemetry.",
+    "npm downloads are aggregate package tarball downloads, not unique users.",
+    "GitHub traffic uniques are platform-provided aggregate signals and may include automated traffic."
+  ],
+  "warnings": [
+    "Adoption stats have not been collected yet."
+  ]
+}

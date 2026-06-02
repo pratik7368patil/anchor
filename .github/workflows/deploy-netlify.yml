@@ -25,6 +25,7 @@ jobs:
     if: github.repository == 'pratik7368patil/anchor'
     env:
       NETLIFY_TELEMETRY_DISABLED: "1"
+      VITE_GOATCOUNTER_CODE: ${{ vars.VITE_GOATCOUNTER_CODE }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

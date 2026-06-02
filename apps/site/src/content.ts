@@ -1532,6 +1532,12 @@ export const docsPages: DocsPage[] = [
     group: "Safety",
   },
   {
+    path: "/docs/adoption",
+    title: "Adoption signals",
+    description: "Public aggregate npm, GitHub, and site analytics signals without CLI telemetry.",
+    group: "Safety",
+  },
+  {
     path: "/docs/features",
     title: "Features",
     description: "The product capabilities in one scannable reference.",
