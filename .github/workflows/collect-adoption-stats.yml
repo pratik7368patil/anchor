@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: adoption-stats
@@ -21,7 +21,9 @@ jobs:
       ADOPTION_PACKAGE_NAME: "@pratik7368patil/anchor"
       ADOPTION_REPOSITORY: "pratik7368patil/anchor"
       ADOPTION_START_DATE: "2026-05-01"
+      ADOPTION_SITE_URL: "https://anchor-mcp.netlify.app"
       GH_TRAFFIC_TOKEN: ${{ secrets.GH_TRAFFIC_TOKEN }}
+      NETLIFY_TELEMETRY_DISABLED: "1"
       VITE_GOATCOUNTER_CODE: ${{ vars.VITE_GOATCOUNTER_CODE }}
     steps:
       - name: Checkout
@@ -40,23 +42,73 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Load previous live history
+        run: |
+          set -euo pipefail
+
+          mkdir -p apps/site/public/stats
+          history_url="${ADOPTION_SITE_URL%/}/stats/adoption-history.json"
+          temp_history="$(mktemp)"
+
+          if ! curl -fsSL --retry 2 --retry-delay 1 "$history_url" -o "$temp_history"; then
+            echo "::notice::No deployed adoption history found. Using committed placeholder history."
+            rm -f "$temp_history"
+            exit 0
+          fi
+
+          if TMP_HISTORY="$temp_history" node <<'NODE'
+          const fs = require("node:fs");
+
+          const value = JSON.parse(fs.readFileSync(process.env.TMP_HISTORY, "utf8"));
+          if (value?.schemaVersion !== 1 || !Array.isArray(value?.days)) {
+            throw new Error("Invalid adoption history shape");
+          }
+          NODE
+          then
+            mv "$temp_history" apps/site/public/stats/adoption-history.json
+            echo "Loaded previous live adoption history."
+          else
+            echo "::warning::Deployed adoption history was invalid. Using committed placeholder history."
+            rm -f "$temp_history"
+          fi
+
       - name: Collect adoption stats
         run: pnpm stats:collect
 
       - name: Validate adoption stats
         run: pnpm stats:validate
 
-      - name: Commit updated stats
+      - name: Verify Netlify secrets
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- apps/site/public/stats; then
-            echo "Adoption stats unchanged."
-            exit 0
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN is missing. Add a Netlify personal access token as a GitHub Actions repository secret."
+            exit 1
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/site/public/stats/adoption.json apps/site/public/stats/adoption-history.json
-          git commit -m "chore(stats): update adoption metrics"
-          git push
+          if [ -z "${NETLIFY_SITE_ID:-}" ]; then
+            echo "::error::NETLIFY_SITE_ID is missing. Add the Netlify site API ID as a GitHub Actions repository secret."
+            exit 1
+          fi
+
+      - name: Build site
+        run: pnpm site:build
+
+      - name: Deploy production site
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          set -euo pipefail
+
+          npx --yes --package=netlify-cli@26.0.2 netlify deploy \
+            --prod \
+            --no-build \
+            --filter @pratik7368patil/anchor-site \
+            --dir="${GITHUB_WORKSPACE}/apps/site/dist" \
+            --site="$NETLIFY_SITE_ID" \
+            --message="GitHub Actions adoption stats deploy ${GITHUB_SHA}"
