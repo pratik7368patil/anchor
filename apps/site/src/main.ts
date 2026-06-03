@@ -69,12 +69,6 @@ type PublicAdoptionStats = {
   warnings: string[];
 };
 
-type GoatCounterWindow = Window & {
-  goatcounter?: {
-    count?: (event: { path: string; title?: string; event?: boolean }) => void;
-  };
-};
-
 if (!app) {
   throw new Error("Missing #app root");
 }
@@ -99,21 +93,9 @@ function readGoatCounterCode(): string {
   return /^[a-z0-9-]+$/.test(code) ? code : "";
 }
 
-function installGoatCounter(): void {
-  if (!goatCounterCode) return;
-  if (document.querySelector("script[data-anchor-goatcounter]")) return;
-  const script = document.createElement("script");
-  script.async = true;
-  script.src = "https://gc.zgo.at/count.js";
-  script.dataset.anchorGoatcounter = "true";
-  script.dataset.goatcounter = `https://${goatCounterCode}.goatcounter.com/count`;
-  document.head.appendChild(script);
-}
-
 function trackGoatCounterRoute(): void {
-  if (!goatCounterCode) return;
-  (window as GoatCounterWindow).goatcounter?.count?.({
-    path: window.location.pathname,
+  sendGoatCounterHit({
+    path: `${window.location.pathname}${window.location.search}`,
     title: document.title,
   });
 }
@@ -126,11 +108,80 @@ function trackGoatCounterEvent(name: string, title?: string): void {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
   if (!safeName) return;
-  (window as GoatCounterWindow).goatcounter?.count?.({
-    path: `/event/${safeName}`,
+  sendGoatCounterHit({
+    path: `event-${safeName}`,
     title: title ?? safeName,
     event: true,
   });
+}
+
+function sendGoatCounterHit(hit: { path: string; title?: string; event?: boolean }): void {
+  if (shouldSkipGoatCounter()) return;
+  const url = new URL(`https://${goatCounterCode}.goatcounter.com/count`);
+  url.searchParams.set("p", hit.path);
+  if (hit.title) url.searchParams.set("t", hit.title.slice(0, 200));
+  if (document.referrer) url.searchParams.set("r", document.referrer);
+  url.searchParams.set(
+    "s",
+    `${window.screen.width},${window.screen.height},${window.devicePixelRatio || 1}`,
+  );
+  url.searchParams.set("rnd", Math.random().toString(36).slice(2, 8));
+  if (hit.event) url.searchParams.set("e", "1");
+
+  const trackUrl = url.toString();
+  if (typeof fetch === "function") {
+    void fetch(trackUrl, {
+      credentials: "omit",
+      keepalive: true,
+      mode: "no-cors",
+    }).catch(() => {
+      sendGoatCounterPixel(trackUrl);
+    });
+    return;
+  }
+
+  sendGoatCounterPixel(trackUrl);
+}
+
+function sendGoatCounterPixel(trackUrl: string): void {
+  const image = document.createElement("img");
+  image.src = trackUrl;
+  image.alt = "";
+  image.referrerPolicy = "strict-origin-when-cross-origin";
+  image.setAttribute("aria-hidden", "true");
+  image.style.position = "absolute";
+  image.style.width = "1px";
+  image.style.height = "1px";
+  image.style.opacity = "0";
+  image.style.pointerEvents = "none";
+
+  const remove = () => image.parentNode?.removeChild(image);
+  image.addEventListener("load", remove, { once: true });
+  image.addEventListener("error", remove, { once: true });
+
+  const append = () => document.body.appendChild(image);
+  if (document.body) {
+    append();
+  } else {
+    document.addEventListener("DOMContentLoaded", append, { once: true });
+  }
+}
+
+function shouldSkipGoatCounter(): boolean {
+  if (!goatCounterCode) return true;
+  if (window.location.protocol === "file:") return true;
+  if (
+    /^(localhost|127\.|0\.0\.0\.0$|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(
+      window.location.hostname,
+    )
+  ) {
+    return true;
+  }
+  try {
+    return window.localStorage?.getItem("skipgc") === "t";
+  } catch {
+    return false;
+  }
 }
 
 function renderShell(content: string, activeArea: "home" | "docs"): string {
@@ -936,7 +987,7 @@ function renderAdoptionPage(): string {
       </div>
       <div class="doc-callout">
         <span aria-hidden="true">${renderShieldIcon()}</span>
-        <p>No install hooks, no CLI beacons, no MCP telemetry. Website analytics are loaded only when the site is built with a GoatCounter code.</p>
+        <p>No install hooks, no CLI beacons, no MCP telemetry. Website analytics are sent only when the site is built with a GoatCounter code.</p>
       </div>
       <div class="engagement-panel">
         <div>
@@ -1531,9 +1582,9 @@ async function copyWithFeedback(
   }, 1400);
 }
 
-installGoatCounter();
 window.addEventListener("popstate", () => {
   render();
   trackGoatCounterRoute();
 });
 render();
+trackGoatCounterRoute();
