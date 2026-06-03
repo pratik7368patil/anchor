@@ -857,7 +857,7 @@ VITE_GOATCOUNTER_CODE
 
 `GH_TRAFFIC_TOKEN` is used only by GitHub Actions to read aggregate repository traffic. `VITE_GOATCOUNTER_CODE` enables privacy-friendly GoatCounter analytics on the docs site only. npm downloads are directional package download counts and can include CI, mirrors, bots, and repeated installs; GitHub clone/view `uniques` are platform-provided aggregate traffic signals, not exact unique humans.
 
-The docs site also records aggregate GoatCounter events for public CTA clicks and copy actions, such as copying the demo command or opening GitHub. These events happen only on the website when GoatCounter is configured. Anchor commands, MCP tools, local indexes, Cursor usage, repo names, file names, and prompts are never sent.
+The docs site also records aggregate GoatCounter events for public CTA clicks and copy actions, such as copying the demo command or opening GitHub. These events happen only on the website when GoatCounter is configured, and they are sent as no-CORS browser requests with an image fallback so the site does not depend on loading a third-party analytics script. Anchor commands, MCP tools, local indexes, Cursor usage, repo names, file names, and prompts are never sent.
 
 Useful public traction signals to watch together:
 
