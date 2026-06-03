@@ -665,6 +665,46 @@ h1 {
   font-weight: 510;
 }
 
+.cta-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) auto;
+  gap: 24px;
+  align-items: center;
+  margin-top: 24px;
+  padding: 28px;
+  border: 1px solid rgba(130, 143, 255, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(113, 112, 255, 0.075), rgba(255, 255, 255, 0.018)),
+    rgba(255, 255, 255, 0.02);
+}
+
+.cta-strip h2 {
+  max-width: 720px;
+  font-size: 34px;
+  line-height: 1.08;
+}
+
+.cta-strip p {
+  max-width: 760px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.62;
+}
+
+.cta-actions,
+.engagement-actions,
+.adoption-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cta-actions {
+  justify-content: flex-end;
+}
+
 .split-section {
   display: grid;
   grid-template-columns: minmax(260px, 0.82fr) minmax(0, 1.18fr);
@@ -992,6 +1032,36 @@ h2 {
   color: #8de7ae;
   font-size: 16px;
   line-height: 1.55;
+}
+
+.engagement-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(130, 143, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(113, 112, 255, 0.055);
+}
+
+.engagement-panel strong {
+  display: block;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 590;
+}
+
+.engagement-panel p {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.engagement-actions {
+  justify-content: flex-end;
 }
 
 .docs-index-grid {
@@ -1576,6 +1646,10 @@ tr:last-child td {
   background: rgba(245, 158, 11, 0.06);
 }
 
+.adoption-actions {
+  margin-top: 14px;
+}
+
 .final-cta {
   padding: 92px 0 96px;
   text-align: center;
@@ -1697,6 +1771,16 @@ tr:last-child td {
   .adoption-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .cta-strip,
+  .engagement-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .cta-actions,
+  .engagement-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 820px) {
@@ -1764,6 +1848,7 @@ tr:last-child td {
   }
 
   .hero-proof,
+  .cta-strip,
   .quick-grid,
   .workflow-grid,
   .recipe-grid,
@@ -1881,6 +1966,9 @@ tr:last-child td {
   }
 
   .hero-actions,
+  .cta-actions,
+  .engagement-actions,
+  .adoption-actions,
   .final-actions {
     flex-direction: column;
   }

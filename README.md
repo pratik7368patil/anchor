@@ -47,6 +47,14 @@ Or run it without a global install:
 npx -y @pratik7368patil/anchor --help
 ```
 
+Fastest way to evaluate Anchor before setting up GitHub auth:
+
+```bash
+npx @pratik7368patil/anchor demo
+```
+
+If Anchor helps your team, the best public signals are a GitHub star, a fork, or an issue describing your use case. Anchor does not track local installs or CLI usage.
+
 ## 2-Minute Demo
 
 Try Anchor without a GitHub token or a real repository index:
@@ -67,6 +75,12 @@ Current code check: current
 ```
 
 The demo uses sanitized fixture text only. It does not call GitHub, npm, telemetry, SaaS, or any LLM API.
+
+Good team-demo prompt after running it:
+
+```text
+Before editing this file, call anchor_get_context and summarize relevant historical constraints, tests, and regressions.
+```
 
 For local development from this repository:
 
@@ -842,6 +856,15 @@ VITE_GOATCOUNTER_CODE
 ```
 
 `GH_TRAFFIC_TOKEN` is used only by GitHub Actions to read aggregate repository traffic. `VITE_GOATCOUNTER_CODE` enables privacy-friendly GoatCounter analytics on the docs site only. npm downloads are directional package download counts and can include CI, mirrors, bots, and repeated installs; GitHub clone/view `uniques` are platform-provided aggregate traffic signals, not exact unique humans.
+
+The docs site also records aggregate GoatCounter events for public CTA clicks and copy actions, such as copying the demo command or opening GitHub. These events happen only on the website when GoatCounter is configured. Anchor commands, MCP tools, local indexes, Cursor usage, repo names, file names, and prompts are never sent.
+
+Useful public traction signals to watch together:
+
+- npm download trends for directional package demand.
+- GitHub unique cloners and visitors for approximate project interest.
+- Stars, forks, issues, and release downloads for community engagement.
+- Website copy/click events for install-to-demo conversion.
 
 Local commands:
 
