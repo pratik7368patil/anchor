@@ -141,4 +141,11 @@ export function printDemo(result: DemoResult, options: DemoOptions = {}): void {
   console.log("");
   console.log("## Cursor prompts");
   for (const prompt of result.prompts) console.log(`- ${prompt.prompt}`);
+  console.log("");
+  console.log("## Next steps");
+  console.log("- Run `anchor init` in a real repo, then `anchor index-code` or `anchor index --limit 200`.");
+  console.log("- Ask Cursor: Before editing this file, call `anchor_get_context` first.");
+  console.log("- Share the demo command with teammates: `npx @pratik7368patil/anchor demo`.");
+  console.log("- Docs and feedback: https://anchor-mcp.netlify.app");
+  console.log("- GitHub: https://github.com/pratik7368patil/anchor");
 }

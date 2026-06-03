@@ -71,7 +71,7 @@ type PublicAdoptionStats = {
 
 type GoatCounterWindow = Window & {
   goatcounter?: {
-    count?: (event: { path: string; title?: string }) => void;
+    count?: (event: { path: string; title?: string; event?: boolean }) => void;
   };
 };
 
@@ -118,6 +118,21 @@ function trackGoatCounterRoute(): void {
   });
 }
 
+function trackGoatCounterEvent(name: string, title?: string): void {
+  if (!goatCounterCode) return;
+  const safeName = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!safeName) return;
+  (window as GoatCounterWindow).goatcounter?.count?.({
+    path: `/event/${safeName}`,
+    title: title ?? safeName,
+    event: true,
+  });
+}
+
 function renderShell(content: string, activeArea: "home" | "docs"): string {
   const productHref = activeArea === "home" ? "#product" : "/";
   const whyHref = activeArea === "home" ? "#why" : "/#why";
@@ -135,8 +150,8 @@ function renderShell(content: string, activeArea: "home" | "docs"): string {
   const headerActions =
     activeArea === "home"
       ? `<div class="header-actions">
-          <a class="btn" href="/docs" data-route>Docs</a>
-          <a class="btn primary" href="${repoUrl}#readme">Install</a>
+          <a class="btn" href="/docs" data-route data-track-event="header_docs_click">Docs</a>
+          <a class="btn primary" href="${repoUrl}#readme" data-track-event="header_install_click">Install</a>
           <button class="mobile-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="nav-links">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true">
               <path d="M5 7h14M5 12h14M5 17h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
@@ -180,13 +195,14 @@ function renderHome(): string {
             <h1 id="hero-title">Give Cursor the repo memory your team already earned.</h1>
             <p>Anchor indexes merged GitHub PR history and local code on your machine, then gives Cursor Agent the constraints, regressions, tests, and team rules it should know before editing code.</p>
             <div class="hero-actions">
-              <a class="btn primary" href="/docs/quickstart" data-route>
+              <a class="btn primary" href="/docs/quickstart" data-route data-track-event="hero_quickstart_click">
                 Start with the docs
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M5 12h13m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
                 </svg>
               </a>
-              <a class="btn" href="${repoUrl}">View GitHub</a>
+              <button class="btn" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="hero_demo_copy">Copy demo command</button>
+              <a class="btn" href="${repoUrl}" data-track-event="hero_github_click">View GitHub</a>
             </div>
             <div class="hero-proof" aria-label="Anchor guarantees">
               <div class="proof-chip">
@@ -215,6 +231,19 @@ function renderHome(): string {
           <div class="trust-point"><span aria-hidden="true"></span><strong>No CLI telemetry</strong></div>
           <div class="trust-point"><span aria-hidden="true"></span><strong>No LLM API calls</strong></div>
           <div class="trust-point"><span aria-hidden="true"></span><strong>Read-only GitHub access</strong></div>
+        </section>
+
+        <section class="section cta-strip fade-up" aria-labelledby="demo-title">
+          <div>
+            <span class="section-label">Try it without setup</span>
+            <h2 id="demo-title">Show the value before asking anyone for a token.</h2>
+            <p>Run the offline demo in any terminal. It uses bundled sample PR history and sample code, then prints the same context Cursor would receive from Anchor.</p>
+          </div>
+          <div class="cta-actions">
+            <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="demo_strip_copy">Copy demo command</button>
+            <a class="btn" href="/docs/adoption" data-route data-track-event="demo_strip_adoption_click">View adoption signals</a>
+            <a class="btn" href="${repoUrl}" data-track-event="demo_strip_star_click">Star or fork</a>
+          </div>
         </section>
 
         <section class="section split-section" id="why" aria-labelledby="missing-layer-title">
@@ -274,8 +303,8 @@ function renderHome(): string {
             <h2 id="final-title">Docs that follow the workflow, not the marketing page.</h2>
             <p>Use the separate docs route for install steps, guide pages, CLI reference, MCP tools, rules, and safety notes.</p>
             <div class="final-actions">
-              <a class="btn primary" href="/docs" data-route>Open docs</a>
-              <a class="btn" href="/docs/cli" data-route>CLI reference</a>
+              <a class="btn primary" href="/docs" data-route data-track-event="final_docs_click">Open docs</a>
+              <a class="btn" href="/docs/cli" data-route data-track-event="final_cli_click">CLI reference</a>
             </div>
           </div>
         </section>
@@ -337,8 +366,8 @@ function renderDocsSidebar(activePath: string): string {
     <div class="docs-drawer-secondary" aria-label="Site links">
       <a href="/" data-route>Product home</a>
       <a href="/#why" data-route>Why Anchor</a>
-      <a href="${repoUrl}">GitHub</a>
-      <a href="${repoUrl}#readme">Install</a>
+      <a href="${repoUrl}" data-track-event="docs_sidebar_github_click">GitHub</a>
+      <a href="${repoUrl}#readme" data-track-event="docs_sidebar_install_click">Install</a>
     </div>
   </aside>`;
 }
@@ -412,6 +441,16 @@ anchor org graph --org my-org --open`,
       <div class="doc-callout">
         <span aria-hidden="true">${renderDocIcon("/docs")}</span>
         <p>Anchor does not need a hosted dashboard. The product surface that matters is the context Cursor receives before it edits.</p>
+      </div>
+      <div class="engagement-panel">
+        <div>
+          <strong>Help prove Anchor is useful</strong>
+          <p>There is no CLI telemetry, so public traction comes from voluntary signals: copied demo commands, GitHub stars, issues, forks, and aggregate npm/GitHub traffic.</p>
+        </div>
+        <div class="engagement-actions">
+          <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="docs_overview_demo_copy">Copy demo</button>
+          <a class="btn" href="${repoUrl}" data-track-event="docs_overview_github_click">Open GitHub</a>
+        </div>
       </div>
       <h3>Docs map</h3>
       <div class="docs-index-grid">
@@ -899,6 +938,16 @@ function renderAdoptionPage(): string {
         <span aria-hidden="true">${renderShieldIcon()}</span>
         <p>No install hooks, no CLI beacons, no MCP telemetry. Website analytics are loaded only when the site is built with a GoatCounter code.</p>
       </div>
+      <div class="engagement-panel">
+        <div>
+          <strong>Make adoption visible without tracking users</strong>
+          <p>Try the demo, star the repo if it helps, or open an issue with your use case. Those public signals are how Anchor proves value without watching local CLI usage.</p>
+        </div>
+        <div class="engagement-actions">
+          <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="adoption_page_demo_copy">Copy demo</button>
+          <a class="btn" href="${repoUrl}" data-track-event="adoption_page_github_click">Open GitHub</a>
+        </div>
+      </div>
     </article>
   `;
 }
@@ -1110,7 +1159,7 @@ function renderCommandGroups(): string {
                   : ""
               }
             </td>
-            <td><button class="tiny-copy" type="button" data-copy-value="${escapeHtml(item.command)}">Copy</button></td>
+            <td><button class="tiny-copy" type="button" data-copy-value="${escapeHtml(item.command)}" data-copy-event="copy_cli_command">Copy</button></td>
           </tr>`;
         })
         .join("");
@@ -1167,7 +1216,7 @@ function renderCodeBlock(title: string, id: string, code: string, compact = fals
   return `<div class="command-wrap ${compact ? "compact" : ""}">
     <div class="code-head">
       <span>${title}</span>
-      <button class="copy-btn" type="button" data-copy-target="${id}">Copy</button>
+      <button class="copy-btn" type="button" data-copy-target="${id}" data-copy-event="copy_code_block">Copy</button>
     </div>
     <pre id="${id}"><code>${escapeHtml(code)}</code></pre>
     ${id === "install-code" ? '<p class="install-note">Reload Cursor after initialization so the MCP server and Cursor rule are picked up.</p>' : ""}
@@ -1188,6 +1237,7 @@ async function hydrateAdoptionStats(): Promise<void> {
     const data = (await response.json()) as unknown;
     if (!isPublicAdoptionStats(data)) throw new Error("Invalid adoption stats shape");
     container.innerHTML = renderAdoptionStats(data);
+    attachActionInteractions(container);
   } catch (error) {
     container.innerHTML = `<div class="adoption-placeholder">
       <strong>Stats unavailable</strong>
@@ -1229,6 +1279,11 @@ function renderAdoptionStats(stats: PublicAdoptionStats): string {
     <div class="adoption-note">
       <strong>Honest interpretation</strong>
       <span>These are aggregate adoption signals, not exact unique people or active users.</span>
+    </div>
+    <div class="adoption-actions">
+      <a class="btn primary" href="${repoUrl}" data-track-event="adoption_github_click">Star or fork on GitHub</a>
+      <button class="btn" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="adoption_demo_copy">Copy demo command</button>
+      <a class="btn" href="${repoUrl}/issues/new" data-track-event="adoption_feedback_click">Share feedback</a>
     </div>
     ${stats.warnings.length > 0 ? `<div class="adoption-warning"><strong>Warnings</strong><span>${escapeHtml(stats.warnings.join(" "))}</span></div>` : ""}
   `;
@@ -1364,31 +1419,7 @@ function attachInteractions(): void {
     });
   });
 
-  document.querySelectorAll<HTMLButtonElement>("[data-copy-target]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const targetId = button.dataset.copyTarget;
-      const target = targetId ? document.getElementById(targetId) : null;
-      const text = target?.innerText.trim();
-      if (!text) return;
-
-      await copyWithFeedback(button, text);
-    });
-  });
-
-  document.querySelectorAll<HTMLButtonElement>("[data-copy-value]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const value = button.dataset.copyValue;
-      if (!value) return;
-
-      await copyWithFeedback(button, value);
-    });
-  });
-
-  document.querySelectorAll<HTMLButtonElement>("[data-copy-page]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      await copyWithFeedback(button, window.location.href);
-    });
-  });
+  attachActionInteractions(document);
 
   const commandFilter = document.querySelector<HTMLInputElement>("#command-filter");
   const commandRows = Array.from(
@@ -1408,6 +1439,42 @@ function attachInteractions(): void {
     commandGroupElements.forEach((group) => {
       const rows = Array.from(group.querySelectorAll<HTMLTableRowElement>("[data-command-row]"));
       group.hidden = rows.every((row) => row.hidden);
+    });
+  });
+}
+
+function attachActionInteractions(root: ParentNode): void {
+  root.querySelectorAll<HTMLElement>("[data-track-event]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const eventName = element.dataset.trackEvent;
+      if (!eventName) return;
+      trackGoatCounterEvent(eventName, element.textContent?.trim() || eventName);
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-copy-target]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const targetId = button.dataset.copyTarget;
+      const target = targetId ? document.getElementById(targetId) : null;
+      const text = target?.innerText.trim();
+      if (!text) return;
+
+      await copyWithFeedback(button, text, button.dataset.copyEvent);
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-copy-value]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const value = button.dataset.copyValue;
+      if (!value) return;
+
+      await copyWithFeedback(button, value, button.dataset.copyEvent ?? "copy_inline_command");
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-copy-page]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await copyWithFeedback(button, window.location.href, "copy_page_link");
     });
   });
 }
@@ -1443,12 +1510,18 @@ function revealVisibleElements(): void {
   });
 }
 
-async function copyWithFeedback(button: HTMLButtonElement, text: string): Promise<void> {
+async function copyWithFeedback(
+  button: HTMLButtonElement,
+  text: string,
+  eventName?: string,
+): Promise<void> {
   const originalHtml = button.innerHTML;
+  const eventTitle = button.textContent?.trim() || eventName;
 
   try {
     await navigator.clipboard.writeText(text);
     button.textContent = "Copied";
+    if (eventName) trackGoatCounterEvent(eventName, eventTitle);
   } catch {
     button.textContent = "Select";
   }

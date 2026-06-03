@@ -8,6 +8,14 @@ Install:
 npm install -g @pratik7368patil/anchor
 ```
 
+Try the offline demo before setting up GitHub auth:
+
+```bash
+npx @pratik7368patil/anchor demo
+```
+
+Anchor has no CLI telemetry. If it helps, public proof comes from voluntary signals like GitHub stars, forks, issues, and aggregate npm/GitHub traffic.
+
 Use it inside a GitHub-backed repo:
 
 ```bash
@@ -132,6 +140,8 @@ Cross-repo edges and API consumers are created during the org graph phase. If a 
 Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor sync`, and `anchor index-code`. It gives Cursor deterministic current-code guidance about file areas, import direction, symbols, repeated folder patterns, and nearby test conventions before adding APIs, services, components, hooks, tests, or refactors.
 
 `anchor demo` runs offline with bundled fixtures and sample code. `--share` on `explain` and `review` produces compact Markdown for Slack or PR comments.
+
+Docs, adoption signals, and feedback links: https://anchor-mcp.netlify.app
 
 `anchor init` also adds `.anchor/` to `.git/info/exclude`, keeping the local SQLite index out of git without changing `.gitignore`.
 
