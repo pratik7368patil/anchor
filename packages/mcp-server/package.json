@@ -1,7 +1,21 @@
 {
   "name": "@pratik7368patil/anchor-mcp-server",
-  "version": "0.1.36",
-  "description": "Cursor MCP stdio server for Anchor.",
+  "version": "0.1.37",
+  "description": "Cursor MCP stdio server that serves local GitHub PR history, codebase, regression, and org-memory context.",
+  "keywords": [
+    "anchor",
+    "cursor",
+    "mcp",
+    "model-context-protocol",
+    "github",
+    "pull-requests",
+    "codebase-indexing",
+    "local-first",
+    "stdio",
+    "developer-tools",
+    "ai-coding",
+    "coding-agent"
+  ],
   "license": "MIT",
   "type": "module",
   "main": "./dist/server.js",

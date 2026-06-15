@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
-    "lint": "eslint src/**/*.ts",
+    "build": "vite build && tsx scripts/generate-static-seo.ts",
+    "lint": "eslint src/**/*.ts scripts/**/*.ts",
     "preview": "vite preview --host 0.0.0.0"
   },
   "devDependencies": {
