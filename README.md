@@ -1,12 +1,32 @@
 # Anchor
 
-Anchor is a local-first, Cursor-only MCP server that indexes a repository's merged GitHub pull request history and local codebase, then gives Cursor Agent concise historical and current-code context before edits.
+[![npm version](https://img.shields.io/npm/v/@pratik7368patil/anchor?color=5e6ad2)](https://www.npmjs.com/package/@pratik7368patil/anchor)
+[![npm downloads](https://img.shields.io/npm/dm/@pratik7368patil/anchor)](https://www.npmjs.com/package/@pratik7368patil/anchor)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![website](https://img.shields.io/badge/docs-anchor--mcp.netlify.app-5e6ad2)](https://anchor-mcp.netlify.app)
+[![GitHub Repo stars](https://img.shields.io/github/stars/pratik7368patil/anchor?style=social)](https://github.com/pratik7368patil/anchor)
 
-It helps Cursor notice past architecture decisions, current architecture patterns, constraints, rejected approaches, review comments, regressions, testing expectations, related tests, and file ownership signals from the repo's own history and code.
+Local-first repo memory for Cursor.
 
-Anchor is not a SaaS, does not create a dashboard, does not send CLI or MCP telemetry, and does not call any LLM API in the MVP.
+Anchor is a Cursor MCP server that indexes GitHub PR history, local code, tests, regressions, architecture patterns, team rules, and org repo relationships so AI coding agents can make safer code changes with evidence-backed context.
 
-Anchor is evidence-backed, not truth-backed: retrieved history includes confidence, current-code freshness, and a reliability gate so Cursor can see when evidence may be weak, stale, or only loosely matched to the requested file.
+```bash
+npx @pratik7368patil/anchor demo
+```
+
+![Anchor social preview](assets/marketing/anchor-thumbnail.png)
+
+## Why Developers Use Anchor
+
+- **Cursor MCP context before edits**: `anchor_get_context` gives Cursor concise, ranked, cited repo memory before non-trivial changes.
+- **GitHub PR history as evidence**: merged PR bodies, review comments, issue comments, commits, labels, and regressions become searchable local context.
+- **Local codebase indexing**: current files, symbols, imports, tests, architecture patterns, and test commands are indexed into SQLite.
+- **Org memory for AI agents**: allowlisted repos can be cloned locally and linked through imports, packages, API consumers, schemas, and regressions.
+- **No SaaS, no CLI telemetry**: indexes stay on your machine, GitHub access is read-only, and Anchor does not call remote LLM APIs.
+
+## What Makes Anchor Different
+
+Anchor complements code search and graph-only tools by combining **why** code changed with **what** code exists now. It returns PR citations, confidence, freshness, strict-mode filtering, relevant tests, regression memory, and cross-repo impact instead of dumping broad context into the prompt.
 
 ## Why Cursor Users Need It
 
@@ -17,6 +37,15 @@ anchor_get_context
 ```
 
 Cursor Agent should call this before non-trivial code changes.
+
+## Popular Guides
+
+- [Cursor MCP server](https://anchor-mcp.netlify.app/docs/cursor-mcp-server)
+- [GitHub PR history MCP](https://anchor-mcp.netlify.app/docs/github-pr-history-mcp)
+- [Local-first codebase indexing](https://anchor-mcp.netlify.app/docs/local-first-codebase-indexing)
+- [Org memory for AI agents](https://anchor-mcp.netlify.app/docs/org-memory-for-ai-agents)
+- [AI coding agent regression memory](https://anchor-mcp.netlify.app/docs/ai-coding-agent-regression-memory)
+- [Anchor vs code search and graph-only tools](https://anchor-mcp.netlify.app/docs/anchor-vs-code-search)
 
 ## Privacy Model
 

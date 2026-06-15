@@ -291,6 +291,7 @@ h1 {
 }
 
 .proof-chip,
+.use-case-card,
 .memory-row,
 .step,
 .workflow-grid > div,
@@ -307,6 +308,7 @@ h1 {
 }
 
 .proof-chip strong,
+.use-case-card strong,
 .trust-point strong,
 .memory-row strong,
 .step strong,
@@ -321,6 +323,7 @@ h1 {
 }
 
 .proof-chip span,
+.use-case-card span,
 .memory-row span:not(.mark),
 .step p,
 .workflow-grid p,
@@ -337,6 +340,37 @@ h1 {
   color: var(--quiet);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.use-case-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.use-case-card {
+  min-height: 180px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 18px;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.use-case-card:hover {
+  border-color: rgba(130, 143, 255, 0.36);
+  background: rgba(113, 112, 255, 0.055);
+  transform: translateY(-1px);
+}
+
+.use-case-card p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .hero-visual {
@@ -1488,6 +1522,33 @@ tr:last-child td {
   box-shadow: 0 0 16px rgba(130, 143, 255, 0.25);
 }
 
+.compact-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  margin: 10px 0 0;
+  list-style: none;
+}
+
+.compact-list li {
+  position: relative;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.compact-list li::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--doc-accent);
+}
+
 .safety-card {
   margin-top: 22px;
   overflow: hidden;
@@ -1848,6 +1909,7 @@ tr:last-child td {
   }
 
   .hero-proof,
+  .use-case-card-grid,
   .cta-strip,
   .quick-grid,
   .workflow-grid,

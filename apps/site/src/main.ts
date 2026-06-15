@@ -6,10 +6,15 @@ import {
   installCommand,
   mcpTools,
   repoUrl,
+  seoLandingPages,
+  seoPages,
+  siteUrl,
+  socialImageUrl,
   useCases,
   workflowRecipes,
   workflowCommand,
   type CommandOption,
+  type SeoMetadata,
   type TableItem,
 } from "./content";
 import "./styles.css";
@@ -85,6 +90,137 @@ function escapeHtml(value: string): string {
 function normalizePath(pathname: string): string {
   if (pathname !== "/" && pathname.endsWith("/")) return pathname.slice(0, -1);
   return pathname;
+}
+
+function seoForPath(pathname: string): SeoMetadata {
+  const normalized = normalizePath(pathname);
+  return seoPages[normalized] ?? seoPages["/docs"] ?? seoPages["/"];
+}
+
+function absoluteUrl(pathname: string): string {
+  return `${siteUrl}${pathname === "/" ? "/" : pathname}`;
+}
+
+function setHeadTag(selector: string, create: () => HTMLElement, value: string): void {
+  const element = document.head.querySelector<HTMLElement>(selector) ?? create();
+  if (!element.parentElement) document.head.appendChild(element);
+  if (element instanceof HTMLMetaElement) {
+    element.content = value;
+  } else if (element instanceof HTMLLinkElement) {
+    element.href = value;
+  }
+}
+
+function setMetaName(name: string, content: string): void {
+  setHeadTag(
+    `meta[name="${name}"]`,
+    () => {
+      const element = document.createElement("meta");
+      element.name = name;
+      return element;
+    },
+    content,
+  );
+}
+
+function setMetaProperty(property: string, content: string): void {
+  setHeadTag(
+    `meta[property="${property}"]`,
+    () => {
+      const element = document.createElement("meta");
+      element.setAttribute("property", property);
+      return element;
+    },
+    content,
+  );
+}
+
+function setCanonical(href: string): void {
+  setHeadTag(
+    'link[rel="canonical"]',
+    () => {
+      const element = document.createElement("link");
+      element.rel = "canonical";
+      return element;
+    },
+    href,
+  );
+}
+
+function setStructuredData(metadata: SeoMetadata, canonicalUrl: string): void {
+  const scriptId = "anchor-structured-data";
+  const existing = document.getElementById(scriptId);
+  const script =
+    existing instanceof HTMLScriptElement ? existing : document.createElement("script");
+  script.id = scriptId;
+  script.type = "application/ld+json";
+  script.textContent = JSON.stringify(buildStructuredData(metadata, canonicalUrl));
+  if (!script.parentElement) document.head.appendChild(script);
+}
+
+function buildStructuredData(metadata: SeoMetadata, canonicalUrl: string): Record<string, unknown> {
+  const software = {
+    "@type": "SoftwareApplication",
+    name: "Anchor",
+    applicationCategory: "DeveloperApplication",
+    operatingSystem: "macOS, Linux, Windows",
+    url: siteUrl,
+    codeRepository: repoUrl,
+    description:
+      "Local-first Cursor MCP server for GitHub PR history, codebase indexing, tests, regressions, and org memory.",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "USD",
+    },
+  };
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        name: "Anchor",
+        url: siteUrl,
+        description: seoPages["/"].description,
+      },
+      software,
+      {
+        "@type": metadata.ogType === "article" ? "TechArticle" : "WebPage",
+        name: metadata.title,
+        headline: metadata.title,
+        description: metadata.description,
+        url: canonicalUrl,
+        image: socialImageUrl,
+        isPartOf: {
+          "@type": "WebSite",
+          name: "Anchor",
+          url: siteUrl,
+        },
+      },
+    ],
+  };
+}
+
+function applySeo(pathname: string): void {
+  const metadata = seoForPath(pathname);
+  const canonicalUrl = absoluteUrl(metadata.path);
+  document.title = metadata.title;
+  setMetaName("description", metadata.description);
+  setMetaName("keywords", metadata.keywords.join(", "));
+  setMetaName("robots", "index,follow");
+  setCanonical(canonicalUrl);
+  setMetaProperty("og:title", metadata.title);
+  setMetaProperty("og:description", metadata.description);
+  setMetaProperty("og:type", metadata.ogType ?? "website");
+  setMetaProperty("og:url", canonicalUrl);
+  setMetaProperty("og:image", socialImageUrl);
+  setMetaProperty("og:site_name", "Anchor");
+  setMetaName("twitter:card", "summary_large_image");
+  setMetaName("twitter:title", metadata.title);
+  setMetaName("twitter:description", metadata.description);
+  setMetaName("twitter:image", socialImageUrl);
+  setStructuredData(metadata, canonicalUrl);
 }
 
 function readGoatCounterCode(): string {
@@ -297,6 +433,25 @@ function renderHome(): string {
           </div>
         </section>
 
+        <section class="section use-case-section fade-up" aria-labelledby="use-case-title">
+          <div class="section-heading">
+            <span class="section-label">Use cases</span>
+            <h2 id="use-case-title">Searchable guides for the work Anchor helps with.</h2>
+            <p class="section-intro">Anchor complements code search by adding merged PR history, current-code evidence, tests, regressions, team rules, and org memory to the context Cursor can use.</p>
+          </div>
+          <div class="use-case-card-grid">
+            ${seoLandingPages
+              .map(
+                (page) => `<a class="use-case-card" href="${page.path}" data-route>
+                  <span>Guide</span>
+                  <strong>${escapeHtml(page.title)}</strong>
+                  <p>${escapeHtml(page.description)}</p>
+                </a>`,
+              )
+              .join("")}
+          </div>
+        </section>
+
         <section class="section split-section" id="why" aria-labelledby="missing-layer-title">
           <div class="fade-up">
             <span class="section-label">01 / The missing layer</span>
@@ -424,6 +579,9 @@ function renderDocsSidebar(activePath: string): string {
 }
 
 function renderDocsPageContent(path: string): string {
+  const landingPage = seoLandingPages.find((page) => page.path === path);
+  if (landingPage) return renderSeoLandingPage(landingPage);
+
   switch (path) {
     case "/docs/quickstart":
       return renderQuickstartPage();
@@ -1019,6 +1177,55 @@ function renderUseCasesPage(): string {
       <span class="section-label">Guide</span>
       <h2>Use cases</h2>
       <ul class="use-case-list">${renderList(useCases)}</ul>
+      <h3>Popular search guides</h3>
+      <div class="docs-index-grid">
+        ${seoLandingPages
+          .map(
+            (page) => `<a class="mini-link-card" href="${page.path}" data-route>
+              <span>Use case</span>
+              <strong>${escapeHtml(page.title)}</strong>
+              <p>${escapeHtml(page.description)}</p>
+            </a>`,
+          )
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderSeoLandingPage(page: (typeof seoLandingPages)[number]): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Use case</span>
+      <h2>${escapeHtml(page.title)}</h2>
+      <p class="section-intro">${escapeHtml(page.description)}</p>
+      <div class="workflow-grid">
+        <div>
+          <strong>The problem</strong>
+          <p>${escapeHtml(page.problem)}</p>
+        </div>
+        <div>
+          <strong>How Anchor helps</strong>
+          <ul class="compact-list">
+            ${page.howAnchorHelps.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </div>
+      </div>
+      ${renderCodeBlock("Try it", `seo-${page.path.replace(/[^a-z0-9]+/gi, "-")}`, page.command, true)}
+      <div class="doc-callout">
+        <span aria-hidden="true">${renderShieldIcon()}</span>
+        <p>${escapeHtml(page.privacyNote)}</p>
+      </div>
+      <div class="engagement-panel">
+        <div>
+          <strong>Make Cursor use evidence before it edits</strong>
+          <p>Anchor complements code search by adding PR history, current-code evidence, tests, regressions, team rules, confidence, and freshness signals.</p>
+        </div>
+        <div class="engagement-actions">
+          <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="seo_demo_copy">Copy demo</button>
+          <a class="btn" href="${repoUrl}" data-track-event="seo_github_click">Open GitHub</a>
+        </div>
+      </div>
     </article>
   `;
 }
@@ -1432,6 +1639,7 @@ function render(): void {
   }
 
   const path = normalizePath(window.location.pathname);
+  applySeo(path);
   app.innerHTML = path.startsWith("/docs") ? renderDocsRoute(path) : renderHome();
   attachInteractions();
   void hydrateAdoptionStats();

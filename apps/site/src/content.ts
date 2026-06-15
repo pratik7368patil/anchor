@@ -34,6 +34,24 @@ export type DocsPage = {
   group: string;
 };
 
+export type SeoMetadata = {
+  path: string;
+  title: string;
+  description: string;
+  keywords: string[];
+  ogType?: "website" | "article";
+};
+
+export type SeoLandingPage = {
+  path: string;
+  title: string;
+  description: string;
+  problem: string;
+  howAnchorHelps: string[];
+  command: string;
+  privacyNote: string;
+};
+
 export type WorkflowRecipe = {
   title: string;
   useWhen: string;
@@ -42,6 +60,8 @@ export type WorkflowRecipe = {
 };
 
 export const repoUrl = "https://github.com/pratik7368patil/anchor";
+export const siteUrl = "https://anchor-mcp.netlify.app";
+export const socialImageUrl = `${siteUrl}/social-preview.png`;
 
 export const installCommand = `npm install -g @pratik7368patil/anchor
 gh auth login
@@ -1180,7 +1200,8 @@ export const commandDetails: Record<string, CommandDetail> = {
         name: "--output path",
         description: "Choose where the generated HTML impact report is written.",
         useWhen: "Use it when archiving impact snapshots alongside release notes.",
-        example: "anchor org impact --org my-org --strict --html --output /tmp/anchor-org-impact.html",
+        example:
+          "anchor org impact --org my-org --strict --html --output /tmp/anchor-org-impact.html",
       },
       jsonOption("anchor org impact --org my-org --json"),
     ],
@@ -1452,6 +1473,110 @@ export const useCases = [
   "Use strict mode for risky work so loose historical matches do not steer the agent.",
 ];
 
+export const seoLandingPages: SeoLandingPage[] = [
+  {
+    path: "/docs/cursor-mcp-server",
+    title: "Cursor MCP server",
+    description:
+      "Use Anchor as a local-first Cursor MCP server that gives agents PR history, codebase context, tests, and architecture evidence before edits.",
+    problem:
+      "Cursor can edit quickly, but it cannot remember every merged PR, review comment, regression, and local architecture pattern by default.",
+    howAnchorHelps: [
+      "Registers a local MCP stdio server that Cursor can run from .cursor/mcp.json.",
+      "Returns concise, sanitized, cited context through anchor_get_context before non-trivial edits.",
+      "Adds a Cursor rule that reminds agents to use evidence before risky changes.",
+    ],
+    command: "anchor init\nanchor index --limit 200\nanchor doctor",
+    privacyNote:
+      "Anchor runs locally, stores indexes in SQLite, and does not send CLI or MCP telemetry.",
+  },
+  {
+    path: "/docs/github-pr-history-mcp",
+    title: "GitHub PR history MCP",
+    description:
+      "Index merged GitHub pull request history locally and expose architecture decisions, constraints, regressions, and review evidence through MCP.",
+    problem:
+      "Important engineering context often lives in old PR descriptions, review comments, issue comments, labels, and commits where coding agents do not look.",
+    howAnchorHelps: [
+      "Fetches merged PR metadata with GitHub GraphQL and enriches patch details when available.",
+      "Extracts deterministic wisdom units for constraints, regressions, API contracts, tests, performance, and security notes.",
+      "Cites PR numbers, source types, authors, confidence, and freshness instead of treating history as truth.",
+    ],
+    command:
+      "anchor index --limit 200\nanchor index-all --concurrency 2\nanchor explain src/api/routes.ts",
+    privacyNote:
+      "GitHub auth is read-only and resolved from local env or gh auth; tokens are never written to config, logs, or SQLite.",
+  },
+  {
+    path: "/docs/local-first-codebase-indexing",
+    title: "Local-first codebase indexing",
+    description:
+      "Build a local SQLite codebase index for Cursor with files, chunks, symbols, tests, architecture patterns, and safe sanitized snippets.",
+    problem:
+      "Agents need current-code evidence, but sending the whole repo into every prompt is noisy, expensive, and often impossible.",
+    howAnchorHelps: [
+      "Indexes tracked and non-ignored local files while excluding generated, private, binary, and secret-like paths.",
+      "Stores sanitized chunks, symbols, imports, test links, and architecture components in local SQLite.",
+      "Ranks exact file and symbol evidence higher than loose text matches to keep context compact.",
+    ],
+    command:
+      "anchor index-code\nanchor architecture --file src/api/routes.ts\nanchor test-command src/api/routes.ts",
+    privacyNote:
+      "Code chunks are sanitized before storage and output; no SaaS, embeddings service, or remote LLM API is required.",
+  },
+  {
+    path: "/docs/org-memory-for-ai-agents",
+    title: "Org memory for AI agents",
+    description:
+      "Create explicit allowlisted organization memory across repos so AI coding agents can check cross-repo impact, API consumers, and shared-package risk.",
+    problem:
+      "A change in one repo can break API consumers, SDK wrappers, shared packages, or tests in another repo that a single-repo agent cannot see.",
+    howAnchorHelps: [
+      "Clones only allowlisted repos into ~/.anchor/orgs and indexes each repo locally.",
+      "Builds deterministic cross-repo edges from package dependencies, imports, API strings, schemas, tests, and PR evidence.",
+      "Surfaces impact checks through CLI and MCP before auth, access, API, schema, SDK, or shared-package changes.",
+    ],
+    command:
+      "anchor org init --org my-org\nanchor org add-repo my-org/backend-api --group backend\nanchor org add-repo my-org/frontend-app --group frontend\nanchor org sync --org my-org --no-graph\nanchor org graph --org my-org --open",
+    privacyNote:
+      "Org Memory is opt-in, local-only, read-only, and never scans every organization repo automatically.",
+  },
+  {
+    path: "/docs/ai-coding-agent-regression-memory",
+    title: "AI coding agent regression memory",
+    description:
+      "Help AI coding agents avoid repeating known regressions by retrieving revert, rollback, root-cause, hotfix, and incident evidence before edits.",
+    problem:
+      "A coding agent may make a change that looks correct locally but repeats an old production regression or rejected approach.",
+    howAnchorHelps: [
+      "Extracts regression memory from PR titles, bodies, labels, comments, review summaries, and commit messages.",
+      "Ranks regression evidence strongly when target files, symbols, or API contracts match the current task.",
+      "Adds strict mode so weak or stale matches do not over-guide risky changes.",
+    ],
+    command:
+      "anchor review --strict\nanchor explain src/auth/access.ts\nanchor org impact --org my-org --strict",
+    privacyNote:
+      "Regression evidence is sanitized, cited, and presented as evidence rather than instructions.",
+  },
+  {
+    path: "/docs/anchor-vs-code-search",
+    title: "Anchor vs code search and graph-only tools",
+    description:
+      "Understand how Anchor complements code search and code graphs with PR history, current-code evidence, tests, regressions, team rules, and MCP output.",
+    problem:
+      "Code search and graphs explain what exists now, but they usually miss why it exists, what broke before, and what reviewers asked the team not to change.",
+    howAnchorHelps: [
+      "Combines current-code indexing with merged PR history, review comments, regressions, tests, architecture patterns, and team rules.",
+      "Keeps output concise for agents instead of turning the repo into a human-only dashboard.",
+      "Uses confidence, freshness, strict mode, and citations so agents can avoid over-trusting weak evidence.",
+    ],
+    command:
+      "anchor explain src/api/routes.ts\nanchor architecture --map --format mermaid\nanchor org impact --org my-org --strict",
+    privacyNote:
+      "Anchor is deterministic and local-first by default; it does not require SaaS, telemetry, or remote embeddings.",
+  },
+];
+
 export const docsPages: DocsPage[] = [
   {
     path: "/docs",
@@ -1549,4 +1674,46 @@ export const docsPages: DocsPage[] = [
     description: "Where Anchor should become part of the team workflow.",
     group: "Safety",
   },
+  ...seoLandingPages.map((page) => ({
+    path: page.path,
+    title: page.title,
+    description: page.description,
+    group: "Use cases",
+  })),
 ];
+
+const baseSeoKeywords = [
+  "Anchor",
+  "Cursor MCP",
+  "Model Context Protocol",
+  "GitHub PR history",
+  "local-first",
+  "codebase indexing",
+  "AI coding agent",
+];
+
+export const seoPages: Record<string, SeoMetadata> = Object.fromEntries(
+  [
+    {
+      path: "/",
+      title: "Anchor - Local-first repo memory for Cursor",
+      description:
+        "Anchor is a local-first Cursor MCP server that indexes GitHub PR history, local code, tests, regressions, and org context before AI coding edits.",
+      keywords: [
+        ...baseSeoKeywords,
+        "Cursor AI",
+        "repo memory",
+        "AI code review",
+        "developer tools",
+      ],
+      ogType: "website" as const,
+    },
+    ...docsPages.map((page) => ({
+      path: page.path,
+      title: `${page.title} - Anchor Docs`,
+      description: page.description,
+      keywords: [...baseSeoKeywords, page.title, page.group],
+      ogType: "article" as const,
+    })),
+  ].map((page) => [page.path, page]),
+);

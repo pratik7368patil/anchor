@@ -1,6 +1,13 @@
 # Anchor
 
-Anchor is a local-first, Cursor-only MCP server that indexes merged GitHub pull request history plus the local codebase, then gives Cursor Agent concise context before code edits.
+[![npm version](https://img.shields.io/npm/v/@pratik7368patil/anchor?color=5e6ad2)](https://www.npmjs.com/package/@pratik7368patil/anchor)
+[![npm downloads](https://img.shields.io/npm/dm/@pratik7368patil/anchor)](https://www.npmjs.com/package/@pratik7368patil/anchor)
+[![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](../../LICENSE)
+[![docs](https://img.shields.io/badge/docs-anchor--mcp.netlify.app-5e6ad2)](https://anchor-mcp.netlify.app)
+
+Anchor is a local-first Cursor MCP server for GitHub PR history, codebase indexing, tests, regressions, architecture memory, and org-level AI coding agent context.
+
+It gives Cursor Agent concise, sanitized, evidence-backed context before code edits without SaaS, CLI telemetry, GitHub write access, or remote LLM calls.
 
 Install:
 
