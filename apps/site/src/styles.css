@@ -226,6 +226,10 @@ main {
   background: var(--accent-hover);
 }
 
+.btn.ghost {
+  background: transparent;
+}
+
 .btn svg {
   width: 15px;
   height: 15px;
@@ -238,12 +242,12 @@ main {
 }
 
 .hero {
-  min-height: calc(100svh - var(--header-h));
+  min-height: min(760px, calc(100svh - var(--header-h)));
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(560px, 1.1fr);
+  grid-template-columns: minmax(0, 0.92fr) minmax(480px, 1.08fr);
   align-items: center;
-  gap: 76px;
-  padding: 72px 0 42px;
+  gap: 72px;
+  padding: 76px 0 48px;
 }
 
 .hero-copy {
@@ -280,6 +284,22 @@ h1 {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 32px;
+}
+
+.hero-command {
+  width: fit-content;
+  max-width: 100%;
+  margin: 20px 0 0;
+  padding: 13px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: rgba(1, 1, 2, 0.4);
+}
+
+.hero-command code {
+  color: var(--text-soft);
+  font-size: 13px;
 }
 
 .hero-proof {
@@ -387,6 +407,139 @@ h1 {
     0 24px 80px rgba(0, 0, 0, 0.34);
 }
 
+.section-heading {
+  max-width: 760px;
+}
+
+.section-heading.slim {
+  max-width: 640px;
+}
+
+.section-heading h2 {
+  margin-top: 0;
+}
+
+.step-section,
+.value-section,
+.guide-links {
+  padding: 88px 0;
+}
+
+.step-grid,
+.value-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.step-card,
+.value-grid > div {
+  min-height: 190px;
+  padding: 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.step-card span {
+  display: inline-flex;
+  margin-bottom: 36px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.step-card strong,
+.value-grid strong {
+  display: block;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 590;
+}
+
+.step-card p,
+.value-grid p {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.value-section {
+  padding-top: 24px;
+}
+
+.privacy-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--border-subtle);
+}
+
+.privacy-strip > div {
+  min-height: 92px;
+  padding: 20px;
+  background: rgba(15, 16, 17, 0.94);
+}
+
+.privacy-strip span {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.3);
+}
+
+.privacy-strip strong {
+  display: block;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 510;
+}
+
+.guide-links {
+  padding-bottom: 36px;
+}
+
+.guide-links h2 {
+  max-width: 720px;
+}
+
+.guide-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.guide-link-row a {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  padding: 0 13px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.022);
+  font-size: 13px;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.guide-link-row a:hover {
+  border-color: rgba(130, 143, 255, 0.36);
+  background: rgba(113, 112, 255, 0.055);
+  color: var(--text);
+}
+
 .mock-window {
   position: relative;
   overflow: hidden;
@@ -419,6 +572,76 @@ h1 {
   height: 10px;
   border-radius: 50%;
   background: #34343a;
+}
+
+.simple-mock {
+  display: grid;
+  grid-template-columns: 0.82fr 1.18fr;
+  gap: 14px;
+  min-height: 360px;
+  padding: 16px;
+}
+
+.simple-source-list,
+.simple-context-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.024);
+}
+
+.simple-source-list {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  padding: 18px;
+}
+
+.simple-source-list span {
+  color: var(--quiet);
+  font-size: 12px;
+  font-weight: 510;
+}
+
+.simple-source-list strong {
+  display: block;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.024);
+  font-size: 13px;
+  font-weight: 510;
+}
+
+.simple-context-card {
+  display: grid;
+  align-content: center;
+  padding: 28px;
+  background: linear-gradient(180deg, rgba(113, 112, 255, 0.085), rgba(255, 255, 255, 0.025));
+}
+
+.simple-context-card h3 {
+  margin-top: 16px;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.08;
+  font-weight: 590;
+}
+
+.simple-context-card p {
+  margin-top: 16px;
+  color: var(--text-soft);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.simple-context-card small {
+  display: block;
+  margin-top: 18px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .mock-grid {
@@ -1812,6 +2035,15 @@ tr:last-child td {
     transform: none;
   }
 
+  .step-grid,
+  .value-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .privacy-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .split-section {
     grid-template-columns: 1fr;
     gap: 34px;
@@ -1896,11 +2128,22 @@ tr:last-child td {
 
   .hero {
     min-height: auto;
+    grid-template-columns: minmax(0, 1fr);
     padding: 48px 0 42px;
   }
 
+  .hero-copy,
+  .hero-visual,
+  .mock-window,
+  .simple-source-list,
+  .simple-context-card {
+    max-width: 100%;
+    min-width: 0;
+  }
+
   h1 {
-    font-size: 56px;
+    font-size: 48px;
+    overflow-wrap: anywhere;
   }
 
   h2,
@@ -1910,6 +2153,9 @@ tr:last-child td {
 
   .hero-proof,
   .use-case-card-grid,
+  .step-grid,
+  .value-grid,
+  .privacy-strip,
   .cta-strip,
   .quick-grid,
   .workflow-grid,
@@ -1924,6 +2170,27 @@ tr:last-child td {
   .mock-grid {
     grid-template-columns: 1fr;
     min-height: unset;
+  }
+
+  .simple-mock {
+    grid-template-columns: 1fr;
+    min-height: unset;
+    padding: 12px;
+  }
+
+  .simple-context-card {
+    min-height: 260px;
+    padding: 22px;
+  }
+
+  .simple-context-card .tag {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mock-titlebar span:last-child {
+    display: none;
   }
 
   .mock-grid::before,
@@ -1945,6 +2212,12 @@ tr:last-child td {
 
   .split-section {
     padding: 72px 0;
+  }
+
+  .step-section,
+  .value-section,
+  .guide-links {
+    padding: 64px 0;
   }
 
   .docs-shell {

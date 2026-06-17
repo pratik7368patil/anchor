@@ -1698,7 +1698,7 @@ export const seoPages: Record<string, SeoMetadata> = Object.fromEntries(
       path: "/",
       title: "Anchor - Local-first repo memory for Cursor",
       description:
-        "Anchor is a local-first Cursor MCP server that indexes GitHub PR history, local code, tests, regressions, and org context before AI coding edits.",
+        "Anchor gives Cursor local repo memory from GitHub PR history, code, tests, regressions, and org context before AI coding edits.",
       keywords: [
         ...baseSeoKeywords,
         "Cursor AI",
