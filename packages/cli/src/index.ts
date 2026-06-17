@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import type { WisdomCategory } from "@pratik7368patil/anchor-core";
-import { printInitResult, runInit } from "./commands/init.js";
+import { printInitResult, resolveInitTargets, runInit } from "./commands/init.js";
 import { runIndex, runIndexCode } from "./commands/index.js";
 import { runSync } from "./commands/sync.js";
 import { runDoctorCommand } from "./commands/doctor.js";
@@ -15,6 +15,7 @@ import { printArchitecture, runArchitecture } from "./commands/architecture.js";
 import { printHealth, runHealth } from "./commands/health.js";
 import { printDemo, runDemo } from "./commands/demo.js";
 import { printPrompts, runPrompts } from "./commands/prompts.js";
+import { printContext, runContext } from "./commands/context.js";
 import { printPlan, runPlan } from "./commands/plan.js";
 import { printTestCommand, runTestCommand } from "./commands/test-command.js";
 import {
@@ -137,6 +138,11 @@ function parseFeedbackRatingOption(value: string): "useful" | "not-useful" {
   throw new Error("Invalid feedback rating. Use useful or not-useful.");
 }
 
+function parseInitScopeOption(value: string): "project" | "user" {
+  if (value === "project" || value === "user") return value;
+  throw new Error("Invalid init scope. Use project or user.");
+}
+
 function readPackageVersion(): string {
   try {
     const packageJsonPath = path.resolve(
@@ -154,14 +160,18 @@ function readPackageVersion(): string {
 
 program
   .name("anchor")
-  .description("Anchor: local-first Cursor MCP context from GitHub PR history")
+  .description("Anchor: local-first repo memory for AI coding agents")
   .version(readPackageVersion());
 
 program
   .command("init")
-  .description("Configure Cursor to run Anchor for this repository")
-  .action(() => {
-    const result = runInit(process.cwd());
+  .description("Configure Anchor for one or more AI coding agents")
+  .option("--target <targets>", "Comma-separated targets: cursor,claude-code,codex,vscode,antigravity,generic")
+  .option("--all-targets", "Configure every supported target where safe")
+  .option("--scope <scope>", "Configuration scope: project or user", parseInitScopeOption, "project")
+  .action(async (options) => {
+    const targets = await resolveInitTargets(options);
+    const result = runInit(process.cwd(), { targets, scope: options.scope });
     printInitResult(result);
   });
 
@@ -177,10 +187,26 @@ program
 
 program
   .command("prompts")
-  .description("Print Cursor-ready prompts for common Anchor workflows")
+  .description("Print agent-ready prompts for common Anchor workflows")
+  .option("--target <target>", "Prompt target: cursor,claude-code,codex,vscode,antigravity,generic")
   .option("--json", "Print prompts as JSON")
   .action((options) => {
-    printPrompts(runPrompts(), options);
+    printPrompts(runPrompts(options), options);
+  });
+
+program
+  .command("context")
+  .description("Return Anchor context from the CLI for agents without MCP")
+  .argument("<task>", "Task to gather context for")
+  .option("--file <path>", "Target file", collectOption, [])
+  .option("--symbol <name>", "Target symbol", collectOption, [])
+  .option("--diff-file <path>", "Read current diff from a file")
+  .option("--strict", "Use strict non-stale evidence filtering")
+  .option("--min-confidence <level>", "Minimum confidence: strong, moderate, or weak", parseConfidenceOption)
+  .option("--max-results <number>", "Maximum results", parseIntegerOption)
+  .option("--json", "Print structured context as JSON")
+  .action((task, options) => {
+    printContext(runContext(process.cwd(), task, options), options);
   });
 
 program
@@ -415,9 +441,10 @@ rules
 
 program
   .command("doctor")
-  .description("Check local Anchor, Cursor, GitHub, and SQLite setup")
-  .action(async () => {
-    const ok = await runDoctorCommand(process.cwd());
+  .description("Check local Anchor, AI agent, GitHub, and SQLite setup")
+  .option("--target <targets>", "Comma-separated targets to check")
+  .action(async (options) => {
+    const ok = await runDoctorCommand(process.cwd(), options);
     if (!ok) process.exitCode = 1;
   });
 

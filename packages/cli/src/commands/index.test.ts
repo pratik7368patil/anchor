@@ -10,6 +10,8 @@ import { runDemo } from "./demo.js";
 import { runExplain } from "./explain.js";
 import { runHealth } from "./health.js";
 import { runIndexCode } from "./index.js";
+import { runContext } from "./context.js";
+import { parseInitTargets, resolveInitTargets, runInit } from "./init.js";
 import { runPlan } from "./plan.js";
 import { runPrompts } from "./prompts.js";
 import { runReview } from "./review.js";
@@ -67,10 +69,32 @@ describe("demo and prompts commands", () => {
     expect(fs.existsSync(path.join(demoPath, ".anchor", "index.sqlite"))).toBe(true);
   });
 
-  it("prints reusable Cursor prompts", () => {
-    const prompts = runPrompts();
+  it("prints reusable agent-specific prompts", () => {
+    const prompts = runPrompts({ target: "codex" });
     expect(prompts.map((prompt) => prompt.id)).toContain("before_edit");
     expect(prompts.map((prompt) => prompt.id)).toContain("review_diff");
+    expect(prompts[0]?.prompt).toContain("Codex");
+  });
+
+  it("requires targets for non-interactive init and configures selected targets", async () => {
+    const input = new PassThrough() as NodeJS.ReadStream;
+    const output = new PassThrough() as NodeJS.WriteStream;
+    input.isTTY = false;
+    output.isTTY = false;
+
+    await expect(resolveInitTargets({}, input, output)).rejects.toThrow("--target");
+    expect(parseInitTargets({ target: "cursor,codex" })).toEqual(["cursor", "codex"]);
+
+    const cwd = tempDir();
+    execFileSync("git", ["init"], { cwd, stdio: "ignore" });
+    execFileSync("git", ["remote", "add", "origin", "git@github.com:owner/repo.git"], {
+      cwd,
+      stdio: "ignore",
+    });
+    const result = runInit(cwd, { targets: ["cursor", "codex"], scope: "project" });
+    expect(result.targets.map((target) => target.target)).toEqual(["cursor", "codex"]);
+    expect(fs.existsSync(path.join(cwd, ".cursor", "mcp.json"))).toBe(true);
+    expect(fs.existsSync(path.join(cwd, ".codex", "config.toml"))).toBe(true);
   });
 });
 
@@ -100,6 +124,13 @@ describe("index-code command", () => {
     expect(runExplain(cwd, "src/index.ts", { share: true }).markdown).toContain(
       "# Anchor File Brief",
     );
+    const context = runContext(cwd, "change local context", {
+      file: ["src/index.ts"],
+      symbol: ["localContext"],
+      json: true,
+    });
+    expect(context.markdown).toContain("# Anchor Context");
+    expect(JSON.stringify(context)).not.toContain("ignore previous instructions");
   });
 });
 

@@ -79,7 +79,7 @@ function renderStaticFallback(routePath: string): string {
     : `<pre><code>npx @pratik7368patil/anchor demo</code></pre>`;
   const bullets = landing?.howAnchorHelps ?? [
     "Indexes merged GitHub PR history and current local code.",
-    "Returns concise MCP context for Cursor before edits.",
+    "Returns concise MCP context for AI coding agents before edits.",
     "Keeps indexes local, sanitized, read-only, and evidence-backed.",
   ];
 
@@ -131,7 +131,7 @@ function buildStructuredData(routePath: string): Record<string, unknown> {
         url: siteUrl,
         codeRepository: "https://github.com/pratik7368patil/anchor",
         description:
-          "Local-first Cursor MCP server for GitHub PR history, codebase indexing, tests, regressions, and org memory.",
+          "Local-first MCP server for AI coding agents, GitHub PR history, codebase indexing, tests, regressions, and org memory.",
         offers: {
           "@type": "Offer",
           price: "0",

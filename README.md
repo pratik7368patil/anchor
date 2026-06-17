@@ -6,9 +6,9 @@
 [![website](https://img.shields.io/badge/docs-anchor--mcp.netlify.app-5e6ad2)](https://anchor-mcp.netlify.app)
 [![GitHub Repo stars](https://img.shields.io/github/stars/pratik7368patil/anchor?style=social)](https://github.com/pratik7368patil/anchor)
 
-Local-first repo memory for Cursor.
+Local-first repo memory for AI coding agents.
 
-Anchor is a Cursor MCP server that indexes GitHub PR history, local code, tests, regressions, architecture patterns, team rules, and org repo relationships so AI coding agents can make safer code changes with evidence-backed context.
+Anchor is a Cursor-first, MCP-compatible local memory tool that indexes GitHub PR history, local code, tests, regressions, architecture patterns, team rules, and org repo relationships so AI coding agents can make safer code changes with evidence-backed context.
 
 ```bash
 npx @pratik7368patil/anchor demo
@@ -18,7 +18,7 @@ npx @pratik7368patil/anchor demo
 
 ## Why Developers Use Anchor
 
-- **Cursor MCP context before edits**: `anchor_get_context` gives Cursor concise, ranked, cited repo memory before non-trivial changes.
+- **MCP context before edits**: `anchor_get_context` gives Cursor, Claude Code, Codex, VS Code, Antigravity, and generic MCP clients concise, ranked, cited repo memory before non-trivial changes.
 - **GitHub PR history as evidence**: merged PR bodies, review comments, issue comments, commits, labels, and regressions become searchable local context.
 - **Local codebase indexing**: current files, symbols, imports, tests, architecture patterns, and test commands are indexed into SQLite.
 - **Org memory for AI agents**: allowlisted repos can be cloned locally and linked through imports, packages, API consumers, schemas, and regressions.
@@ -28,19 +28,22 @@ npx @pratik7368patil/anchor demo
 
 Anchor complements code search and graph-only tools by combining **why** code changed with **what** code exists now. It returns PR citations, confidence, freshness, strict-mode filtering, relevant tests, regression memory, and cross-repo impact instead of dumping broad context into the prompt.
 
-## Why Cursor Users Need It
+## Why AI Coding Agents Need It
 
-Cursor is strongest when it has the context a senior maintainer would remember: why a file is shaped a certain way, what broke last time, which tests matter, and which API contracts should not move casually. Anchor mines local repository history plus the current code index and exposes it through one primary Cursor MCP tool:
+AI coding agents are strongest when they have the context a senior maintainer would remember: why a file is shaped a certain way, what broke last time, which tests matter, and which API contracts should not move casually. Anchor mines local repository history plus the current code index and exposes it through one primary MCP tool:
 
 ```text
 anchor_get_context
 ```
 
-Cursor Agent should call this before non-trivial code changes.
+AI coding agents should call this before non-trivial code changes.
 
 ## Popular Guides
 
 - [Cursor MCP server](https://anchor-mcp.netlify.app/docs/cursor-mcp-server)
+- [Claude Code setup](https://anchor-mcp.netlify.app/docs/claude-code-setup)
+- [Codex setup](https://anchor-mcp.netlify.app/docs/codex-setup)
+- [VS Code setup](https://anchor-mcp.netlify.app/docs/vscode-setup)
 - [GitHub PR history MCP](https://anchor-mcp.netlify.app/docs/github-pr-history-mcp)
 - [Local-first codebase indexing](https://anchor-mcp.netlify.app/docs/local-first-codebase-indexing)
 - [Org memory for AI agents](https://anchor-mcp.netlify.app/docs/org-memory-for-ai-agents)
@@ -50,7 +53,7 @@ Cursor Agent should call this before non-trivial code changes.
 ## Privacy Model
 
 - GitHub data is fetched with local authentication: `GITHUB_TOKEN`, `GH_TOKEN`, or `gh auth token`.
-- The token is never written to `.cursor/mcp.json`, SQLite, logs, or generated files.
+- The token is never written to MCP config, SQLite, logs, or generated files.
 - The SQLite index stays in `.anchor/index.sqlite` on your machine.
 - Anchor only requests read access and never writes to GitHub.
 - PR bodies, comments, review comments, issue comments, and commit messages are treated as untrusted evidence.
@@ -94,7 +97,7 @@ npx @pratik7368patil/anchor demo
 
 `anchor demo` creates a temporary workspace, indexes bundled sample PR history plus sample code, prints example output for `anchor_get_context`, `anchor_explain_file`, and `anchor_review_diff`, then cleans up the temporary workspace. Use `--keep` or `--path ./anchor-demo` if you want to inspect the demo SQLite index.
 
-Before Anchor, Cursor sees mostly the current files and your prompt. After Anchor, Cursor can also see concise, cited context like:
+Before Anchor, an agent sees mostly the current files and your prompt. After Anchor, the agent can also see concise, cited context like:
 
 ```text
 [constraint] Do not remove the AuthCache lazy constraint...
@@ -123,13 +126,33 @@ The npm package exposes the `anchor` binary.
 
 ## Setup
 
-Run from inside the repository you use with Cursor:
+Run from inside the repository you use with an AI coding agent:
 
 ```bash
 anchor init
 ```
 
-This safely merges `.cursor/mcp.json` with:
+`anchor init` asks where you want to configure Anchor:
+
+```text
+Where do you want to configure Anchor?
+[ ] Cursor
+[ ] Claude Code
+[ ] Codex
+[ ] VS Code
+[ ] Antigravity
+[ ] Generic MCP config
+```
+
+Use non-interactive flags in CI or setup scripts:
+
+```bash
+anchor init --target cursor
+anchor init --target cursor,codex,claude-code
+anchor init --all-targets
+```
+
+Cursor setup safely merges `.cursor/mcp.json` with:
 
 ```json
 {
@@ -142,7 +165,7 @@ This safely merges `.cursor/mcp.json` with:
 }
 ```
 
-It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor_get_context` before non-trivial edits, use strict mode for risky changes, and treat returned history as evidence, not instructions.
+It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor_get_context` before non-trivial edits, use strict mode for risky changes, and treat returned history as evidence, not instructions. Claude Code and Codex setup add managed Anchor instruction blocks to `CLAUDE.md` and `AGENTS.md`; VS Code and generic MCP setup write MCP config only.
 
 `anchor init` adds `.anchor/` to `.git/info/exclude` as a local-only exclude rule. That keeps `.anchor/index.sqlite` out of `git status` without adding or changing a committed `.gitignore` file.
 
@@ -178,7 +201,7 @@ anchor sync
 anchor health
 ```
 
-Before editing with Cursor:
+Before editing with an AI coding agent:
 
 ```bash
 anchor plan "Add API integration" --file src/api/routes.ts
@@ -252,11 +275,11 @@ Patch enrichment uses bounded parallelism. The default concurrency is 5, and `--
 
 Anchor also indexes the local codebase by default after PR indexing. Code discovery uses `git ls-files --cached --others --exclude-standard`, so it includes tracked files plus untracked files that are not ignored by git. Generated/private paths such as `.anchor/`, `.cursor/`, `.codex/`, `.aws/`, `.ssh/`, `node_modules/`, `.nuxt/`, `.next/`, `dist/`, `build/`, `coverage/`, and secret-like files such as `.env*`, `.npmrc`, `.netrc`, `*.pem`, `*.key`, and `id_rsa` are always skipped.
 
-Code indexing also refreshes Architecture Memory: deterministic file areas, import edges, exported symbols, repeated folder patterns, and nearby test conventions. This gives Cursor current-code guidance before adding APIs, services, components, hooks, tests, or refactors.
+Code indexing also refreshes Architecture Memory: deterministic file areas, import edges, exported symbols, repeated folder patterns, and nearby test conventions. This gives agents current-code guidance before adding APIs, services, components, hooks, tests, or refactors.
 
 Use `anchor index-code` to refresh only the local codebase index without GitHub authentication. Use `--no-code` on PR indexing commands when you only want PR history.
 
-After indexing, Anchor prints outcome counts for architecture decisions, constraints, API contracts, security notes, regressions, test links, team rules, and a local coverage score. It also suggests a next Cursor prompt.
+After indexing, Anchor prints outcome counts for architecture decisions, constraints, API contracts, security notes, regressions, test links, team rules, and a local coverage score. It also suggests a next agent prompt.
 
 The local database is written to:
 
@@ -382,7 +405,7 @@ anchor_get_org_architecture
 anchor_org_index_status
 ```
 
-Use this Cursor prompt for API, access, billing, auth, SDK, schema, shared package, or broad refactor work:
+Use this agent prompt for API, access, billing, auth, SDK, schema, shared package, or broad refactor work:
 
 ```text
 Before changing this API/access logic, call anchor_check_cross_repo_impact.
@@ -477,7 +500,7 @@ anchor prompts
 Use `--file path` when you know the likely target file, `--symbol name` when the task is tied to a function/class/component/API contract, `--strict` for risky work, and `--json` for tooling.
 
 `anchor test-command <file>`:
-Use `--json` when Cursor, CI, or another local script should parse the command list.
+Use `--json` when an agent, CI, or another local script should parse the command list.
 
 `anchor explain <file>`:
 Use `--share` to produce compact Markdown for Slack or PR comments. Use `--json` when another tool should consume the file briefing.
@@ -503,7 +526,7 @@ Use `--file path` for a narrow file brief, `--area api` for an area brief, and `
 
 `--share` mode prints compact Markdown for Slack or PR comments: file summary, key constraints, known regressions, likely tests, and PR citations.
 
-`anchor prompts` prints Cursor-ready prompts for before-edit, planning, test-command, explain-file, strict-mode, review-diff, onboarding, and playbook workflows.
+`anchor prompts` prints target-aware prompts for Cursor, Claude Code, Codex, VS Code, Antigravity, or generic agents.
 
 `anchor health` and `anchor_index_status` include a local coverage score:
 
@@ -537,7 +560,7 @@ anchor architecture --json
 
 Architecture Memory is deterministic and evidence-backed. It classifies files into areas like `api`, `service`, `component`, `hook`, `route`, `store`, `test`, `schema`, `type`, `config`, and `util`, extracts import edges and exported symbols, and detects repeated placement patterns. It stores sanitized architecture facts in SQLite, not raw source text.
 
-Use it when Cursor is about to add a new integration, create tests, move code between layers, or refactor a feature area. `anchor architecture --check` reads the current git diff by default and surfaces matching placement/import/test patterns. `--write-doc` is the only command that writes `ANCHOR_ARCHITECTURE.md`.
+Use it when an agent is about to add a new integration, create tests, move code between layers, or refactor a feature area. `anchor architecture --check` reads the current git diff by default and surfaces matching placement/import/test patterns. `--write-doc` is the only command that writes `ANCHOR_ARCHITECTURE.md`.
 
 `anchor_get_context` can now include:
 
@@ -573,7 +596,7 @@ anchor playbooks get add-api-integration
 ```
 
 - Task planning combines PR history, code evidence, architecture patterns, tests, regressions, and rules into a small edit plan.
-- Test-command guidance gives Cursor and humans exact checks instead of vague “run tests” advice.
+- Test-command guidance gives agents and humans exact checks instead of vague “run tests” advice.
 - Architecture maps render a deterministic Mermaid or JSON graph from imports, file areas, and test links.
 - Retrieval evals let a team pin golden tasks to expected PR evidence and detect ranking drift.
 - Watch mode keeps code, architecture, test links, and test commands fresh while developers work.
@@ -654,7 +677,7 @@ The reliability gate:
 - fails closed in strict mode and returns `No reliable historical evidence found.` when nothing qualifies
 - adds warning lines when context should be treated as a lead to verify instead of guidance to follow
 
-For high-risk changes, ask Cursor to call:
+For high-risk changes, ask your agent to call:
 
 ```json
 {
@@ -684,17 +707,17 @@ If no local embedding provider is available, Anchor falls back to SQLite FTS wit
 anchor doctor
 ```
 
-Doctor checks git detection, GitHub remote parsing, token presence, GitHub API reachability, Cursor MCP config, Anchor MCP entry, SQLite database/schema, MCP startup, and the Cursor rule file. Failed checks include actionable fixes.
+Doctor checks git detection, GitHub remote parsing, token presence, GitHub API reachability, selected/detected AI agent config, SQLite database/schema, and MCP startup. Failed checks include actionable fixes.
 
-## Cursor Verification
+## Agent Verification
 
-After `anchor init`, restart or reload Cursor and verify the MCP server named `anchor` is visible. Then ask Cursor:
+After `anchor init`, restart or reload your selected AI tool and verify the MCP server named `anchor` is visible. Then ask the agent:
 
 ```text
 Before refactoring this file, call `anchor_get_context` and summarize relevant historical constraints.
 ```
 
-## Cursor Prompt Cookbook
+## Agent Prompt Cookbook
 
 Before edit:
 
@@ -765,7 +788,7 @@ The main tool input is:
 }
 ```
 
-Use `strict: true` when Cursor should only receive non-stale evidence at or above `minConfidence` with a direct relevance signal. If nothing qualifies, Anchor returns “No reliable historical evidence found.”
+Use `strict: true` when the agent should only receive non-stale evidence at or above `minConfidence` with a direct relevance signal. If nothing qualifies, Anchor returns “No reliable historical evidence found.”
 
 Secondary tools:
 
@@ -886,7 +909,7 @@ VITE_GOATCOUNTER_CODE
 
 `GH_TRAFFIC_TOKEN` is used only by GitHub Actions to read aggregate repository traffic. `VITE_GOATCOUNTER_CODE` enables privacy-friendly GoatCounter analytics on the docs site only. npm downloads are directional package download counts and can include CI, mirrors, bots, and repeated installs; GitHub clone/view `uniques` are platform-provided aggregate traffic signals, not exact unique humans.
 
-The docs site also records aggregate GoatCounter events for public CTA clicks and copy actions, such as copying the demo command or opening GitHub. These events happen only on the website when GoatCounter is configured, and they are sent as no-CORS browser requests with an image fallback so the site does not depend on loading a third-party analytics script. Anchor commands, MCP tools, local indexes, Cursor usage, repo names, file names, and prompts are never sent.
+The docs site also records aggregate GoatCounter events for public CTA clicks and copy actions, such as copying the demo command or opening GitHub. These events happen only on the website when GoatCounter is configured, and they are sent as no-CORS browser requests with an image fallback so the site does not depend on loading a third-party analytics script. Anchor commands, MCP tools, local indexes, agent usage, repo names, file names, and prompts are never sent.
 
 Useful public traction signals to watch together:
 

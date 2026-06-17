@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import type { Octokit } from "@octokit/rest";
 import { checkSchema, defaultDatabasePath, openAnchorDatabase } from "./db/database.js";
 import type { DoctorCheck, DoctorReport } from "./types.js";
@@ -7,6 +6,11 @@ import { createGitHubClient } from "./github/client.js";
 import { createGitHubGraphQLRequester } from "./github/graphql-client.js";
 import { githubAuthFixMessage, resolveGitHubToken } from "./utils/github-token.js";
 import { detectGitHubRepo, detectGitRoot } from "./utils/git.js";
+import {
+  type AnchorAgentTarget,
+  checkAgentTargetConfig,
+  detectConfiguredAgentTargets,
+} from "./utils/agent-config.js";
 
 export type DoctorOptions = {
   cwd: string;
@@ -14,6 +18,7 @@ export type DoctorOptions = {
   githubClientFactory?: (token: string) => Pick<Octokit, "repos">;
   githubGraphQLCheck?: (token: string) => Promise<boolean> | boolean;
   mcpServerCheck?: () => Promise<boolean> | boolean;
+  targets?: AnchorAgentTarget[];
 };
 
 function check(name: string, ok: boolean, message: string, fix?: string): DoctorCheck {
@@ -133,43 +138,6 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     );
   }
 
-  const cursorConfigPath = path.join(gitRoot ?? cwd, ".cursor", "mcp.json");
-  let cursorConfig: unknown;
-  let cursorConfigValid = false;
-  if (fs.existsSync(cursorConfigPath)) {
-    try {
-      cursorConfig = JSON.parse(fs.readFileSync(cursorConfigPath, "utf8")) as unknown;
-      cursorConfigValid = true;
-    } catch {
-      cursorConfigValid = false;
-    }
-  }
-  checks.push(
-    check(
-      ".cursor/mcp.json valid",
-      fs.existsSync(cursorConfigPath) && cursorConfigValid,
-      cursorConfigValid ? ".cursor/mcp.json exists and is valid JSON." : ".cursor/mcp.json is missing or invalid.",
-      "Run anchor init. If the file is malformed, fix the JSON and rerun anchor init.",
-    ),
-  );
-
-  const hasAnchorEntry =
-    cursorConfigValid &&
-    Boolean(
-      cursorConfig &&
-        typeof cursorConfig === "object" &&
-        "mcpServers" in cursorConfig &&
-        (cursorConfig as { mcpServers?: Record<string, unknown> }).mcpServers?.anchor,
-    );
-  checks.push(
-    check(
-      "Anchor MCP entry exists",
-      hasAnchorEntry,
-      hasAnchorEntry ? "Anchor MCP entry is configured." : "Anchor MCP entry is missing.",
-      "Run anchor init to merge the Anchor MCP server into .cursor/mcp.json.",
-    ),
-  );
-
   const dbPath = defaultDatabasePath(gitRoot ?? cwd);
   const dbExists = fs.existsSync(dbPath);
   checks.push(
@@ -218,15 +186,29 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     ),
   );
 
-  const rulePath = path.join(gitRoot ?? cwd, ".cursor", "rules", "anchor.mdc");
-  checks.push(
-    check(
-      "Cursor rule file exists",
-      fs.existsSync(rulePath),
-      fs.existsSync(rulePath) ? "Cursor rule file exists." : "Cursor rule file is missing.",
-      "Run anchor init to create .cursor/rules/anchor.mdc.",
-    ),
-  );
+  const targetCwd = gitRoot ?? cwd;
+  const selectedTargets = options.targets ?? detectConfiguredAgentTargets(targetCwd);
+  if (selectedTargets.length === 0) {
+    checks.push(
+      check(
+        "AI agent config detected",
+        true,
+        "No Anchor agent config detected. Run anchor init to configure Cursor, Claude Code, Codex, VS Code, Antigravity, or a generic MCP client.",
+      ),
+    );
+  } else {
+    for (const target of selectedTargets) {
+      const targetCheck = checkAgentTargetConfig(targetCwd, target);
+      checks.push(
+        check(
+          `${targetCheck.label} config`,
+          targetCheck.ok,
+          targetCheck.message,
+          targetCheck.fix,
+        ),
+      );
+    }
+  }
 
   return { ok: checks.every((item) => item.ok), checks };
 }

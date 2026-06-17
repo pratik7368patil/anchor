@@ -1,10 +1,14 @@
 {
   "name": "@pratik7368patil/anchor-mcp-server",
-  "version": "0.1.37",
-  "description": "Cursor MCP stdio server that serves local GitHub PR history, codebase, regression, and org-memory context.",
+  "version": "0.1.38",
+  "description": "MCP stdio server that serves local GitHub PR history, codebase, regression, and org-memory context to AI coding agents.",
   "keywords": [
     "anchor",
     "cursor",
+    "claude-code",
+    "codex",
+    "vscode",
+    "antigravity",
     "mcp",
     "model-context-protocol",
     "github",

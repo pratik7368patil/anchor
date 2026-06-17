@@ -7,7 +7,7 @@ Use this checklist after merging SEO/docs changes. These settings are manual bec
 Description:
 
 ```text
-Local-first MCP server for Cursor that indexes GitHub PR history, codebase context, tests, regressions, and org memory.
+Local-first MCP server for AI coding agents that indexes GitHub PR history, codebase context, tests, regressions, and org memory.
 ```
 
 Website:
@@ -25,6 +25,11 @@ mcp
 model-context-protocol
 cursor
 cursor-ai
+claude-code
+codex
+vscode
+antigravity
+mcp-server
 ai-coding
 coding-agent
 developer-tools
@@ -51,7 +56,7 @@ assets/marketing/anchor-thumbnail.png
 Suggested alt/working copy:
 
 ```text
-Anchor - local-first repo memory for Cursor. PR history, codebase context, tests, regressions, and org graph.
+Anchor - local-first repo memory for AI coding agents. PR history, codebase context, tests, regressions, and org graph.
 ```
 
 ## README First Screen
@@ -59,7 +64,7 @@ Anchor - local-first repo memory for Cursor. PR history, codebase context, tests
 Confirm the top of the repository shows:
 
 - npm install or demo command
-- Cursor MCP positioning
+- AI coding agent MCP positioning
 - local-first/no telemetry claim
 - visual preview
 - GitHub star/demo/docs calls to action
@@ -67,9 +72,12 @@ Confirm the top of the repository shows:
 ## Search Queries To Monitor
 
 - Cursor MCP server
+- Claude Code MCP setup
+- Codex MCP setup
+- VS Code MCP setup
 - GitHub PR history MCP
 - local-first MCP server
-- codebase indexing for Cursor
+- codebase indexing for AI coding agents
 - AI coding agent repo memory
 - AI coding agent regression memory
 - Model Context Protocol GitHub history

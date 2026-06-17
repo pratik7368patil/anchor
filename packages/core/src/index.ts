@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./utils/git.js";
 export * from "./utils/cursor.js";
+export * from "./utils/agent-config.js";
 export * from "./utils/github-token.js";
 export * from "./utils/text.js";
 export * from "./security/redact-secrets.js";
