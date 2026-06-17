@@ -322,15 +322,14 @@ function shouldSkipGoatCounter(): boolean {
 
 function renderShell(content: string, activeArea: "home" | "docs"): string {
   const productHref = activeArea === "home" ? "#product" : "/";
-  const whyHref = activeArea === "home" ? "#why" : "/#why";
+  const howHref = activeArea === "home" ? "#how-it-works" : "/#how-it-works";
   const privacyHref = activeArea === "home" ? "#privacy" : "/docs/privacy";
   const headerNav =
     activeArea === "home"
       ? `<div class="nav-links" id="nav-links">
           <a href="${productHref}">Product</a>
-          <a href="${whyHref}">Why Anchor</a>
+          <a href="${howHref}">How it works</a>
           <a href="/docs" data-route>Docs</a>
-          <a href="/docs/cli" data-route>CLI</a>
           <a href="${privacyHref}" data-route>Privacy</a>
         </div>`
       : "";
@@ -379,32 +378,15 @@ function renderHome(): string {
       <main id="top">
         <section class="section hero" id="product" aria-labelledby="hero-title">
           <div class="hero-copy fade-up">
-            <h1 id="hero-title">Give Cursor the repo memory your team already earned.</h1>
-            <p>Anchor indexes merged GitHub PR history and local code on your machine, then gives Cursor Agent the constraints, regressions, tests, and team rules it should know before editing code.</p>
+            <span class="section-label">Local repo memory for Cursor</span>
+            <h1 id="hero-title">Local repo memory for Cursor.</h1>
+            <p>Anchor indexes PR history, code, tests, regressions, and org relationships locally, then returns concise evidence before Cursor edits.</p>
             <div class="hero-actions">
-              <a class="btn primary" href="/docs/quickstart" data-route data-track-event="hero_quickstart_click">
-                Start with the docs
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M5 12h13m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-              </a>
-              <button class="btn" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="hero_demo_copy">Copy demo command</button>
-              <a class="btn" href="${repoUrl}" data-track-event="hero_github_click">View GitHub</a>
+              <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="hero_demo_copy">Copy demo command</button>
+              <a class="btn" href="/docs/quickstart" data-route data-track-event="hero_quickstart_click">Read setup</a>
+              <a class="btn ghost" href="${repoUrl}" data-track-event="hero_github_click">GitHub</a>
             </div>
-            <div class="hero-proof" aria-label="Anchor guarantees">
-              <div class="proof-chip">
-                <strong>Local-first context</strong>
-                <span>History and code evidence stay in a repo-local SQLite index.</span>
-              </div>
-              <div class="proof-chip">
-                <strong>Cursor-only MCP</strong>
-                <span>Built to brief Cursor Agent before non-trivial edits.</span>
-              </div>
-              <div class="proof-chip">
-                <strong>Evidence, not vibes</strong>
-                <span>Context cites PRs, review comments, files, tests, and rules.</span>
-              </div>
-            </div>
+            <pre class="hero-command"><code>npx @pratik7368patil/anchor demo</code></pre>
           </div>
 
           <div class="hero-visual fade-up" aria-label="Anchor local workflow product mockup">
@@ -412,105 +394,78 @@ function renderHome(): string {
           </div>
         </section>
 
-        <section class="section trust fade-up" aria-label="Trust points">
-          <div class="trust-point"><span aria-hidden="true"></span><strong>Local SQLite index</strong></div>
-          <div class="trust-point"><span aria-hidden="true"></span><strong>No SaaS</strong></div>
-          <div class="trust-point"><span aria-hidden="true"></span><strong>No CLI telemetry</strong></div>
-          <div class="trust-point"><span aria-hidden="true"></span><strong>No LLM API calls</strong></div>
-          <div class="trust-point"><span aria-hidden="true"></span><strong>Read-only GitHub access</strong></div>
+        <section class="section step-section fade-up" id="how-it-works" aria-labelledby="how-title">
+          <div class="section-heading slim">
+            <span class="section-label">How it works</span>
+            <h2 id="how-title">Three steps, all local.</h2>
+          </div>
+          <div class="step-grid">
+            <div class="step-card">
+              <span>01</span>
+              <strong>Index local evidence</strong>
+              <p>Anchor reads merged PR history, current code, tests, architecture patterns, and team rules into SQLite.</p>
+            </div>
+            <div class="step-card">
+              <span>02</span>
+              <strong>Cursor asks Anchor</strong>
+              <p>The MCP server returns focused context before refactors, API changes, tests, and risky edits.</p>
+            </div>
+            <div class="step-card">
+              <span>03</span>
+              <strong>Use cited context</strong>
+              <p>Results include PR/file evidence, confidence, freshness, risks, and recommended checks.</p>
+            </div>
+          </div>
         </section>
 
-        <section class="section cta-strip fade-up" aria-labelledby="demo-title">
-          <div>
-            <span class="section-label">Try it without setup</span>
-            <h2 id="demo-title">Show the value before asking anyone for a token.</h2>
-            <p>Run the offline demo in any terminal. It uses bundled sample PR history and sample code, then prints the same context Cursor would receive from Anchor.</p>
+        <section class="section value-section fade-up" aria-labelledby="value-title">
+          <div class="section-heading slim">
+            <span class="section-label">Why developers use it</span>
+            <h2 id="value-title">Less guessing before the diff.</h2>
           </div>
-          <div class="cta-actions">
-            <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="demo_strip_copy">Copy demo command</button>
-            <a class="btn" href="/docs/adoption" data-route data-track-event="demo_strip_adoption_click">View adoption signals</a>
-            <a class="btn" href="${repoUrl}" data-track-event="demo_strip_star_click">Star or fork</a>
+          <div class="value-grid">
+            <div>
+              <strong>Avoid old regressions</strong>
+              <p>Surface revert, rollback, root-cause, and review evidence before repeating a known failure.</p>
+            </div>
+            <div>
+              <strong>Follow repo patterns</strong>
+              <p>Find nearby tests, architecture signals, symbols, and team rules before adding new code.</p>
+            </div>
+            <div>
+              <strong>Check org impact</strong>
+              <p>Use allowlisted org memory to see API consumers, shared packages, and cross-repo risk.</p>
+            </div>
           </div>
         </section>
 
-        <section class="section use-case-section fade-up" aria-labelledby="use-case-title">
-          <div class="section-heading">
-            <span class="section-label">Use cases</span>
-            <h2 id="use-case-title">Searchable guides for the work Anchor helps with.</h2>
-            <p class="section-intro">Anchor complements code search by adding merged PR history, current-code evidence, tests, regressions, team rules, and org memory to the context Cursor can use.</p>
-          </div>
-          <div class="use-case-card-grid">
+        <section class="section privacy-strip fade-up" id="privacy" aria-label="Anchor privacy guarantees">
+          <div><span aria-hidden="true"></span><strong>Local SQLite index</strong></div>
+          <div><span aria-hidden="true"></span><strong>Read-only GitHub access</strong></div>
+          <div><span aria-hidden="true"></span><strong>No CLI telemetry</strong></div>
+          <div><span aria-hidden="true"></span><strong>No remote LLM calls</strong></div>
+        </section>
+
+        <section class="section guide-links fade-up" aria-labelledby="guide-title">
+          <span class="section-label">Popular guides</span>
+          <h2 id="guide-title">Go deeper when you need the details.</h2>
+          <div class="guide-link-row">
             ${seoLandingPages
-              .map(
-                (page) => `<a class="use-case-card" href="${page.path}" data-route>
-                  <span>Guide</span>
-                  <strong>${escapeHtml(page.title)}</strong>
-                  <p>${escapeHtml(page.description)}</p>
-                </a>`,
-              )
+              .slice(0, 6)
+              .map((page) => `<a href="${page.path}" data-route>${escapeHtml(page.title)}</a>`)
               .join("")}
-          </div>
-        </section>
-
-        <section class="section split-section" id="why" aria-labelledby="missing-layer-title">
-          <div class="fade-up">
-            <span class="section-label">01 / The missing layer</span>
-            <h2 id="missing-layer-title">Agents see the file. They miss the review history.</h2>
-            <p class="section-intro">Repository history is where teams record why code is shaped a certain way. Anchor turns that context into a local briefing Cursor can use before it changes the next file.</p>
-          </div>
-          <div class="memory-list fade-up">
-            <div class="memory-row">
-              <span class="mark">why</span>
-              <div><strong>Why a file is shaped a certain way</strong><span>Architecture choices often live in merged PRs, review threads, and old commit messages.</span></div>
-            </div>
-            <div class="memory-row">
-              <span class="mark">bug</span>
-              <div><strong>What broke last time</strong><span>Regressions and rollback notes become visible before similar edits repeat them.</span></div>
-            </div>
-            <div class="memory-row">
-              <span class="mark">api</span>
-              <div><strong>Which API contracts matter</strong><span>Compatibility constraints become searchable, cited context for the next diff.</span></div>
-            </div>
-            <div class="memory-row">
-              <span class="mark">test</span>
-              <div><strong>Which tests reviewers expect</strong><span>Anchor can surface sibling tests, related files, and review expectations.</span></div>
-            </div>
-            <div class="memory-row">
-              <span class="mark">arch</span>
-              <div><strong>Which architecture pattern to follow</strong><span>Architecture Memory summarizes current file areas, imports, symbols, and nearby tests from local code.</span></div>
-            </div>
-          </div>
-        </section>
-
-        <section class="section split-section compact-section" id="privacy" aria-labelledby="privacy-title">
-          <div class="fade-up">
-            <span class="section-label">02 / Local by default</span>
-            <h2 id="privacy-title">Built for maintainers who do not want another hosted surface.</h2>
-            <p class="section-intro">Anchor keeps the index on your machine, treats PR text as evidence rather than instructions, and avoids write paths to GitHub entirely.</p>
-          </div>
-          <div class="memory-list fade-up">
-            <div class="memory-row">
-              <span class="mark">db</span>
-              <div><strong>SQLite in the repo</strong><span>The local index lives at <code>.anchor/index.sqlite</code>.</span></div>
-            </div>
-            <div class="memory-row">
-              <span class="mark">ro</span>
-              <div><strong>Read-only GitHub access</strong><span>Anchor indexes merged PR history and returns context. It never writes to GitHub.</span></div>
-            </div>
-            <div class="memory-row">
-              <span class="mark">sec</span>
-              <div><strong>Sanitized evidence</strong><span>Secrets and prompt-injection phrases are redacted before Cursor sees them.</span></div>
-            </div>
           </div>
         </section>
 
         <section class="section final-cta" aria-labelledby="final-title">
           <div class="final-panel fade-up">
-            <h2 id="final-title">Docs that follow the workflow, not the marketing page.</h2>
-            <p>Use the separate docs route for install steps, guide pages, CLI reference, MCP tools, rules, and safety notes.</p>
+            <span class="section-label">Try Anchor</span>
+            <h2 id="final-title">See the context Cursor would get.</h2>
+            <p>Run the offline demo first. It uses bundled sample data, does not need GitHub auth, and does not send telemetry.</p>
             <div class="final-actions">
-              <a class="btn primary" href="/docs" data-route data-track-event="final_docs_click">Open docs</a>
-              <a class="btn" href="/docs/cli" data-route data-track-event="final_cli_click">CLI reference</a>
+              <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="final_demo_copy">Copy demo command</button>
+              <a class="btn" href="/docs" data-route data-track-event="final_docs_click">Open docs</a>
+              <a class="btn ghost" href="${repoUrl}" data-track-event="final_github_click">GitHub</a>
             </div>
           </div>
         </section>
@@ -1238,78 +1193,19 @@ function renderProductMockup(): string {
         <span>local repo / Anchor MCP</span>
         <span>.anchor/index.sqlite</span>
       </div>
-      <div class="mock-grid">
-        <div class="mock-panel">
-          <div class="panel-head">
-            <span>Merged PR history</span>
-            <code>read-only</code>
-          </div>
-          <div class="pr-list">
-            <div class="pr-row">
-              <strong>PR #42 / Preserve API contract</strong>
-              <span>review_comment / src/api/routes.ts</span>
-            </div>
-            <div class="pr-row">
-              <strong>PR #58 / Cache stale-read regression</strong>
-              <span>review_summary / src/cache/store.ts</span>
-            </div>
-            <div class="pr-row">
-              <strong>PR #61 / Test sibling overloads</strong>
-              <span>changed_files / tests/api/*.spec.ts</span>
-            </div>
-            <div class="pr-row">
-              <strong>Architecture Memory</strong>
-              <span>local imports / symbols / file areas</span>
-            </div>
-            <div class="pr-row">
-              <strong>anchor.rules.json</strong>
-              <span>team-approved rule / cited evidence</span>
-            </div>
-          </div>
+      <div class="simple-mock">
+        <div class="simple-source-list">
+          <span>Indexed locally</span>
+          <strong>PR history</strong>
+          <strong>Current code</strong>
+          <strong>Tests</strong>
+          <strong>Org graph</strong>
         </div>
-
-        <div class="mock-panel">
-          <div class="panel-head">
-            <span>Local index</span>
-            <code>SQLite + FTS</code>
-          </div>
-          <div class="index-core" aria-hidden="true">
-            <div class="db-cylinder">
-              <span class="wall"></span>
-              <b>.anchor<br />index.sqlite</b>
-            </div>
-          </div>
-          <div class="cursor-call">
-            <div><span class="cmd">cursor</span> -&gt; mcp.call</div>
-            <div>{ name: <span class="cmd">"anchor_get_context"</span>, file: "src/api/routes.ts" }</div>
-          </div>
-        </div>
-
-        <div class="mock-panel">
-          <div class="panel-head">
-            <span>Must know</span>
-            <code>cited context</code>
-          </div>
-          <div class="context-panel">
-            <div class="context-card">
-              <h3>Before editing routes.ts</h3>
-              <div class="evidence-item">
-                <span class="tag">api_contract</span>
-                <p>Preserve backward compatibility for this endpoint.</p>
-                <small>Evidence: PR #42 / review_comment / src/api/routes.ts</small>
-              </div>
-              <div class="evidence-item">
-                <span class="tag">bug_regression</span>
-                <p>Similar cache changes caused stale reads before.</p>
-                <small>Evidence: PR #58 / review_summary / src/cache/store.ts</small>
-              </div>
-              <div class="evidence-item">
-                <span class="tag">recommended_checks</span>
-                <p>Run sibling tests and check team rules before the diff.</p>
-                <small>Evidence stays local. PR text is untrusted evidence.</small>
-              </div>
-            </div>
-          </div>
+        <div class="simple-context-card">
+          <span class="tag">anchor_get_context</span>
+          <h3>Before editing this file</h3>
+          <p>Historical evidence suggests preserving the API contract and running sibling tests before changing this path.</p>
+          <small>Evidence: PR #42 / review_comment / src/api/routes.ts</small>
         </div>
       </div>
     </div>
