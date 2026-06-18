@@ -1,9 +1,17 @@
-import { runDoctor } from "@pratik7368patil/anchor-core";
+import { parseAnchorAgentTargets, runDoctor } from "@pratik7368patil/anchor-core";
 import { createAnchorMcpServer } from "@pratik7368patil/anchor-mcp-server";
 
-export async function runDoctorCommand(cwd: string): Promise<boolean> {
+export type DoctorCommandOptions = {
+  target?: string;
+};
+
+export async function runDoctorCommand(
+  cwd: string,
+  options: DoctorCommandOptions = {},
+): Promise<boolean> {
   const report = await runDoctor({
     cwd,
+    targets: options.target ? parseAnchorAgentTargets(options.target) : undefined,
     mcpServerCheck: () => Boolean(createAnchorMcpServer({ cwd })),
   });
   console.log("Anchor doctor");

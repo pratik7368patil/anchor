@@ -5,7 +5,7 @@ Target length: 2 minutes.
 ## Storyboard
 
 1. Open with the problem.
-   "Cursor can read the current code, but it does not automatically remember why the repo evolved this way."
+   "AI coding agents can read the current code, but they do not automatically remember why the repo evolved this way."
 
 2. Show the zero-token demo.
    Run:
@@ -74,4 +74,4 @@ Target length: 2 minutes.
 
 ## One-Line Positioning
 
-Anchor gives Cursor local, cited repo memory from PR history, current code, architecture patterns, tests, regressions, and team rules before it edits.
+Anchor gives AI coding agents local, cited repo memory from PR history, current code, architecture patterns, tests, regressions, and team rules before they edit.

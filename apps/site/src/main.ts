@@ -167,7 +167,7 @@ function buildStructuredData(metadata: SeoMetadata, canonicalUrl: string): Recor
     url: siteUrl,
     codeRepository: repoUrl,
     description:
-      "Local-first Cursor MCP server for GitHub PR history, codebase indexing, tests, regressions, and org memory.",
+      "Local-first MCP server for AI coding agents, GitHub PR history, codebase indexing, tests, regressions, and org memory.",
     offers: {
       "@type": "Offer",
       price: "0",
@@ -366,7 +366,7 @@ function renderShell(content: string, activeArea: "home" | "docs"): string {
     ${content}
 
     <footer class="footer">
-      <span>Anchor / local-first context for Cursor Agent</span>
+      <span>Anchor / local-first context for AI coding agents</span>
       <span>No SaaS. No CLI telemetry. No write access to GitHub.</span>
     </footer>
   `;
@@ -378,9 +378,9 @@ function renderHome(): string {
       <main id="top">
         <section class="section hero" id="product" aria-labelledby="hero-title">
           <div class="hero-copy fade-up">
-            <span class="section-label">Local repo memory for Cursor</span>
-            <h1 id="hero-title">Local repo memory for Cursor.</h1>
-            <p>Anchor indexes PR history, code, tests, regressions, and org relationships locally, then returns concise evidence before Cursor edits.</p>
+            <span class="section-label">Local repo memory for AI agents</span>
+            <h1 id="hero-title">Local repo memory for AI coding agents.</h1>
+            <p>Anchor indexes PR history, code, tests, regressions, and org relationships locally, then returns concise evidence before AI agents edit.</p>
             <div class="hero-actions">
               <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="hero_demo_copy">Copy demo command</button>
               <a class="btn" href="/docs/quickstart" data-route data-track-event="hero_quickstart_click">Read setup</a>
@@ -407,7 +407,7 @@ function renderHome(): string {
             </div>
             <div class="step-card">
               <span>02</span>
-              <strong>Cursor asks Anchor</strong>
+              <strong>Your agent asks Anchor</strong>
               <p>The MCP server returns focused context before refactors, API changes, tests, and risky edits.</p>
             </div>
             <div class="step-card">
@@ -460,7 +460,7 @@ function renderHome(): string {
         <section class="section final-cta" aria-labelledby="final-title">
           <div class="final-panel fade-up">
             <span class="section-label">Try Anchor</span>
-            <h2 id="final-title">See the context Cursor would get.</h2>
+            <h2 id="final-title">See the context your agent would get.</h2>
             <p>Run the offline demo first. It uses bundled sample data, does not need GitHub auth, and does not send telemetry.</p>
             <div class="final-actions">
               <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="final_demo_copy">Copy demo command</button>
@@ -507,7 +507,7 @@ function renderDocsSidebar(activePath: string): string {
       <span class="brand-mark" aria-hidden="true">${renderAnchorIcon()}</span>
       <span>
         <strong>Anchor</strong>
-        <small>Repo memory for Cursor</small>
+        <small>Repo memory for AI agents</small>
       </span>
     </a>
 
@@ -578,9 +578,9 @@ function renderDocsOverview(): string {
     <article class="doc-card fade-up">
       <span class="section-label">Get Started</span>
       <h2>Introduction</h2>
-      <p class="section-intro">Anchor gives Cursor Agent the repository memory your team has already earned: merged PR history, code context, tests, regressions, and team-approved rules.</p>
+      <p class="section-intro">Anchor gives AI coding agents the repository memory your team has already earned: merged PR history, code context, tests, regressions, and team-approved rules.</p>
       <div class="doc-divider"></div>
-      <p class="doc-prose">It is built for maintainers who want AI edits grounded in local evidence instead of guesses. Anchor indexes repository history into SQLite, exposes that memory through a narrow Cursor MCP server, and returns cited context before risky edits.</p>
+      <p class="doc-prose">It is built for maintainers who want AI edits grounded in local evidence instead of guesses. Anchor indexes repository history into SQLite, exposes that memory through a narrow local MCP server, and returns cited context before risky edits.</p>
       <p class="doc-prose">Start with installation, then use the workflow and reference pages when you need exact commands, MCP tool names, or team rule behavior.</p>
       <h3>Which command should I run?</h3>
       ${renderWorkflowRecipes()}
@@ -604,7 +604,7 @@ anchor org graph --org my-org --open`,
       )}
       <div class="doc-callout">
         <span aria-hidden="true">${renderDocIcon("/docs")}</span>
-        <p>Anchor does not need a hosted dashboard. The product surface that matters is the context Cursor receives before it edits.</p>
+        <p>Anchor does not need a hosted dashboard. The product surface that matters is the context your AI coding agent receives before it edits.</p>
       </div>
       <div class="engagement-panel">
         <div>
@@ -638,13 +638,13 @@ function renderQuickstartPage(): string {
     <article class="doc-card fade-up">
       <span class="section-label">Get Started</span>
       <h2>Installation</h2>
-      <p class="section-intro">Use this path when you are inside a GitHub-backed repo and want Anchor available to Cursor immediately.</p>
+      <p class="section-intro">Use this path when you are inside a GitHub-backed repo and want Anchor available to one or more AI coding agents.</p>
       ${renderCodeBlock("Install and initialize", "install-code", installCommand)}
       <div class="quick-grid" aria-label="Quickstart checkpoints">
         <div>
           <span>01</span>
-          <strong>Configure Cursor</strong>
-          <p><code>anchor init</code> safely merges the MCP entry and writes the Cursor rule.</p>
+          <strong>Choose targets</strong>
+          <p><code>anchor init</code> asks where to configure Anchor and safely writes the selected MCP config and instructions.</p>
         </div>
         <div>
           <span>02</span>
@@ -670,7 +670,7 @@ function renderWorkflowsPage(): string {
       <div class="workflow-grid">
         <div>
           <strong>Plan the task</strong>
-          <p>Run <code>anchor plan "&lt;task&gt;"</code> or ask Cursor for <code>anchor_plan_task</code> before the first edit.</p>
+          <p>Run <code>anchor plan "&lt;task&gt;"</code> or ask your MCP-enabled agent for <code>anchor_plan_task</code> before the first edit.</p>
         </div>
         <div>
           <strong>Know exact checks</strong>
@@ -678,7 +678,7 @@ function renderWorkflowsPage(): string {
         </div>
         <div>
           <strong>Before editing</strong>
-          <p>Ask Cursor to call <code>anchor_get_context</code> before refactors, API changes, or security-sensitive work.</p>
+          <p>Ask your agent to call <code>anchor_get_context</code> before refactors, API changes, or security-sensitive work.</p>
         </div>
         <div>
           <strong>Risky changes</strong>
@@ -698,7 +698,7 @@ function renderWorkflowsPage(): string {
         </div>
         <div>
           <strong>Check cross-repo impact</strong>
-          <p>Run <code>anchor org impact</code> or ask Cursor for <code>anchor_check_cross_repo_impact</code> before access, API, SDK, schema, or shared-package changes.</p>
+          <p>Run <code>anchor org impact</code> or ask your agent for <code>anchor_check_cross_repo_impact</code> before access, API, SDK, schema, or shared-package changes.</p>
         </div>
         <div>
           <strong>Onboard to an area</strong>
@@ -725,7 +725,7 @@ function renderPlanningPage(): string {
     <article class="doc-card fade-up">
       <span class="section-label">Guide</span>
       <h2>Planning and tests</h2>
-      <p class="section-intro">Anchor can brief Cursor on what to edit, what patterns to follow, and exactly which checks to run before the first code change.</p>
+      <p class="section-intro">Anchor can brief an AI coding agent on what to edit, what patterns to follow, and exactly which checks to run before the first code change.</p>
       <div class="workflow-grid">
         <div>
           <strong>Task plans</strong>
@@ -736,7 +736,7 @@ function renderPlanningPage(): string {
           <p><code>anchor test-command</code> reads package scripts, workspace boundaries, Vitest/Jest/Playwright config, and related tests to infer concrete commands.</p>
         </div>
         <div>
-          <strong>Cursor tools</strong>
+          <strong>MCP tools</strong>
           <p>Use <code>anchor_plan_task</code> before editing and <code>anchor_get_test_commands</code> before verification.</p>
         </div>
         <div>
@@ -762,7 +762,7 @@ function renderArchitecturePage(): string {
     <article class="doc-card fade-up">
       <span class="section-label">Guide</span>
       <h2>Architecture Memory</h2>
-      <p class="section-intro">Architecture Memory helps Cursor follow the repo's current shape before it writes code. It is deterministic, local-only, and built from the sanitized local code index.</p>
+      <p class="section-intro">Architecture Memory helps AI coding agents follow the repo's current shape before they write code. It is deterministic, local-only, and built from the sanitized local code index.</p>
       <div class="workflow-grid">
         <div>
           <strong>File areas</strong>
@@ -823,8 +823,8 @@ function renderOnboardingPage(): string {
           <p><code>anchor onboarding --file src/auth/cache.ts</code> gives a narrow view for one file.</p>
         </div>
         <div>
-          <strong>Cursor handoff</strong>
-          <p><code>anchor_onboarding_pack</code> lets Cursor orient itself before a large refactor or unfamiliar task.</p>
+          <strong>Agent handoff</strong>
+          <p><code>anchor_onboarding_pack</code> lets an AI coding agent orient itself before a large refactor or unfamiliar task.</p>
         </div>
       </div>
       ${renderCodeBlock(
@@ -985,7 +985,7 @@ anchor org ci --org my-org --strict --min-coverage 70 --html`,
       )}
       <div class="doc-callout">
         <span aria-hidden="true">${renderDocIcon("/docs/org-memory")}</span>
-        <p>For auth, access, billing, API contracts, schemas, SDK clients, shared packages, or broad refactors, ask Cursor to call <code>anchor_check_cross_repo_impact</code> before editing or approving.</p>
+        <p>For auth, access, billing, API contracts, schemas, SDK clients, shared packages, or broad refactors, ask your agent to call <code>anchor_check_cross_repo_impact</code> before editing or approving.</p>
       </div>
     </article>
   `;
@@ -1030,8 +1030,8 @@ function renderMcpPage(): string {
   return `
     <article class="doc-card fade-up">
       <span class="section-label">Reference</span>
-      <h2>Cursor MCP</h2>
-      <p class="section-intro">These are the surfaces Cursor uses to fetch repo memory, explain files, review diffs, and inspect index health.</p>
+      <h2>MCP tools</h2>
+      <p class="section-intro">These are the surfaces MCP clients use to fetch repo memory, explain files, review diffs, and inspect index health.</p>
       ${renderTable(mcpTools, "Anchor MCP tools")}
       ${renderCodeBlock(
         "Main tool input",
@@ -1059,7 +1059,7 @@ function renderPrivacyPage(): string {
       <div class="safety-card">
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderKeyIcon()}</span>
-          <div><strong>GitHub auth stays local</strong><span>Anchor reads the token from local GitHub auth or environment. It is never written to Cursor config, SQLite, logs, or generated files.</span></div>
+          <div><strong>GitHub auth stays local</strong><span>Anchor reads the token from local GitHub auth or environment. It is never written to MCP config, SQLite, logs, or generated files.</span></div>
         </div>
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderDatabaseIcon()}</span>
@@ -1071,7 +1071,7 @@ function renderPrivacyPage(): string {
         </div>
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderShieldIcon()}</span>
-          <div><strong>PR text is untrusted evidence</strong><span>Secrets and prompt-injection phrases are sanitized or redacted before they can become context for Cursor.</span></div>
+          <div><strong>PR text is untrusted evidence</strong><span>Secrets and prompt-injection phrases are sanitized or redacted before they can become context for an AI coding agent.</span></div>
         </div>
         <div class="safety-row">
           <span class="safety-icon" aria-hidden="true">${renderShieldIcon()}</span>
@@ -1173,7 +1173,7 @@ function renderSeoLandingPage(page: (typeof seoLandingPages)[number]): string {
       </div>
       <div class="engagement-panel">
         <div>
-          <strong>Make Cursor use evidence before it edits</strong>
+          <strong>Make AI coding agents use evidence before they edit</strong>
           <p>Anchor complements code search by adding PR history, current-code evidence, tests, regressions, team rules, confidence, and freshness signals.</p>
         </div>
         <div class="engagement-actions">
@@ -1373,7 +1373,7 @@ function renderCodeBlock(title: string, id: string, code: string, compact = fals
       <button class="copy-btn" type="button" data-copy-target="${id}" data-copy-event="copy_code_block">Copy</button>
     </div>
     <pre id="${id}"><code>${escapeHtml(code)}</code></pre>
-    ${id === "install-code" ? '<p class="install-note">Reload Cursor after initialization so the MCP server and Cursor rule are picked up.</p>' : ""}
+    ${id === "install-code" ? '<p class="install-note">Reload the selected AI tool after initialization so the MCP server and Anchor instructions are picked up.</p>' : ""}
   </div>`;
 }
 

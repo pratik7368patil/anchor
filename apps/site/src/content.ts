@@ -65,7 +65,7 @@ export const socialImageUrl = `${siteUrl}/social-preview.png`;
 
 export const installCommand = `npm install -g @pratik7368patil/anchor
 gh auth login
-anchor init
+anchor init --target cursor,codex
 anchor index
 anchor doctor`;
 
@@ -91,9 +91,9 @@ export const workflowRecipes: WorkflowRecipe[] = [
     title: "First-time setup in one repo",
     useWhen:
       "Use this when a developer installs Anchor for the first time in a GitHub-backed repo.",
-    commands: ["anchor init", "anchor index --limit 200", "anchor doctor"],
+    commands: ["anchor init", "anchor init --target cursor,codex", "anchor index --limit 200", "anchor doctor"],
     notes:
-      "Run from the repository root, then reload Cursor so the MCP server and rule file are picked up.",
+      "Run from the repository root, select one or more AI agents, then reload the selected tool so the MCP server and instructions are picked up.",
   },
   {
     title: "Code-only context without GitHub auth",
@@ -101,7 +101,7 @@ export const workflowRecipes: WorkflowRecipe[] = [
       "Use this when GitHub auth is unavailable or you only need current-code architecture and tests.",
     commands: ["anchor index-code", "anchor architecture", "anchor health"],
     notes:
-      "This skips PR history and still gives Cursor file areas, imports, symbols, test links, and code evidence.",
+      "This skips PR history and still gives agents file areas, imports, symbols, test links, and code evidence.",
   },
   {
     title: "Full PR history safely",
@@ -119,7 +119,7 @@ export const workflowRecipes: WorkflowRecipe[] = [
       "Sync is incremental and safe to run repeatedly. Add --no-code only when you want PR-only refresh.",
   },
   {
-    title: "Before editing with Cursor",
+    title: "Before editing with an AI agent",
     useWhen: "Use this before non-trivial refactors, tests, API changes, or unfamiliar files.",
     commands: [
       'anchor plan "Add API integration" --file src/api/routes.ts',
@@ -127,7 +127,7 @@ export const workflowRecipes: WorkflowRecipe[] = [
       "anchor explain src/api/routes.ts",
     ],
     notes:
-      "In Cursor, ask the agent to call anchor_get_context or anchor_plan_task before making the first edit.",
+      "Ask the agent to call anchor_get_context or anchor_plan_task before making the first edit.",
   },
   {
     title: "Before API, auth, access, or shared-package changes",
@@ -166,7 +166,7 @@ export const commandGroups: CommandGroup[] = [
       {
         command: "anchor init",
         description:
-          "Sets up Cursor MCP config and the Cursor rule that tells Cursor when to ask Anchor for context.",
+          "Asks which AI agents to configure and writes the selected MCP config and instructions.",
       },
       {
         command: "anchor demo",
@@ -174,21 +174,21 @@ export const commandGroups: CommandGroup[] = [
       },
       {
         command: "anchor prompts",
-        description: "Prints ready-to-use Cursor prompts for common Anchor workflows.",
+        description: "Prints target-aware prompts for common Anchor workflows.",
       },
       {
         command: "anchor doctor",
-        description: "Checks git repo, GitHub auth, Cursor config, database, and MCP server setup.",
+        description: "Checks git repo, GitHub auth, selected AI agent config, database, and MCP server setup.",
       },
       {
         command: "anchor serve",
-        description: "Starts the MCP stdio server used by Cursor.",
+        description: "Starts the MCP stdio server used by AI coding agents.",
       },
     ],
   },
   {
     title: "Indexing",
-    intro: "Build the repo memory that Cursor can query before edits.",
+    intro: "Build the repo memory that AI coding agents can query before edits.",
     commands: [
       {
         command: "anchor index",
@@ -229,6 +229,11 @@ export const commandGroups: CommandGroup[] = [
         command: "anchor test-command <file>",
         description:
           "Infers the most specific test command for a source or test file from scripts and test links.",
+      },
+      {
+        command: 'anchor context "<task>"',
+        description:
+          "Returns the same sanitized Anchor context from the CLI for agents that cannot call MCP.",
       },
       {
         command: "anchor explain <file>",
@@ -424,8 +429,28 @@ const diffFileOption = (example: string): CommandOption => ({
 export const commandDetails: Record<string, CommandDetail> = {
   "anchor init": {
     recommendedUse:
-      "Run once from a repo root after installing Anchor. It merges Cursor MCP config, creates the Cursor rule, and locally excludes .anchor/ from git.",
-    example: "anchor init",
+      "Run once from a repo root after installing Anchor. It asks which AI agents to configure, writes selected MCP config/instructions, and locally excludes .anchor/ from git.",
+    example: "anchor init --target cursor,codex",
+    options: [
+      {
+        name: "--target <targets>",
+        description: "Configure one or more comma-separated targets.",
+        useWhen: "Use it in CI, non-interactive shells, or team setup docs.",
+        example: "anchor init --target cursor,claude-code,codex",
+      },
+      {
+        name: "--all-targets",
+        description: "Configure every supported target where safe.",
+        useWhen: "Use it for local evaluation across several AI tools.",
+        example: "anchor init --all-targets",
+      },
+      {
+        name: "--scope project|user",
+        description: "Choose project-local config or explicit user-level config.",
+        useWhen: "Use --scope user only for tools such as Antigravity that keep shared MCP config under the home directory.",
+        example: "anchor init --target antigravity --scope user",
+      },
+    ],
   },
   "anchor demo": {
     recommendedUse:
@@ -454,18 +479,26 @@ export const commandDetails: Record<string, CommandDetail> = {
   },
   "anchor prompts": {
     recommendedUse:
-      "Use this to copy Cursor-ready prompts for before-edit, explain-file, review-diff, strict-mode, and org-impact workflows.",
-    example: "anchor prompts",
-    options: [jsonOption("anchor prompts --json")],
+      "Use this to copy target-aware prompts for before-edit, explain-file, review-diff, strict-mode, and org-impact workflows.",
+    example: "anchor prompts --target codex",
+    options: [
+      {
+        name: "--target <target>",
+        description: "Choose prompt wording for cursor, claude-code, codex, vscode, antigravity, or generic.",
+        useWhen: "Use it when sharing prompt snippets for a specific AI coding tool.",
+        example: "anchor prompts --target claude-code",
+      },
+      jsonOption("anchor prompts --json"),
+    ],
   },
   "anchor doctor": {
     recommendedUse:
-      "Run when Cursor cannot see Anchor, indexing fails early, or you want to verify GitHub auth, MCP config, SQLite, and rule setup.",
-    example: "anchor doctor",
+      "Run when an AI tool cannot see Anchor, indexing fails early, or you want to verify GitHub auth, selected MCP config, and SQLite.",
+    example: "anchor doctor --target cursor,codex",
   },
   "anchor serve": {
     recommendedUse:
-      "Cursor runs this through .cursor/mcp.json. Humans usually run it only for MCP startup debugging.",
+      "AI coding tools run this through MCP config. Humans usually run it only for MCP startup debugging.",
     example: "anchor serve",
   },
   "anchor index": {
@@ -628,14 +661,14 @@ export const commandDetails: Record<string, CommandDetail> = {
   },
   'anchor plan "<task>"': {
     recommendedUse:
-      "Use before Cursor edits. It turns Anchor evidence into target files, likely symbols, risks, steps, and exact checks.",
+      "Use before AI agent edits. It turns Anchor evidence into target files, likely symbols, risks, steps, and exact checks.",
     example:
       'anchor plan "Add resource API integration" --file src/api/resource.ts --symbol createResource',
     options: [
       {
         name: "--file path",
         description: "Focus the plan on one likely target file.",
-        useWhen: "Use it when you already know the file Cursor will edit.",
+        useWhen: "Use it when you already know the file the agent will edit.",
         example: 'anchor plan "Add API integration" --file src/api/routes.ts',
       },
       {
@@ -647,6 +680,33 @@ export const commandDetails: Record<string, CommandDetail> = {
       },
       strictOption('anchor plan "Refactor auth cache" --file src/auth/cache.ts --strict'),
       jsonOption('anchor plan "Add API integration" --json'),
+    ],
+  },
+  'anchor context "<task>"': {
+    recommendedUse:
+      "Use when an AI coding tool cannot call MCP directly. It returns the same sanitized Markdown or JSON context as anchor_get_context.",
+    example: 'anchor context "Refactor auth cache" --file src/auth/cache.ts --strict',
+    options: [
+      {
+        name: "--file path",
+        description: "Focus context on a target file.",
+        useWhen: "Use it when you know the file the agent is about to edit.",
+        example: 'anchor context "Add tests" --file src/auth/cache.ts',
+      },
+      {
+        name: "--symbol name",
+        description: "Focus context on a target symbol.",
+        useWhen: "Use it when the task mentions a function, class, API, route, or component.",
+        example: 'anchor context "Refactor cache" --symbol AuthCache',
+      },
+      {
+        name: "--diff-file path",
+        description: "Read the current diff from a saved file.",
+        useWhen: "Use it when another tool exported a patch and cannot call MCP.",
+        example: 'anchor context "Review this patch" --diff-file change.diff',
+      },
+      strictOption('anchor context "Refactor auth cache" --file src/auth/cache.ts --strict'),
+      jsonOption('anchor context "Add API integration" --json'),
     ],
   },
   "anchor test-command <file>": {
@@ -694,7 +754,7 @@ export const commandDetails: Record<string, CommandDetail> = {
       {
         name: "--check",
         description: "Check the current git diff against architecture patterns.",
-        useWhen: "Use it before opening a PR or after Cursor changes files.",
+        useWhen: "Use it before opening a PR or after an agent changes files.",
         example: "anchor architecture --check",
       },
       {
@@ -1291,7 +1351,7 @@ export const commandDetails: Record<string, CommandDetail> = {
       {
         name: "--pr-url url",
         description: "PR evidence URL.",
-        useWhen: "Use it so humans and Cursor can trace the rule back to evidence.",
+        useWhen: "Use it so humans and agents can trace the rule back to evidence.",
         example: "anchor rules add --pr-url https://github.com/owner/repo/pull/123",
       },
       {
@@ -1344,7 +1404,7 @@ export const commandDetails: Record<string, CommandDetail> = {
 export const mcpTools: TableItem[] = [
   {
     name: "anchor_get_context",
-    description: "Main tool. Gives historical and code context before Cursor edits.",
+    description: "Main tool. Gives historical and code context before AI coding edits.",
   },
   {
     name: "anchor_search_history",
@@ -1373,7 +1433,7 @@ export const mcpTools: TableItem[] = [
   },
   {
     name: "anchor_plan_task",
-    description: "Creates an evidence-backed deterministic edit plan for Cursor.",
+    description: "Creates an evidence-backed deterministic edit plan for AI coding agents.",
   },
   {
     name: "anchor_get_test_commands",
@@ -1417,7 +1477,7 @@ export const mcpTools: TableItem[] = [
 export const features = [
   "Local-first PR history index",
   "Local codebase index",
-  "Cursor-only MCP server",
+  "Agent-agnostic stdio MCP server",
   "SQLite + FTS search",
   "Evidence-backed answers with PR citations",
   "Prompt-injection neutralization",
@@ -1450,13 +1510,13 @@ export const features = [
 ];
 
 export const useCases = [
-  "Before refactoring a file, ask Cursor to call anchor_get_context.",
+  "Before refactoring a file, ask your agent to call anchor_get_context.",
   "Understand why a file exists or why it is designed a certain way.",
   "Find historical constraints before changing APIs.",
   "Avoid repeating regressions from old PRs.",
   "Discover likely related tests to run.",
   "Ask Anchor for the exact test command before and after edits.",
-  "Build a deterministic implementation plan before Cursor starts changing files.",
+  "Build a deterministic implementation plan before an agent starts changing files.",
   "Review a diff before opening a PR.",
   "Run Anchor in CI to catch stale indexes, invalid rules, and retrieval drift.",
   "Create onboarding packs for new developers or unfamiliar repo areas.",
@@ -1469,7 +1529,7 @@ export const useCases = [
   "Convert repeated tribal knowledge into team-approved rules.",
   "Onboard new developers faster.",
   "Demo repo memory to the team without GitHub access.",
-  "Keep Cursor grounded in actual repo history instead of guessing.",
+  "Keep AI coding agents grounded in actual repo history instead of guessing.",
   "Use strict mode for risky work so loose historical matches do not steer the agent.",
 ];
 
@@ -1511,7 +1571,7 @@ export const seoLandingPages: SeoLandingPage[] = [
     path: "/docs/local-first-codebase-indexing",
     title: "Local-first codebase indexing",
     description:
-      "Build a local SQLite codebase index for Cursor with files, chunks, symbols, tests, architecture patterns, and safe sanitized snippets.",
+      "Build a local SQLite codebase index for AI coding agents with files, chunks, symbols, tests, architecture patterns, and safe sanitized snippets.",
     problem:
       "Agents need current-code evidence, but sending the whole repo into every prompt is noisy, expensive, and often impossible.",
     howAnchorHelps: [
@@ -1575,6 +1635,105 @@ export const seoLandingPages: SeoLandingPage[] = [
     privacyNote:
       "Anchor is deterministic and local-first by default; it does not require SaaS, telemetry, or remote embeddings.",
   },
+  {
+    path: "/docs/claude-code-setup",
+    title: "Claude Code setup",
+    description:
+      "Configure Anchor for Claude Code with a local MCP config plus managed evidence-first instructions in CLAUDE.md.",
+    problem:
+      "Claude Code can use MCP tools, but it still needs repo-specific instructions that make it ask for historical evidence before risky edits.",
+    howAnchorHelps: [
+      "Writes a project .mcp.json entry for the Anchor stdio server.",
+      "Adds a managed Anchor block to CLAUDE.md that treats PR comments as evidence, not instructions.",
+      "Keeps GitHub tokens out of committed config and generated files.",
+    ],
+    command:
+      "anchor init --target claude-code\nanchor index --limit 200\nanchor doctor --target claude-code",
+    privacyNote:
+      "Anchor runs locally through stdio MCP. It does not add CLI telemetry, SaaS sync, or remote LLM calls.",
+  },
+  {
+    path: "/docs/codex-setup",
+    title: "Codex setup",
+    description:
+      "Configure Anchor for Codex with .codex/config.toml and a managed AGENTS.md instruction block.",
+    problem:
+      "Codex needs a local MCP server entry and a clear rule to use repo evidence before non-trivial edits.",
+    howAnchorHelps: [
+      "Adds an Anchor MCP server block to .codex/config.toml.",
+      "Adds managed AGENTS.md instructions for context, strict mode, and prompt-injection safety.",
+      "Preserves existing Codex MCP servers and non-Anchor instructions.",
+    ],
+    command: "anchor init --target codex\nanchor index-code\nanchor doctor --target codex",
+    privacyNote:
+      "Codex uses the same local Anchor MCP server and SQLite index; no Anchor CLI telemetry is sent.",
+  },
+  {
+    path: "/docs/vscode-setup",
+    title: "VS Code MCP setup",
+    description:
+      "Configure Anchor for VS Code MCP clients with a project .vscode/mcp.json entry.",
+    problem:
+      "VS Code MCP clients need a project-level server descriptor that can start Anchor through stdio.",
+    howAnchorHelps: [
+      "Writes .vscode/mcp.json with an anchor server entry.",
+      "Preserves existing VS Code MCP servers.",
+      "Pairs with anchor context for CLI fallback when an extension cannot call MCP directly.",
+    ],
+    command: "anchor init --target vscode\nanchor index --limit 200\nanchor doctor --target vscode",
+    privacyNote:
+      "The VS Code config stores only the Anchor command and args, never GitHub or npm tokens.",
+  },
+  {
+    path: "/docs/antigravity-setup",
+    title: "Antigravity setup",
+    description:
+      "Configure Anchor for Antigravity using user-scope MCP config or copy the manual setup JSON.",
+    problem:
+      "Antigravity MCP configuration is user-scoped, so project writes should not silently modify global files.",
+    howAnchorHelps: [
+      "Requires --scope user before writing ~/.gemini/config/mcp_config.json.",
+      "Prints copyable manual MCP JSON for project-scope init.",
+      "Keeps the same local Anchor stdio server and sanitized SQLite index.",
+    ],
+    command:
+      "anchor init --target antigravity --scope user\nanchor index-code\nanchor doctor --target antigravity",
+    privacyNote:
+      "User-scope setup writes only the local Anchor stdio server command and never stores GitHub tokens.",
+  },
+  {
+    path: "/docs/generic-mcp-setup",
+    title: "Generic MCP setup",
+    description:
+      "Use Anchor with any MCP-compatible agent by copying the generated .anchor/mcp-config.json server descriptor.",
+    problem:
+      "Many MCP clients use slightly different config locations, but the server shape is the same: command plus args.",
+    howAnchorHelps: [
+      "Writes .anchor/mcp-config.json with a portable anchor serve descriptor.",
+      "Prints target-specific setup summaries after anchor init.",
+      "Leaves client-specific file placement to the tool when Anchor cannot know it safely.",
+    ],
+    command: "anchor init --target generic\nanchor index --limit 200\ncat .anchor/mcp-config.json",
+    privacyNote:
+      "Generic setup is still local-first; the generated file contains no secrets and no remote service settings.",
+  },
+  {
+    path: "/docs/cli-fallback",
+    title: "CLI fallback for any agent",
+    description:
+      "Use anchor context from the terminal when an AI coding tool cannot call MCP directly yet.",
+    problem:
+      "Some agents can read pasted context or terminal output before they support MCP tool calls.",
+    howAnchorHelps: [
+      "Returns the same sanitized context as anchor_get_context from the CLI.",
+      "Supports files, symbols, strict mode, saved diffs, and JSON output.",
+      "Lets teams adopt Anchor without waiting for every editor or agent to implement MCP.",
+    ],
+    command:
+      'anchor context "Refactor auth cache" --file src/auth/cache.ts --symbol AuthCache --strict\nanchor context "Review saved diff" --diff-file change.diff --json',
+    privacyNote:
+      "CLI fallback reads the local SQLite index and prints sanitized output only; it does not send usage telemetry.",
+  },
 ];
 
 export const docsPages: DocsPage[] = [
@@ -1587,7 +1746,7 @@ export const docsPages: DocsPage[] = [
   {
     path: "/docs/quickstart",
     title: "Installation",
-    description: "Install Anchor, configure Cursor, and build the first local index.",
+    description: "Install Anchor, choose AI agent targets, and build the first local index.",
     group: "Start",
   },
   {
@@ -1647,7 +1806,7 @@ export const docsPages: DocsPage[] = [
   {
     path: "/docs/mcp",
     title: "MCP tools",
-    description: "The Cursor-facing tools exposed by the Anchor MCP server.",
+    description: "The MCP tools exposed by the Anchor server for AI coding agents.",
     group: "Reference",
   },
   {
@@ -1685,6 +1844,10 @@ export const docsPages: DocsPage[] = [
 const baseSeoKeywords = [
   "Anchor",
   "Cursor MCP",
+  "Claude Code MCP",
+  "Codex MCP",
+  "VS Code MCP",
+  "Antigravity MCP",
   "Model Context Protocol",
   "GitHub PR history",
   "local-first",
@@ -1696,12 +1859,14 @@ export const seoPages: Record<string, SeoMetadata> = Object.fromEntries(
   [
     {
       path: "/",
-      title: "Anchor - Local-first repo memory for Cursor",
+      title: "Anchor - Local-first repo memory for AI coding agents",
       description:
-        "Anchor gives Cursor local repo memory from GitHub PR history, code, tests, regressions, and org context before AI coding edits.",
+        "Anchor gives AI coding agents local repo memory from GitHub PR history, code, tests, regressions, and org context before edits.",
       keywords: [
         ...baseSeoKeywords,
         "Cursor AI",
+        "Claude Code",
+        "Codex",
         "repo memory",
         "AI code review",
         "developer tools",

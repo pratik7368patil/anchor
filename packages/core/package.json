@@ -1,10 +1,14 @@
 {
   "name": "@pratik7368patil/anchor-core",
-  "version": "0.1.37",
-  "description": "Local-first indexing and retrieval engine for Cursor MCP context from GitHub PR history and codebase evidence.",
+  "version": "0.1.38",
+  "description": "Local-first indexing and retrieval engine for AI coding agent MCP context from GitHub PR history and codebase evidence.",
   "keywords": [
     "anchor",
     "cursor",
+    "claude-code",
+    "codex",
+    "vscode",
+    "antigravity",
     "mcp",
     "model-context-protocol",
     "github",

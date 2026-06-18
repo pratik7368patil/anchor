@@ -1,11 +1,15 @@
 {
   "name": "@pratik7368patil/anchor",
-  "version": "0.1.37",
-  "description": "Local-first Cursor MCP CLI for GitHub PR history, codebase indexing, tests, regressions, and org memory.",
+  "version": "0.1.38",
+  "description": "Local-first MCP CLI for AI coding agents, GitHub PR history, codebase indexing, tests, regressions, and org memory.",
   "keywords": [
     "anchor",
     "cursor",
     "cursor-ai",
+    "claude-code",
+    "codex",
+    "vscode",
+    "antigravity",
     "mcp",
     "model-context-protocol",
     "github",

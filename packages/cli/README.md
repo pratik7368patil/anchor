@@ -5,9 +5,9 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](../../LICENSE)
 [![docs](https://img.shields.io/badge/docs-anchor--mcp.netlify.app-5e6ad2)](https://anchor-mcp.netlify.app)
 
-Anchor is a local-first Cursor MCP server for GitHub PR history, codebase indexing, tests, regressions, architecture memory, and org-level AI coding agent context.
+Anchor is a Cursor-first, MCP-compatible local memory tool for GitHub PR history, codebase indexing, tests, regressions, architecture memory, and org-level AI coding agent context.
 
-It gives Cursor Agent concise, sanitized, evidence-backed context before code edits without SaaS, CLI telemetry, GitHub write access, or remote LLM calls.
+It gives AI coding agents concise, sanitized, evidence-backed context before code edits without SaaS, CLI telemetry, GitHub write access, or remote LLM calls.
 
 Install:
 
@@ -28,11 +28,14 @@ Use it inside a GitHub-backed repo:
 ```bash
 gh auth login
 anchor init
+anchor init --target cursor,codex,claude-code
+anchor init --all-targets
 anchor demo
-anchor prompts
+anchor prompts --target codex
 anchor index
 anchor index-all --concurrency 6
 anchor index-code
+anchor context "Refactor auth cache" --file src/auth/cache.ts --strict
 anchor explain src/auth/cache.ts
 anchor explain src/auth/cache.ts --share
 anchor architecture
@@ -88,7 +91,7 @@ Daily refresh:
 anchor sync
 ```
 
-Before Cursor edits:
+Before AI agent edits:
 
 ```bash
 anchor plan "Add API integration" --file src/api/routes.ts
@@ -132,11 +135,11 @@ Use `--file path` for file-level guidance, `--area api` for one architecture are
 `anchor org ...`:
 Use `--org my-org` on every org command. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--no-graph` with `org index`/`org sync` to postpone cross-repo graph rebuilds, `org graph` to rebuild only edges/API consumers, `org graph --open` to inspect the graph in a local browser UI, `--concurrency 1-3` with `org clone` and `org sync`, `--diff-file` and `--strict` with `org impact`, `--min-coverage` with `org ci`, and `--html`/`--open`/`--output` with `org map`, `org impact`, and `org ci` to generate local human-readable HTML reports.
 
-Then reload Cursor and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`.
+Then reload your selected AI tool and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`. If a tool cannot call MCP yet, use `anchor context "<task>" --file path --strict` and paste the sanitized Markdown into the agent.
 
 Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, comments, reviews, commits, labels, and changed files. Anchor uses REST only to enrich PR file patches, caps GraphQL page size below GitHub's nested node ceiling, adapts GraphQL page size from live rate-limit cost, and saves a local resume checkpoint for full-history runs, so `anchor index`, `anchor index-all`, and `anchor sync` are more efficient without adding another command. Transient GraphQL network/HTML gateway failures retry before Anchor falls back or fails clearly; GraphQL rate/resource limits reduce page size or defer instead of using the older REST PR-detail crawler.
 
-Use `anchor_get_context` with `strict: true` when Cursor should only receive non-stale, high-confidence evidence.
+Use `anchor_get_context` with `strict: true` when the agent should only receive non-stale, high-confidence evidence.
 
 Anchor indexes PR history, local code chunks, likely related tests, regression memory, architecture patterns, and team-approved rules. `anchor health` and `anchor_index_status` include a local coverage score. All data stays in `.anchor/index.sqlite` on your machine.
 
@@ -144,7 +147,7 @@ Org Memory is opt-in. `anchor org ...` commands store allowlisted repo clones an
 
 Cross-repo edges and API consumers are created during the org graph phase. If a large `anchor org sync` is taking too long after repo indexing completes, run `anchor org status --org my-org` in another terminal to see the heartbeat, then split future runs with `anchor org sync --org my-org --no-graph` and `anchor org graph --org my-org --open`. If a recent sync is interrupted after PR/code indexing but before graph completion, rerunning `anchor org sync` resumes graph work and skips redundant PR fetches for repos that already completed PR sync.
 
-Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor sync`, and `anchor index-code`. It gives Cursor deterministic current-code guidance about file areas, import direction, symbols, repeated folder patterns, and nearby test conventions before adding APIs, services, components, hooks, tests, or refactors.
+Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor sync`, and `anchor index-code`. It gives AI coding agents deterministic current-code guidance about file areas, import direction, symbols, repeated folder patterns, and nearby test conventions before adding APIs, services, components, hooks, tests, or refactors.
 
 `anchor demo` runs offline with bundled fixtures and sample code. `--share` on `explain` and `review` produces compact Markdown for Slack or PR comments.
 

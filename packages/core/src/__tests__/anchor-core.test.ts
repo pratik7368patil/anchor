@@ -5,11 +5,13 @@ import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ANCHOR_CURSOR_RULE,
+  checkAgentTargetConfig,
   checkSchema,
   clearGraphQLFetchCheckpoint,
   defaultDatabasePath,
   discoverCodeFiles,
   ensureAnchorGitExclude,
+  configureAgentTargets,
   ensureCursorConfig,
   ensureCursorRule,
   explainFile,
@@ -27,6 +29,7 @@ import {
   loadTeamRulesFile,
   mergeAnchorMcpConfig,
   openAnchorDatabase,
+  parseAnchorAgentTargets,
   parseGitHubRemote,
   rankTeamRules,
   rankWisdomUnits,
@@ -968,6 +971,88 @@ describe("Cursor config", () => {
     expect(second.updated).toBe(false);
     expect(fs.readFileSync(first.path, "utf8")).toContain(".anchor/");
     expect(fs.existsSync(gitignorePath)).toBe(false);
+  });
+
+  it("configures multiple AI agent targets without removing existing MCP servers", () => {
+    const cwd = tempDir();
+    fs.mkdirSync(path.join(cwd, ".vscode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(cwd, ".vscode", "mcp.json"),
+      JSON.stringify({ servers: { existing: { command: "other" } } }, null, 2),
+    );
+    fs.writeFileSync(
+      path.join(cwd, ".mcp.json"),
+      JSON.stringify({ mcpServers: { existing: { command: "other" } } }, null, 2),
+    );
+
+    const results = configureAgentTargets({
+      cwd,
+      targets: ["cursor", "vscode", "claude-code", "codex", "generic-mcp"],
+      anchorEntry: { command: "/usr/local/bin/anchor", args: ["serve"] },
+    });
+
+    expect(results.map((result) => result.target)).toEqual([
+      "cursor",
+      "vscode",
+      "claude-code",
+      "codex",
+      "generic-mcp",
+    ]);
+    const vscodeConfig = JSON.parse(
+      fs.readFileSync(path.join(cwd, ".vscode", "mcp.json"), "utf8"),
+    ) as { servers: Record<string, { command: string; args?: string[] }> };
+    expect(vscodeConfig.servers.existing?.command).toBe("other");
+    expect(vscodeConfig.servers.anchor).toEqual({
+      command: "/usr/local/bin/anchor",
+      args: ["serve"],
+    });
+
+    const claudeConfig = JSON.parse(fs.readFileSync(path.join(cwd, ".mcp.json"), "utf8")) as {
+      mcpServers: Record<string, { command: string; type?: string }>;
+    };
+    expect(claudeConfig.mcpServers.existing?.command).toBe("other");
+    expect(claudeConfig.mcpServers.anchor?.type).toBe("stdio");
+    expect(fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf8")).toContain(
+      "BEGIN ANCHOR AI AGENT MEMORY",
+    );
+    expect(fs.readFileSync(path.join(cwd, ".codex", "config.toml"), "utf8")).toContain(
+      "[mcp_servers.anchor]",
+    );
+    expect(fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8")).toContain(
+      "anchor_get_context",
+    );
+    expect(fs.readFileSync(path.join(cwd, ".anchor", "mcp-config.json"), "utf8")).toContain(
+      "\"anchor\"",
+    );
+    expect(JSON.stringify(results)).not.toContain("ghp_");
+  });
+
+  it("skips Antigravity project config and returns manual setup unless user scope is explicit", () => {
+    const cwd = tempDir();
+    const results = configureAgentTargets({
+      cwd,
+      targets: ["antigravity"],
+      scope: "project",
+    });
+
+    expect(results[0]?.skipped).toBe(true);
+    expect(results[0]?.manualConfig).toContain("mcpServers");
+  });
+
+  it("validates selected agent config checks", () => {
+    const cwd = tempDir();
+    configureAgentTargets({
+      cwd,
+      targets: ["cursor", "codex"],
+      anchorEntry: { command: "anchor", args: ["serve"] },
+    });
+
+    expect(checkAgentTargetConfig(cwd, "cursor").ok).toBe(true);
+    expect(checkAgentTargetConfig(cwd, "codex").ok).toBe(true);
+    expect(checkAgentTargetConfig(cwd, "vscode").ok).toBe(false);
+    expect(parseAnchorAgentTargets("cursor,codex")).toEqual(["cursor", "codex"]);
+    expect(parseAnchorAgentTargets("generic")).toEqual(["generic-mcp"]);
+    expect(() => parseAnchorAgentTargets("unknown")).toThrow("Invalid Anchor target");
   });
 });
 
@@ -2265,6 +2350,7 @@ describe("doctor", () => {
     const report = await runDoctor({
       cwd,
       env: { GITHUB_TOKEN: "test-token" } as NodeJS.ProcessEnv,
+      targets: ["cursor"],
       githubClientFactory: () =>
         ({
           repos: {
@@ -2280,7 +2366,7 @@ describe("doctor", () => {
     expect(report.checks.find((item) => item.name === ".anchor/index.sqlite exists")?.ok).toBe(
       true,
     );
-    expect(report.checks.find((item) => item.name === "Cursor rule file exists")?.ok).toBe(true);
+    expect(report.checks.find((item) => item.name === "Cursor config")?.ok).toBe(true);
     expect(report.checks.find((item) => item.name === "SQLite schema valid")?.fix).toBeUndefined();
   });
 });
