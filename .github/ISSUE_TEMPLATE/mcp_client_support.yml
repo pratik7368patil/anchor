@@ -1,0 +1,30 @@
+name: MCP client support
+description: Request or improve setup for a specific AI coding agent or MCP client.
+title: "[mcp client]: "
+labels: ["mcp-client", "needs-triage"]
+body:
+  - type: input
+    id: client
+    attributes:
+      label: Client name
+      placeholder: Cursor, Claude Code, Codex, VS Code, Antigravity, or another MCP client
+    validations:
+      required: true
+  - type: textarea
+    id: config_shape
+    attributes:
+      label: MCP config shape
+      description: If public, link the client's MCP setup docs or paste a sanitized example.
+  - type: textarea
+    id: desired_behavior
+    attributes:
+      label: Desired Anchor behavior
+      placeholder: anchor init --target example-agent should create ...
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: Current errors or friction
+      description: Paste sanitized logs only. Do not include tokens or private paths if they matter.
+      render: shell

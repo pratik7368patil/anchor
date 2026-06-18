@@ -131,7 +131,7 @@ function buildStructuredData(routePath: string): Record<string, unknown> {
         url: siteUrl,
         codeRepository: "https://github.com/pratik7368patil/anchor",
         description:
-          "Local-first MCP server for AI coding agents, GitHub PR history, codebase indexing, tests, regressions, and org memory.",
+          "Local-first MCP server and CLI for AI coding agents, repo memory, org memory, GitHub PR history, codebase indexing, regressions, and cross-repo impact.",
         offers: {
           "@type": "Offer",
           price: "0",

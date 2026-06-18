@@ -5,7 +5,7 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-green.svg)](../../LICENSE)
 [![docs](https://img.shields.io/badge/docs-anchor--mcp.netlify.app-5e6ad2)](https://anchor-mcp.netlify.app)
 
-Anchor is a Cursor-first, MCP-compatible local memory tool for GitHub PR history, codebase indexing, tests, regressions, architecture memory, and org-level AI coding agent context.
+Anchor is a local-first, MCP-compatible repo and org memory tool for GitHub PR history, codebase indexing, tests, regressions, architecture memory, cross-repo impact, and AI coding agent context.
 
 It gives AI coding agents concise, sanitized, evidence-backed context before code edits without SaaS, CLI telemetry, GitHub write access, or remote LLM calls.
 

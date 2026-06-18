@@ -6,9 +6,9 @@
 [![website](https://img.shields.io/badge/docs-anchor--mcp.netlify.app-5e6ad2)](https://anchor-mcp.netlify.app)
 [![GitHub Repo stars](https://img.shields.io/github/stars/pratik7368patil/anchor?style=social)](https://github.com/pratik7368patil/anchor)
 
-Local-first repo memory for AI coding agents.
+Local repo and org memory for AI coding agents.
 
-Anchor is a Cursor-first, MCP-compatible local memory tool that indexes GitHub PR history, local code, tests, regressions, architecture patterns, team rules, and org repo relationships so AI coding agents can make safer code changes with evidence-backed context.
+Anchor is a local-first, MCP-compatible memory tool that indexes GitHub PR history, local code, tests, regressions, architecture patterns, team rules, and cross-repo impact so AI coding agents can make safer code changes with evidence-backed context.
 
 ```bash
 npx @pratik7368patil/anchor demo
@@ -18,7 +18,7 @@ npx @pratik7368patil/anchor demo
 
 ## Why Developers Use Anchor
 
-- **MCP context before edits**: `anchor_get_context` gives Cursor, Claude Code, Codex, VS Code, Antigravity, and generic MCP clients concise, ranked, cited repo memory before non-trivial changes.
+- **MCP context before edits**: `anchor_get_context` gives Cursor, Claude Code, Codex, VS Code, Antigravity, and generic MCP clients concise, ranked, cited repo and org memory before non-trivial changes.
 - **GitHub PR history as evidence**: merged PR bodies, review comments, issue comments, commits, labels, and regressions become searchable local context.
 - **Local codebase indexing**: current files, symbols, imports, tests, architecture patterns, and test commands are indexed into SQLite.
 - **Org memory for AI agents**: allowlisted repos can be cloned locally and linked through imports, packages, API consumers, schemas, and regressions.
@@ -27,6 +27,18 @@ npx @pratik7368patil/anchor demo
 ## What Makes Anchor Different
 
 Anchor complements code search and graph-only tools by combining **why** code changed with **what** code exists now. It returns PR citations, confidence, freshness, strict-mode filtering, relevant tests, regression memory, and cross-repo impact instead of dumping broad context into the prompt.
+
+## Why Repo + Org Memory Matters
+
+Repo memory helps an agent understand the code it is editing: merged PR decisions, review constraints, current symbols, tests, architecture patterns, and known regressions. Org memory helps an agent understand the blast radius around that repo: API consumers, shared packages, schema contracts, downstream tests, and cross-repo regressions from explicitly allowlisted repositories.
+
+That combination is the difference between “change this file” and “change this file without breaking the contracts the rest of the organization depends on.”
+
+## How Anchor Compares
+
+- **Anchor vs code search**: code search finds matching text; Anchor adds PR history, confidence, freshness, regression memory, tests, and cited evidence.
+- **Anchor vs graph-only tools**: graphs show relationships; Anchor pairs relationships with why they matter and exposes them through MCP for agents.
+- **Anchor vs generic memory MCPs**: generic memory stores notes; Anchor builds deterministic repo and org memory from GitHub history, current code, tests, architecture, and cross-repo impact.
 
 ## Why AI Coding Agents Need It
 
@@ -40,15 +52,24 @@ AI coding agents should call this before non-trivial code changes.
 
 ## Popular Guides
 
+- [Repo and org memory for AI coding agents](https://anchor-mcp.netlify.app/docs/repo-and-org-memory)
+- [Cross-repo impact MCP](https://anchor-mcp.netlify.app/docs/cross-repo-impact-mcp)
 - [Cursor MCP server](https://anchor-mcp.netlify.app/docs/cursor-mcp-server)
+- [Cursor repo and org memory](https://anchor-mcp.netlify.app/docs/cursor-repo-org-memory)
 - [Claude Code setup](https://anchor-mcp.netlify.app/docs/claude-code-setup)
+- [Claude Code repo and org memory](https://anchor-mcp.netlify.app/docs/claude-code-repo-org-memory)
 - [Codex setup](https://anchor-mcp.netlify.app/docs/codex-setup)
+- [Codex repo and org memory](https://anchor-mcp.netlify.app/docs/codex-repo-org-memory)
 - [VS Code setup](https://anchor-mcp.netlify.app/docs/vscode-setup)
 - [GitHub PR history MCP](https://anchor-mcp.netlify.app/docs/github-pr-history-mcp)
 - [Local-first codebase indexing](https://anchor-mcp.netlify.app/docs/local-first-codebase-indexing)
 - [Org memory for AI agents](https://anchor-mcp.netlify.app/docs/org-memory-for-ai-agents)
-- [AI coding agent regression memory](https://anchor-mcp.netlify.app/docs/ai-coding-agent-regression-memory)
+- [AI agent regression memory](https://anchor-mcp.netlify.app/docs/ai-agent-regression-memory)
 - [Anchor vs code search and graph-only tools](https://anchor-mcp.netlify.app/docs/anchor-vs-code-search)
+
+## Growth And Community
+
+Anchor has no CLI telemetry, so public proof comes from voluntary and aggregate signals: GitHub stars, forks, issues, discussions, npm download trends, GitHub traffic, docs visits, and MCP directory listings. See [GitHub repo settings](docs/github-repo-settings.md) and [growth playbook](docs/growth-playbook.md) for the repo topics, directory listing copy, launch posts, and 30-day measurement plan.
 
 ## Privacy Model
 

@@ -7,7 +7,7 @@ Use this checklist after merging SEO/docs changes. These settings are manual bec
 Description:
 
 ```text
-Local-first MCP server for AI coding agents that indexes GitHub PR history, codebase context, tests, regressions, and org memory.
+Local-first MCP server that gives AI coding agents repo and org memory from GitHub PR history, code, tests, regressions, architecture, and cross-repo impact.
 ```
 
 Website:
@@ -22,26 +22,24 @@ Recommended topics:
 
 ```text
 mcp
-model-context-protocol
-cursor
-cursor-ai
-claude-code
-codex
-vscode
-antigravity
 mcp-server
+model-context-protocol
 ai-coding
 coding-agent
-developer-tools
-github
-pull-requests
-pr-review
+repo-memory
+org-memory
+github-pr-history
 codebase-indexing
-code-search
+cross-repo-impact
+cursor
+claude-code
+codex
 local-first
 sqlite
 typescript
+developer-tools
 regression-testing
+code-review
 architecture
 ```
 
@@ -56,7 +54,7 @@ assets/marketing/anchor-thumbnail.png
 Suggested alt/working copy:
 
 ```text
-Anchor - local-first repo memory for AI coding agents. PR history, codebase context, tests, regressions, and org graph.
+Anchor - local repo and org memory for AI coding agents. PR history, code, tests, regressions, architecture, and cross-repo impact.
 ```
 
 ## README First Screen
@@ -65,9 +63,25 @@ Confirm the top of the repository shows:
 
 - npm install or demo command
 - AI coding agent MCP positioning
+- repo and org memory positioning
 - local-first/no telemetry claim
 - visual preview
 - GitHub star/demo/docs calls to action
+
+## Discussions
+
+Enable GitHub Discussions and create or refine these categories:
+
+- Show and tell
+- Setup help
+- Ideas
+- Org memory use cases
+
+Suggested welcome copy:
+
+```text
+Share how you are using Anchor as local repo and org memory for AI coding agents. Please include the AI agent/client, repo shape, setup friction, and whether you are using single-repo or org memory.
+```
 
 ## Search Queries To Monitor
 
@@ -76,6 +90,9 @@ Confirm the top of the repository shows:
 - Codex MCP setup
 - VS Code MCP setup
 - GitHub PR history MCP
+- repo memory MCP
+- org memory MCP
+- cross-repo impact MCP
 - local-first MCP server
 - codebase indexing for AI coding agents
 - AI coding agent repo memory

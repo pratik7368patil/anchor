@@ -74,4 +74,4 @@ Target length: 2 minutes.
 
 ## One-Line Positioning
 
-Anchor gives AI coding agents local, cited repo memory from PR history, current code, architecture patterns, tests, regressions, and team rules before they edit.
+Anchor gives AI coding agents local, cited repo and org memory from PR history, current code, architecture patterns, tests, regressions, team rules, and cross-repo impact before they edit.

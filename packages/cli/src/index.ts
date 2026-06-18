@@ -160,7 +160,7 @@ function readPackageVersion(): string {
 
 program
   .name("anchor")
-  .description("Anchor: local-first repo memory for AI coding agents")
+  .description("Anchor: local repo and org memory for AI coding agents")
   .version(readPackageVersion());
 
 program

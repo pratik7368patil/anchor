@@ -1,7 +1,7 @@
 {
   "name": "@pratik7368patil/anchor-core",
-  "version": "0.1.38",
-  "description": "Local-first indexing and retrieval engine for AI coding agent MCP context from GitHub PR history and codebase evidence.",
+  "version": "0.1.39",
+  "description": "Local-first indexing and retrieval engine for AI coding agent repo memory, org memory, GitHub PR history, codebase evidence, regressions, and cross-repo impact.",
   "keywords": [
     "anchor",
     "cursor",
@@ -13,7 +13,11 @@
     "model-context-protocol",
     "github",
     "pull-requests",
+    "github-pr-history",
     "codebase-indexing",
+    "repo-memory",
+    "org-memory",
+    "cross-repo-impact",
     "local-first",
     "sqlite",
     "fts5",

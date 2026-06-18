@@ -52,6 +52,9 @@
     <loc>https://anchor-mcp.netlify.app/docs/use-cases</loc>
   </url>
   <url>
+    <loc>https://anchor-mcp.netlify.app/docs/repo-and-org-memory</loc>
+  </url>
+  <url>
     <loc>https://anchor-mcp.netlify.app/docs/cursor-mcp-server</loc>
   </url>
   <url>
@@ -64,9 +67,42 @@
     <loc>https://anchor-mcp.netlify.app/docs/org-memory-for-ai-agents</loc>
   </url>
   <url>
+    <loc>https://anchor-mcp.netlify.app/docs/cross-repo-impact-mcp</loc>
+  </url>
+  <url>
     <loc>https://anchor-mcp.netlify.app/docs/ai-coding-agent-regression-memory</loc>
   </url>
   <url>
+    <loc>https://anchor-mcp.netlify.app/docs/ai-agent-regression-memory</loc>
+  </url>
+  <url>
     <loc>https://anchor-mcp.netlify.app/docs/anchor-vs-code-search</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/cursor-repo-org-memory</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/claude-code-repo-org-memory</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/codex-repo-org-memory</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/claude-code-setup</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/codex-setup</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/vscode-setup</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/antigravity-setup</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/generic-mcp-setup</loc>
+  </url>
+  <url>
+    <loc>https://anchor-mcp.netlify.app/docs/cli-fallback</loc>
   </url>
 </urlset>

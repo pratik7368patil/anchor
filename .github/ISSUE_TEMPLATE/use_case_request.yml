@@ -1,0 +1,38 @@
+name: Use case request
+description: Suggest a workflow where Anchor could help AI coding agents.
+title: "[use case]: "
+labels: ["use-case", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share the workflow, not private code. Anchor is strongest when requests include the agent, repo shape, and evidence you wish the agent had.
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: What should the AI coding agent do better with Anchor?
+      placeholder: Before changing an API contract, find downstream consumers and old regressions.
+    validations:
+      required: true
+  - type: dropdown
+    id: memory_scope
+    attributes:
+      label: Memory scope
+      options:
+        - Single repo
+        - Multiple repos / org memory
+        - Both
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Useful output
+      description: What context, checks, citations, or commands would make this workflow valuable?
+  - type: textarea
+    id: current_workaround
+    attributes:
+      label: Current workaround
+      description: How do you solve this today?
