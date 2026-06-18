@@ -1,0 +1,48 @@
+name: Setup help
+description: Get help installing Anchor or connecting it to an AI coding agent.
+title: "[setup]: "
+labels: ["setup", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Anchor. Please do not paste tokens, secrets, private source code, or private PR comments.
+  - type: dropdown
+    id: target
+    attributes:
+      label: AI agent or client
+      options:
+        - Cursor
+        - Claude Code
+        - Codex
+        - VS Code
+        - Antigravity
+        - Generic MCP
+        - CLI only
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or setup step
+      description: Which Anchor command or client setup step failed?
+      placeholder: anchor init --target cursor
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Sanitized output
+      description: Paste relevant logs after removing tokens, private URLs, and private code.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Anchor version
+      placeholder: anchor --version
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, package manager, and whether this is local desktop, cloud dev env, or CI.

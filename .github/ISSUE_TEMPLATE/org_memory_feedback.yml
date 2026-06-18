@@ -1,0 +1,41 @@
+name: Org memory feedback
+description: Share feedback about cross-repo impact, org graph, API consumers, or org sync.
+title: "[org memory]: "
+labels: ["org-memory", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep examples generic and sanitized. Do not paste private repository names, tokens, secrets, or proprietary code.
+  - type: textarea
+    id: repo_shape
+    attributes:
+      label: Repo shape
+      description: Describe the generic org shape and repo groups.
+      placeholder: 2 backend repos, 3 frontend repos, 1 shared SDK package.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - org sync
+        - org graph
+        - cross-repo impact
+        - API consumers
+        - org CI
+        - setup
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include sanitized command output or graph behavior.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What would have been more useful?
+      description: Explain the missing edge, noisy edge, performance issue, or workflow gap.

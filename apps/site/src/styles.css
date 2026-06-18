@@ -540,6 +540,17 @@ h1 {
   color: var(--text);
 }
 
+.related-guide-block {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.related-guide-block > strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
 .mock-window {
   position: relative;
   overflow: hidden;
@@ -1212,6 +1223,7 @@ h2 {
   margin-top: 0;
 }
 
+.doc-card h1,
 .doc-card h2 {
   color: var(--text);
   font-size: 58px;
@@ -2147,6 +2159,7 @@ tr:last-child td {
   }
 
   h2,
+  .doc-card h1,
   .doc-card h2 {
     font-size: 34px;
   }
@@ -2263,6 +2276,7 @@ tr:last-child td {
     justify-content: flex-start;
   }
 
+  .doc-card h1,
   .doc-card h2 {
     font-size: 42px;
   }

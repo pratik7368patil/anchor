@@ -366,7 +366,7 @@ function renderShell(content: string, activeArea: "home" | "docs"): string {
     ${content}
 
     <footer class="footer">
-      <span>Anchor / local-first context for AI coding agents</span>
+      <span>Anchor / local repo and org memory for AI coding agents</span>
       <span>No SaaS. No CLI telemetry. No write access to GitHub.</span>
     </footer>
   `;
@@ -378,9 +378,9 @@ function renderHome(): string {
       <main id="top">
         <section class="section hero" id="product" aria-labelledby="hero-title">
           <div class="hero-copy fade-up">
-            <span class="section-label">Local repo memory for AI agents</span>
-            <h1 id="hero-title">Local repo memory for AI coding agents.</h1>
-            <p>Anchor indexes PR history, code, tests, regressions, and org relationships locally, then returns concise evidence before AI agents edit.</p>
+            <span class="section-label">Local repo and org memory</span>
+            <h1 id="hero-title">Local repo and org memory for AI coding agents.</h1>
+            <p>Anchor indexes PR history, code, tests, regressions, architecture, and cross-repo impact locally, then returns concise evidence before AI agents edit.</p>
             <div class="hero-actions">
               <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="hero_demo_copy">Copy demo command</button>
               <a class="btn" href="/docs/quickstart" data-route data-track-event="hero_quickstart_click">Read setup</a>
@@ -507,7 +507,7 @@ function renderDocsSidebar(activePath: string): string {
       <span class="brand-mark" aria-hidden="true">${renderAnchorIcon()}</span>
       <span>
         <strong>Anchor</strong>
-        <small>Repo memory for AI agents</small>
+        <small>Repo + org memory for agents</small>
       </span>
     </a>
 
@@ -1031,7 +1031,7 @@ function renderMcpPage(): string {
     <article class="doc-card fade-up">
       <span class="section-label">Reference</span>
       <h2>MCP tools</h2>
-      <p class="section-intro">These are the surfaces MCP clients use to fetch repo memory, explain files, review diffs, and inspect index health.</p>
+      <p class="section-intro">These are the surfaces MCP clients use to fetch repo and org memory, explain files, review diffs, and inspect index health.</p>
       ${renderTable(mcpTools, "Anchor MCP tools")}
       ${renderCodeBlock(
         "Main tool input",
@@ -1152,7 +1152,7 @@ function renderSeoLandingPage(page: (typeof seoLandingPages)[number]): string {
   return `
     <article class="doc-card fade-up">
       <span class="section-label">Use case</span>
-      <h2>${escapeHtml(page.title)}</h2>
+      <h1>${escapeHtml(page.title)}</h1>
       <p class="section-intro">${escapeHtml(page.description)}</p>
       <div class="workflow-grid">
         <div>
@@ -1171,6 +1171,7 @@ function renderSeoLandingPage(page: (typeof seoLandingPages)[number]): string {
         <span aria-hidden="true">${renderShieldIcon()}</span>
         <p>${escapeHtml(page.privacyNote)}</p>
       </div>
+      ${renderRelatedGuides(page)}
       <div class="engagement-panel">
         <div>
           <strong>Make AI coding agents use evidence before they edit</strong>
@@ -1185,12 +1186,39 @@ function renderSeoLandingPage(page: (typeof seoLandingPages)[number]): string {
   `;
 }
 
+function renderRelatedGuides(page: (typeof seoLandingPages)[number]): string {
+  const relatedPaths =
+    page.relatedPaths ??
+    seoLandingPages
+      .filter((item) => item.path !== page.path)
+      .slice(0, 3)
+      .map((item) => item.path);
+  const related = relatedPaths
+    .map(
+      (path) =>
+        seoLandingPages.find((item) => item.path === path) ??
+        docsPages.find((item) => item.path === path),
+    )
+    .filter((item): item is { path: string; title: string; description: string } => Boolean(item));
+
+  if (!related.length) return "";
+
+  return `<div class="related-guide-block">
+    <strong>Related guides</strong>
+    <div class="guide-link-row">
+      ${related
+        .map((item) => `<a href="${item.path}" data-route>${escapeHtml(item.title)}</a>`)
+        .join("")}
+    </div>
+  </div>`;
+}
+
 function renderProductMockup(): string {
   return `
     <div class="mock-window">
       <div class="mock-titlebar">
         <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
-        <span>local repo / Anchor MCP</span>
+        <span>local repo + org / Anchor MCP</span>
         <span>.anchor/index.sqlite</span>
       </div>
       <div class="simple-mock">

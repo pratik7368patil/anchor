@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Anchor docs
+    url: https://anchor-mcp.netlify.app/docs
+    about: Setup, CLI, MCP, privacy, org memory, and troubleshooting docs.
+  - name: Adoption and privacy model
+    url: https://anchor-mcp.netlify.app/docs/adoption
+    about: Public aggregate adoption stats and no-CLI-telemetry notes.

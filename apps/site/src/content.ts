@@ -50,6 +50,7 @@ export type SeoLandingPage = {
   howAnchorHelps: string[];
   command: string;
   privacyNote: string;
+  relatedPaths?: string[];
 };
 
 export type WorkflowRecipe = {
@@ -91,7 +92,12 @@ export const workflowRecipes: WorkflowRecipe[] = [
     title: "First-time setup in one repo",
     useWhen:
       "Use this when a developer installs Anchor for the first time in a GitHub-backed repo.",
-    commands: ["anchor init", "anchor init --target cursor,codex", "anchor index --limit 200", "anchor doctor"],
+    commands: [
+      "anchor init",
+      "anchor init --target cursor,codex",
+      "anchor index --limit 200",
+      "anchor doctor",
+    ],
     notes:
       "Run from the repository root, select one or more AI agents, then reload the selected tool so the MCP server and instructions are picked up.",
   },
@@ -178,7 +184,8 @@ export const commandGroups: CommandGroup[] = [
       },
       {
         command: "anchor doctor",
-        description: "Checks git repo, GitHub auth, selected AI agent config, database, and MCP server setup.",
+        description:
+          "Checks git repo, GitHub auth, selected AI agent config, database, and MCP server setup.",
       },
       {
         command: "anchor serve",
@@ -188,7 +195,7 @@ export const commandGroups: CommandGroup[] = [
   },
   {
     title: "Indexing",
-    intro: "Build the repo memory that AI coding agents can query before edits.",
+    intro: "Build repo memory first, then add org memory when cross-repo impact matters.",
     commands: [
       {
         command: "anchor index",
@@ -447,7 +454,8 @@ export const commandDetails: Record<string, CommandDetail> = {
       {
         name: "--scope project|user",
         description: "Choose project-local config or explicit user-level config.",
-        useWhen: "Use --scope user only for tools such as Antigravity that keep shared MCP config under the home directory.",
+        useWhen:
+          "Use --scope user only for tools such as Antigravity that keep shared MCP config under the home directory.",
         example: "anchor init --target antigravity --scope user",
       },
     ],
@@ -484,7 +492,8 @@ export const commandDetails: Record<string, CommandDetail> = {
     options: [
       {
         name: "--target <target>",
-        description: "Choose prompt wording for cursor, claude-code, codex, vscode, antigravity, or generic.",
+        description:
+          "Choose prompt wording for cursor, claude-code, codex, vscode, antigravity, or generic.",
         useWhen: "Use it when sharing prompt snippets for a specific AI coding tool.",
         example: "anchor prompts --target claude-code",
       },
@@ -1528,17 +1537,39 @@ export const useCases = [
   "Generate a local architecture briefing for onboarding or refactors.",
   "Convert repeated tribal knowledge into team-approved rules.",
   "Onboard new developers faster.",
-  "Demo repo memory to the team without GitHub access.",
+  "Demo repo and org memory workflows to the team without GitHub access.",
   "Keep AI coding agents grounded in actual repo history instead of guessing.",
   "Use strict mode for risky work so loose historical matches do not steer the agent.",
 ];
 
 export const seoLandingPages: SeoLandingPage[] = [
   {
+    path: "/docs/repo-and-org-memory",
+    title: "Repo and org memory for AI coding agents",
+    description:
+      "Give AI coding agents local repo and org memory from GitHub PR history, code, tests, regressions, architecture, and cross-repo impact.",
+    problem:
+      "AI coding agents often see the current task and open files, but miss the repo history and cross-repo relationships senior engineers use to make safe changes.",
+    howAnchorHelps: [
+      "Builds repo memory from merged PRs, current code, tests, regressions, architecture patterns, and team rules.",
+      "Builds org memory from explicitly allowlisted repos, package edges, imports, API consumers, schemas, and cross-repo regressions.",
+      "Serves concise, sanitized, evidence-backed context through MCP or the CLI before agents edit.",
+    ],
+    command:
+      "npx @pratik7368patil/anchor demo\nanchor init\nanchor index --limit 200\nanchor org sync --org my-org --no-graph",
+    privacyNote:
+      "Anchor stores indexes locally in SQLite, uses read-only GitHub access, and does not send CLI telemetry or call remote LLM APIs.",
+    relatedPaths: [
+      "/docs/org-memory-for-ai-agents",
+      "/docs/cross-repo-impact-mcp",
+      "/docs/github-pr-history-mcp",
+    ],
+  },
+  {
     path: "/docs/cursor-mcp-server",
     title: "Cursor MCP server",
     description:
-      "Use Anchor as a local-first Cursor MCP server that gives agents PR history, codebase context, tests, and architecture evidence before edits.",
+      "Use Anchor as a local-first Cursor MCP server that gives agents repo and org memory from PR history, code, tests, regressions, and architecture evidence.",
     problem:
       "Cursor can edit quickly, but it cannot remember every merged PR, review comment, regression, and local architecture pattern by default.",
     howAnchorHelps: [
@@ -1549,12 +1580,17 @@ export const seoLandingPages: SeoLandingPage[] = [
     command: "anchor init\nanchor index --limit 200\nanchor doctor",
     privacyNote:
       "Anchor runs locally, stores indexes in SQLite, and does not send CLI or MCP telemetry.",
+    relatedPaths: [
+      "/docs/cursor-repo-org-memory",
+      "/docs/repo-and-org-memory",
+      "/docs/github-pr-history-mcp",
+    ],
   },
   {
     path: "/docs/github-pr-history-mcp",
     title: "GitHub PR history MCP",
     description:
-      "Index merged GitHub pull request history locally and expose architecture decisions, constraints, regressions, and review evidence through MCP.",
+      "Index merged GitHub pull request history locally and expose repo and org memory, architecture decisions, constraints, regressions, and review evidence through MCP.",
     problem:
       "Important engineering context often lives in old PR descriptions, review comments, issue comments, labels, and commits where coding agents do not look.",
     howAnchorHelps: [
@@ -1566,6 +1602,11 @@ export const seoLandingPages: SeoLandingPage[] = [
       "anchor index --limit 200\nanchor index-all --concurrency 2\nanchor explain src/api/routes.ts",
     privacyNote:
       "GitHub auth is read-only and resolved from local env or gh auth; tokens are never written to config, logs, or SQLite.",
+    relatedPaths: [
+      "/docs/repo-and-org-memory",
+      "/docs/ai-agent-regression-memory",
+      "/docs/cross-repo-impact-mcp",
+    ],
   },
   {
     path: "/docs/local-first-codebase-indexing",
@@ -1583,6 +1624,11 @@ export const seoLandingPages: SeoLandingPage[] = [
       "anchor index-code\nanchor architecture --file src/api/routes.ts\nanchor test-command src/api/routes.ts",
     privacyNote:
       "Code chunks are sanitized before storage and output; no SaaS, embeddings service, or remote LLM API is required.",
+    relatedPaths: [
+      "/docs/repo-and-org-memory",
+      "/docs/anchor-vs-code-search",
+      "/docs/org-memory-for-ai-agents",
+    ],
   },
   {
     path: "/docs/org-memory-for-ai-agents",
@@ -1600,6 +1646,29 @@ export const seoLandingPages: SeoLandingPage[] = [
       "anchor org init --org my-org\nanchor org add-repo my-org/backend-api --group backend\nanchor org add-repo my-org/frontend-app --group frontend\nanchor org sync --org my-org --no-graph\nanchor org graph --org my-org --open",
     privacyNote:
       "Org Memory is opt-in, local-only, read-only, and never scans every organization repo automatically.",
+    relatedPaths: ["/docs/repo-and-org-memory", "/docs/cross-repo-impact-mcp", "/docs/org-memory"],
+  },
+  {
+    path: "/docs/cross-repo-impact-mcp",
+    title: "Cross-repo impact MCP",
+    description:
+      "Use Anchor to check API consumers, shared packages, schemas, regressions, and affected repos before agents change cross-repo code.",
+    problem:
+      "Backend routes, schemas, shared packages, and access logic can affect multiple repos, but single-repo context rarely shows the blast radius.",
+    howAnchorHelps: [
+      "Builds a local cross-repo graph from allowlisted repos, imports, package manifests, API strings, schemas, tests, and PR evidence.",
+      "Flags likely affected repos and API consumers before auth, access, billing, schema, SDK, or shared-package changes.",
+      "Returns evidence-backed impact, recommended checks, and coverage warnings through anchor_check_cross_repo_impact.",
+    ],
+    command:
+      "anchor org sync --org my-org --no-graph\nanchor org graph --org my-org --open\nanchor org impact --org my-org --repo my-org/backend-api --strict",
+    privacyNote:
+      "Cross-repo impact analysis is local and deterministic. Repos must be explicitly allowlisted, and Anchor never writes to GitHub.",
+    relatedPaths: [
+      "/docs/org-memory-for-ai-agents",
+      "/docs/repo-and-org-memory",
+      "/docs/github-pr-history-mcp",
+    ],
   },
   {
     path: "/docs/ai-coding-agent-regression-memory",
@@ -1617,6 +1686,33 @@ export const seoLandingPages: SeoLandingPage[] = [
       "anchor review --strict\nanchor explain src/auth/access.ts\nanchor org impact --org my-org --strict",
     privacyNote:
       "Regression evidence is sanitized, cited, and presented as evidence rather than instructions.",
+    relatedPaths: [
+      "/docs/ai-agent-regression-memory",
+      "/docs/github-pr-history-mcp",
+      "/docs/cross-repo-impact-mcp",
+    ],
+  },
+  {
+    path: "/docs/ai-agent-regression-memory",
+    title: "AI agent regression memory",
+    description:
+      "Retrieve local regression memory from PRs, reverts, hotfixes, root-cause notes, and cross-repo impact before AI agents edit risky code.",
+    problem:
+      "Agents can make plausible edits that repeat an old incident, rejected approach, or production regression if that history is not in context.",
+    howAnchorHelps: [
+      "Extracts deterministic regression signals from PR history, labels, comments, reviews, commits, and affected files.",
+      "Ranks regression memory higher when files, symbols, API contracts, or org consumers match the current task.",
+      "Supports strict mode so weak or stale regression evidence is filtered out for high-risk changes.",
+    ],
+    command:
+      "anchor review --strict\nanchor explain src/api/access.ts\nanchor org impact --org my-org --strict",
+    privacyNote:
+      "Regression snippets are sanitized before storage and output, and historical comments are evidence only.",
+    relatedPaths: [
+      "/docs/github-pr-history-mcp",
+      "/docs/cross-repo-impact-mcp",
+      "/docs/repo-and-org-memory",
+    ],
   },
   {
     path: "/docs/anchor-vs-code-search",
@@ -1634,6 +1730,73 @@ export const seoLandingPages: SeoLandingPage[] = [
       "anchor explain src/api/routes.ts\nanchor architecture --map --format mermaid\nanchor org impact --org my-org --strict",
     privacyNote:
       "Anchor is deterministic and local-first by default; it does not require SaaS, telemetry, or remote embeddings.",
+    relatedPaths: [
+      "/docs/repo-and-org-memory",
+      "/docs/local-first-codebase-indexing",
+      "/docs/github-pr-history-mcp",
+    ],
+  },
+  {
+    path: "/docs/cursor-repo-org-memory",
+    title: "Cursor repo and org memory",
+    description:
+      "Configure Anchor so Cursor can use local repo and org memory before refactors, API changes, tests, reviews, and cross-repo impact checks.",
+    problem:
+      "Cursor can move fast, but it needs the repo decisions and org relationships that are usually spread across PRs, tests, and other repositories.",
+    howAnchorHelps: [
+      "Configures Cursor with the Anchor MCP server and evidence-first project rule.",
+      "Serves repo memory through anchor_get_context and org memory through anchor_check_cross_repo_impact.",
+      "Keeps outputs concise with citations, confidence, freshness, and strict-mode filtering.",
+    ],
+    command:
+      "anchor init --target cursor\nanchor index --limit 200\nanchor org sync --org my-org --no-graph\nanchor doctor --target cursor",
+    privacyNote:
+      "Cursor calls Anchor locally over stdio MCP; Anchor does not add CLI telemetry or store tokens in generated config.",
+    relatedPaths: [
+      "/docs/cursor-mcp-server",
+      "/docs/repo-and-org-memory",
+      "/docs/cross-repo-impact-mcp",
+    ],
+  },
+  {
+    path: "/docs/claude-code-repo-org-memory",
+    title: "Claude Code repo and org memory",
+    description:
+      "Configure Anchor so Claude Code can query local repo and org memory through MCP before code edits and reviews.",
+    problem:
+      "Claude Code can use MCP tools, but it still needs a local evidence source for repo history, architecture, tests, regressions, and cross-repo impact.",
+    howAnchorHelps: [
+      "Writes a project MCP config and managed CLAUDE.md instructions for evidence-first Anchor usage.",
+      "Lets Claude Code ask for repo context, file explanations, diff reviews, org impact, and API consumers.",
+      "Treats PR comments and docs as evidence, not executable instructions.",
+    ],
+    command:
+      "anchor init --target claude-code\nanchor index --limit 200\nanchor org sync --org my-org --no-graph\nanchor doctor --target claude-code",
+    privacyNote:
+      "Anchor stays local-first for Claude Code: read-only GitHub access, local SQLite, no CLI telemetry, and no remote LLM calls.",
+    relatedPaths: [
+      "/docs/claude-code-setup",
+      "/docs/repo-and-org-memory",
+      "/docs/org-memory-for-ai-agents",
+    ],
+  },
+  {
+    path: "/docs/codex-repo-org-memory",
+    title: "Codex repo and org memory",
+    description:
+      "Configure Anchor so Codex can use local repo and org memory for evidence-backed planning, edits, reviews, and cross-repo checks.",
+    problem:
+      "Codex can plan and edit across a workspace, but repo-specific PR history and org-wide dependency risk are usually outside the prompt.",
+    howAnchorHelps: [
+      "Writes Codex MCP config and managed AGENTS.md instructions for Anchor usage.",
+      "Exposes repo memory, task planning, architecture guidance, test commands, and org impact through stable MCP tools.",
+      "Keeps context sanitized, cited, and strict-mode friendly for high-risk edits.",
+    ],
+    command:
+      "anchor init --target codex\nanchor index --limit 200\nanchor org sync --org my-org --no-graph\nanchor doctor --target codex",
+    privacyNote:
+      "Codex uses the same local Anchor MCP server and SQLite index; no Anchor CLI telemetry is sent.",
+    relatedPaths: ["/docs/codex-setup", "/docs/repo-and-org-memory", "/docs/cross-repo-impact-mcp"],
   },
   {
     path: "/docs/claude-code-setup",
@@ -1671,8 +1834,7 @@ export const seoLandingPages: SeoLandingPage[] = [
   {
     path: "/docs/vscode-setup",
     title: "VS Code MCP setup",
-    description:
-      "Configure Anchor for VS Code MCP clients with a project .vscode/mcp.json entry.",
+    description: "Configure Anchor for VS Code MCP clients with a project .vscode/mcp.json entry.",
     problem:
       "VS Code MCP clients need a project-level server descriptor that can start Anchor through stdio.",
     howAnchorHelps: [
@@ -1852,6 +2014,10 @@ const baseSeoKeywords = [
   "GitHub PR history",
   "local-first",
   "codebase indexing",
+  "repo memory",
+  "org memory",
+  "cross-repo impact",
+  "GitHub PR history MCP",
   "AI coding agent",
 ];
 
@@ -1859,15 +2025,15 @@ export const seoPages: Record<string, SeoMetadata> = Object.fromEntries(
   [
     {
       path: "/",
-      title: "Anchor - Local-first repo memory for AI coding agents",
+      title: "Anchor - Local repo and org memory for AI coding agents",
       description:
-        "Anchor gives AI coding agents local repo memory from GitHub PR history, code, tests, regressions, and org context before edits.",
+        "Anchor gives AI coding agents local repo and org memory from GitHub PR history, code, tests, regressions, architecture, and cross-repo impact.",
       keywords: [
         ...baseSeoKeywords,
         "Cursor AI",
         "Claude Code",
         "Codex",
-        "repo memory",
+        "AI agent memory",
         "AI code review",
         "developer tools",
       ],
