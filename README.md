@@ -14,7 +14,7 @@ Anchor is a local-first, MCP-compatible memory tool that indexes GitHub PR histo
 npx @pratik7368patil/anchor demo
 ```
 
-![Anchor social preview](assets/marketing/anchor-thumbnail.png)
+![Anchor social preview](assets/marketing/social-preview-repo-org.png)
 
 ## Why Developers Use Anchor
 
@@ -70,6 +70,8 @@ AI coding agents should call this before non-trivial code changes.
 ## Growth And Community
 
 Anchor has no CLI telemetry, so public proof comes from voluntary and aggregate signals: GitHub stars, forks, issues, discussions, npm download trends, GitHub traffic, docs visits, and MCP directory listings. See [GitHub repo settings](docs/github-repo-settings.md) and [growth playbook](docs/growth-playbook.md) for the repo topics, directory listing copy, launch posts, and 30-day measurement plan.
+
+For directory submissions and community posts, use the copy blocks in [directory submission pack](docs/directory-submission-pack.md).
 
 ## Privacy Model
 

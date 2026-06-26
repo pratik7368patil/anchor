@@ -48,7 +48,7 @@ architecture
 Upload:
 
 ```text
-assets/marketing/anchor-thumbnail.png
+assets/marketing/social-preview-repo-org.png
 ```
 
 Suggested alt/working copy:

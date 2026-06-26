@@ -62,7 +62,7 @@ export type WorkflowRecipe = {
 
 export const repoUrl = "https://github.com/pratik7368patil/anchor";
 export const siteUrl = "https://anchor-mcp.netlify.app";
-export const socialImageUrl = `${siteUrl}/social-preview.png`;
+export const socialImageUrl = `${siteUrl}/social-preview-repo-org.png`;
 
 export const installCommand = `npm install -g @pratik7368patil/anchor
 gh auth login
@@ -1569,7 +1569,7 @@ export const seoLandingPages: SeoLandingPage[] = [
     path: "/docs/cursor-mcp-server",
     title: "Cursor MCP server",
     description:
-      "Use Anchor as a local-first Cursor MCP server that gives agents repo and org memory from PR history, code, tests, regressions, and architecture evidence.",
+      "Use Anchor with Cursor to give agents repo and org memory from PR history, code, tests, regressions, and architecture evidence.",
     problem:
       "Cursor can edit quickly, but it cannot remember every merged PR, review comment, regression, and local architecture pattern by default.",
     howAnchorHelps: [
@@ -1898,6 +1898,30 @@ export const seoLandingPages: SeoLandingPage[] = [
   },
 ];
 
+export const showcaseDemos = [
+  {
+    title: "PR history before a refactor",
+    problem: "An agent is asked to refactor a file that has old review constraints.",
+    command: 'anchor context "Refactor request validation" --file src/api/request.ts --strict',
+    outcome:
+      "Anchor returns cited PR evidence, confidence, freshness, related tests, and architecture guidance before edits begin.",
+  },
+  {
+    title: "Regression memory before risky code",
+    problem: "An agent touches code that previously caused a revert or hotfix.",
+    command: "anchor review --strict --diff-file change.diff",
+    outcome:
+      "Anchor surfaces regression evidence and recommended checks so the agent does not repeat a known failure.",
+  },
+  {
+    title: "Org impact before API changes",
+    problem: "A backend API, shared package, or schema change may affect other repos.",
+    command: "anchor org impact --org my-org --repo my-org/backend-api --strict",
+    outcome:
+      "Anchor reports likely consumers, affected repos, missing checks, and stale index warnings from local org memory.",
+  },
+];
+
 export const docsPages: DocsPage[] = [
   {
     path: "/docs",
@@ -1982,6 +2006,12 @@ export const docsPages: DocsPage[] = [
     title: "Adoption signals",
     description: "Public aggregate npm, GitHub, and site analytics signals without CLI telemetry.",
     group: "Safety",
+  },
+  {
+    path: "/docs/showcase",
+    title: "Showcase",
+    description: "Three concise demos for PR history, regression memory, and org impact workflows.",
+    group: "Start",
   },
   {
     path: "/docs/features",

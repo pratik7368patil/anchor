@@ -1,6 +1,6 @@
 {
   "name": "@pratik7368patil/anchor",
-  "version": "0.1.39",
+  "version": "0.1.40",
   "description": "Local-first MCP server and CLI for AI coding agents, repo memory, org memory, GitHub PR history, codebase indexing, regressions, and cross-repo impact.",
   "keywords": [
     "anchor",
