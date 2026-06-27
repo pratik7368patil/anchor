@@ -1,0 +1,46 @@
+# Anchor
+
+Anchor is local repo and org memory for AI coding agents.
+
+Anchor is a local-first MCP server and CLI that indexes GitHub PR history, current code, tests, regressions, architecture, team rules, and cross-repo impact. It helps AI coding agents retrieve concise, cited context before edits.
+
+## Install
+
+```bash
+npx @pratik7368patil/anchor demo
+npm install -g @pratik7368patil/anchor
+anchor init
+anchor index
+anchor doctor
+```
+
+## Key Capabilities
+
+- Repo memory from merged GitHub PRs, reviews, comments, commits, labels, and regressions.
+- Codebase memory from local code, symbols, imports, tests, test commands, and architecture patterns.
+- Org memory from explicitly allowlisted repos, API consumers, package edges, schemas, tests, regressions, and cross-repo impact.
+- MCP tools for context, search, file explanation, task planning, review, test commands, architecture, onboarding, playbooks, and org impact.
+- CLI fallback for AI coding tools that cannot call MCP directly.
+
+## Privacy And Safety
+
+- Local-first SQLite indexes.
+- Read-only GitHub access.
+- No CLI telemetry.
+- No SaaS.
+- No remote LLM calls.
+- Sanitized MCP output.
+- Prompt-injection and secret redaction before indexed evidence is returned.
+
+## Important Links
+
+- Homepage: https://anchor-mcp.netlify.app/
+- Quickstart: https://anchor-mcp.netlify.app/docs/quickstart
+- Repo and org memory: https://anchor-mcp.netlify.app/docs/repo-and-org-memory
+- Org memory guide: https://anchor-mcp.netlify.app/docs/org-memory
+- Cross-repo impact MCP: https://anchor-mcp.netlify.app/docs/cross-repo-impact-mcp
+- GitHub PR history MCP: https://anchor-mcp.netlify.app/docs/github-pr-history-mcp
+- Showcase demos: https://anchor-mcp.netlify.app/docs/showcase
+- Privacy: https://anchor-mcp.netlify.app/docs/privacy
+- GitHub: https://github.com/pratik7368patil/anchor
+- npm: https://www.npmjs.com/package/@pratik7368patil/anchor

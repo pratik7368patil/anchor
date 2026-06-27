@@ -46,6 +46,8 @@ Submit or refresh Anchor in:
 - awesome-mcp-servers lists
 - Relevant GitHub topic pages where submission is possible
 
+Use `docs/directory-submission-pack.md` for ready-to-copy descriptions, tags, links, preview image, and community post drafts.
+
 ## Four-Week Campaign
 
 Week 1:
@@ -54,6 +56,7 @@ Week 1:
 - Apply the GitHub About description, website, topics, social preview, and Discussions categories from `docs/github-repo-settings.md`.
 - Submit the sitemap in Google Search Console.
 - Submit or refresh MCP directory listings.
+- Refresh social preview cards after the new `social-preview-repo-org.png` image is live.
 - Post a LinkedIn launch update around repo and org memory for AI coding agents.
 
 Week 2:

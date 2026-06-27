@@ -8,6 +8,7 @@ import {
   repoUrl,
   seoLandingPages,
   seoPages,
+  showcaseDemos,
   siteUrl,
   socialImageUrl,
   useCases,
@@ -439,6 +440,27 @@ function renderHome(): string {
           </div>
         </section>
 
+        <section class="section value-section fade-up" aria-labelledby="org-title">
+          <div class="section-heading slim">
+            <span class="section-label">Why org memory matters</span>
+            <h2 id="org-title">Agents need the blast radius, not just the file.</h2>
+          </div>
+          <div class="value-grid">
+            <div>
+              <strong>API consumers</strong>
+              <p>Find frontend, SDK, service, or package consumers before changing contracts.</p>
+            </div>
+            <div>
+              <strong>Shared risk</strong>
+              <p>Connect shared packages, schemas, tests, and regressions across allowlisted repos.</p>
+            </div>
+            <div>
+              <strong>Review confidence</strong>
+              <p>Give agents and reviewers cited evidence before broad refactors or access changes.</p>
+            </div>
+          </div>
+        </section>
+
         <section class="section privacy-strip fade-up" id="privacy" aria-label="Anchor privacy guarantees">
           <div><span aria-hidden="true"></span><strong>Local SQLite index</strong></div>
           <div><span aria-hidden="true"></span><strong>Read-only GitHub access</strong></div>
@@ -564,6 +586,8 @@ function renderDocsPageContent(path: string): string {
       return renderPrivacyPage();
     case "/docs/adoption":
       return renderAdoptionPage();
+    case "/docs/showcase":
+      return renderShowcasePage();
     case "/docs/features":
       return renderFeaturesPage();
     case "/docs/use-cases":
@@ -1110,6 +1134,39 @@ function renderAdoptionPage(): string {
         <div class="engagement-actions">
           <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="adoption_page_demo_copy">Copy demo</button>
           <a class="btn" href="${repoUrl}" data-track-event="adoption_page_github_click">Open GitHub</a>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderShowcasePage(): string {
+  return `
+    <article class="doc-card fade-up">
+      <span class="section-label">Showcase</span>
+      <h2>Three demos that explain Anchor quickly</h2>
+      <p class="section-intro">Use these public-safe workflows in demos, posts, and team onboarding. Each one shows how Anchor gives AI coding agents evidence before they edit.</p>
+      <div class="docs-index-grid">
+        ${showcaseDemos
+          .map(
+            (demo) => `<div class="mini-link-card">
+              <span>Demo</span>
+              <strong>${escapeHtml(demo.title)}</strong>
+              <p>${escapeHtml(demo.problem)}</p>
+              <pre><code>${escapeHtml(demo.command)}</code></pre>
+              <p>${escapeHtml(demo.outcome)}</p>
+            </div>`,
+          )
+          .join("")}
+      </div>
+      <div class="engagement-panel">
+        <div>
+          <strong>Try the offline demo first</strong>
+          <p>The bundled demo uses sample PR and code data, requires no GitHub token, and sends no telemetry.</p>
+        </div>
+        <div class="engagement-actions">
+          <button class="btn primary" type="button" data-copy-value="npx @pratik7368patil/anchor demo" data-copy-event="showcase_demo_copy">Copy demo</button>
+          <a class="btn" href="${repoUrl}" data-track-event="showcase_github_click">Open GitHub</a>
         </div>
       </div>
     </article>

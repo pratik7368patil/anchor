@@ -10,6 +10,7 @@
     "format": "prettier --write .",
     "stats:collect": "tsx scripts/collect-adoption-stats.ts",
     "stats:validate": "tsx scripts/validate-adoption-stats.ts",
+    "growth:audit": "tsx scripts/growth-audit.ts",
     "site:dev": "pnpm --filter @pratik7368patil/anchor-site dev",
     "site:build": "pnpm --filter @pratik7368patil/anchor-site build"
   },
