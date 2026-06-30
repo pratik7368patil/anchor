@@ -11,6 +11,7 @@ import {
   checkAgentTargetConfig,
   detectConfiguredAgentTargets,
 } from "./utils/agent-config.js";
+import { getAutosyncStatus } from "./autosync.js";
 
 export type DoctorOptions = {
   cwd: string;
@@ -209,6 +210,41 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
       );
     }
   }
+
+  const autosyncStatus = getAutosyncStatus({ cwd: targetCwd });
+  checks.push(
+    check(
+      "autosync configured",
+      true,
+      autosyncStatus.enabled
+        ? `${autosyncStatus.jobs.length} autosync job(s) configured using ${autosyncStatus.scheduler}.`
+        : "Autosync is not enabled.",
+    ),
+  );
+  const missingSchedulers = autosyncStatus.jobs.filter(
+    (job) => job.enabled && !job.schedulerDetected,
+  );
+  checks.push(
+    check(
+      "autosync scheduler installed",
+      !autosyncStatus.enabled || missingSchedulers.length === 0,
+      missingSchedulers.length === 0
+        ? "Autosync scheduler files are present."
+        : `${missingSchedulers.length} autosync scheduler job(s) are missing.`,
+      "Run anchor init to reinstall local scheduler jobs.",
+    ),
+  );
+  const failedJobs = autosyncStatus.jobs.filter((job) => job.failing);
+  checks.push(
+    check(
+      "autosync last run healthy",
+      !autosyncStatus.enabled || failedJobs.length === 0,
+      failedJobs.length === 0
+        ? `Last autosync result: ${autosyncStatus.lastRun?.status ?? "not run yet"}.`
+        : `${failedJobs.length} autosync job(s) failed recently.`,
+      "Run anchor health and inspect ~/.anchor/logs/autosync/ for the failing job log.",
+    ),
+  );
 
   return { ok: checks.every((item) => item.ok), checks };
 }

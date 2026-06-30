@@ -173,6 +173,7 @@ Use non-interactive flags in CI or setup scripts:
 anchor init --target cursor
 anchor init --target cursor,codex,claude-code
 anchor init --all-targets
+anchor init --target cursor --no-autosync
 ```
 
 Cursor setup safely merges `.cursor/mcp.json` with:
@@ -191,6 +192,8 @@ Cursor setup safely merges `.cursor/mcp.json` with:
 It also creates `.cursor/rules/anchor.mdc`, telling Cursor Agent to call `anchor_get_context` before non-trivial edits, use strict mode for risky changes, and treat returned history as evidence, not instructions. Claude Code and Codex setup add managed Anchor instruction blocks to `CLAUDE.md` and `AGENTS.md`; VS Code and generic MCP setup write MCP config only.
 
 `anchor init` adds `.anchor/` to `.git/info/exclude` as a local-only exclude rule. That keeps `.anchor/index.sqlite` out of `git status` without adding or changing a committed `.gitignore` file.
+
+`anchor init` also installs local autosync by default. Repo memory refreshes daily with incremental `anchor sync --all`, org memory refreshes daily with `anchor org sync --no-graph` when org configs already exist, and org graphs rebuild weekly. Autosync uses your machine scheduler (`launchd`, user `systemd` timer, cron fallback, or Windows Task Scheduler), writes logs to `~/.anchor/logs/autosync/`, and never stores GitHub tokens. Use `anchor init --no-autosync` or `anchor init --autosync off` to opt out.
 
 ## Which Command Should I Run?
 
@@ -217,7 +220,7 @@ anchor index-all --concurrency 2
 anchor health
 ```
 
-Daily refresh after the first index:
+Daily refresh after the first index is automatic after `anchor init`. To refresh manually or repair a stale index:
 
 ```bash
 anchor sync
@@ -337,7 +340,7 @@ anchor sync --all --concurrency 6
 anchor sync --no-code
 ```
 
-`anchor sync` is safe to run repeatedly. Use `--all` to fetch every merged PR updated since the sync cursor. Use `--force` to rebuild the local database. Codebase indexing is refreshed by default unless `--no-code` is passed.
+`anchor sync` is safe to run repeatedly. Use `--all` to fetch every merged PR updated since the sync cursor. Use `--force` to rebuild the local database. Codebase indexing is refreshed by default unless `--no-code` is passed. Scheduled repo autosync runs the same incremental path with `--all --concurrency 2` and falls back to code-only refresh if GitHub auth is unavailable.
 
 ## Org Memory
 
@@ -392,7 +395,7 @@ Use `--repo owner/name` to retry one allowlisted repo. Use `--concurrency 1-3` t
 Use `--repo owner/name` to refresh one repo, `--code-only` when GitHub auth is unavailable or PR history is already fresh, `--prs-only` when clones are already fresh, `--no-graph` when you want to skip the final cross-repo graph rebuild, and `--force` after stale index warnings.
 
 `anchor org sync`:
-Use this as the daily org command. Add `--repo owner/name` for a focused retry, `--since YYYY-MM-DD` for targeted PR catch-up, `--concurrency 1-3` for large allowlists, `--no-graph` when you want clone/index work to finish first, and `--force` when status reports stale org data. If a recent previous sync already finished PR/code indexing but was interrupted before graph completion, rerunning `anchor org sync` resumes from the graph phase and skips redundant PR fetches for completed repos.
+Use this as the manual org refresh command. Autosync runs it daily with `--no-graph --concurrency 1` for every configured org, then runs `anchor org graph` weekly. Add `--repo owner/name` for a focused retry, `--since YYYY-MM-DD` for targeted PR catch-up, `--concurrency 1-3` for large allowlists, `--no-graph` when you want clone/index work to finish first, and `--force` when status reports stale org data. If a recent previous sync already finished PR/code indexing but was interrupted before graph completion, rerunning `anchor org sync` resumes from the graph phase and skips redundant PR fetches for completed repos.
 
 While sync/index/graph runs, Anchor writes a small local heartbeat file at `~/.anchor/orgs/<org>/sync-heartbeat.json`. `anchor org status --org my-org` reads that first, so it can still show the active command, pid, repo, phase, elapsed time, and last update age even if SQLite is temporarily locked by a writer.
 
@@ -545,7 +548,7 @@ Use `--file path` for a narrow file brief, `--area api` for an area brief, and `
 
 `anchor review` reads the current `git diff` by default and groups evidence-backed findings into blockers, risks, historical constraints, architecture concerns, regression checks, and exact recommended tests. It never approves or rejects code automatically.
 
-`anchor health` focuses on index quality: partial PR history, stale code index, invalid team rules, last failed index run, and the next suggested command.
+`anchor health` focuses on index quality: partial PR history, stale code index, invalid team rules, last failed index run, autosync status, and the next suggested command.
 
 `--share` mode prints compact Markdown for Slack or PR comments: file summary, key constraints, known regressions, likely tests, and PR citations.
 
@@ -1010,6 +1013,9 @@ Run `anchor rules validate`. Each rule needs an id, category, text, and at least
 
 Index health warning:
 Run `anchor health` for the reason and suggested next command. Common fixes are `anchor index-code`, `anchor sync`, or `anchor index-all`.
+
+Autosync not running:
+Run `anchor doctor` and `anchor health`. Anchor reports whether local autosync is configured, whether scheduler files exist, and whether the last scheduled run failed. Logs are under `~/.anchor/logs/autosync/`. Rerun `anchor init` to reinstall scheduler jobs, or opt out with `anchor init --no-autosync`.
 
 No related tests:
 Run `anchor index-code` and confirm test files are not ignored by git. Anchor only links tests it can see in tracked or non-ignored files.

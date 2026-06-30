@@ -58,6 +58,7 @@ export type OrgIndexOptions = {
   force?: boolean;
   noGraph?: boolean;
   since?: string;
+  all?: boolean;
   concurrency?: number;
   token?: string;
   command?: "org index" | "org sync";
@@ -238,7 +239,8 @@ export async function indexOrgRepos(
             const pullRequests = await fetchPullRequests({
               token: auth.token,
               repo: repo.fullName,
-              limit: 200,
+              limit: options.all ? undefined : 200,
+              all: options.all,
               since,
               detailConcurrency: options.concurrency,
               onProgress: options.onFetchProgress,
@@ -256,8 +258,8 @@ export async function indexOrgRepos(
             history = indexPullRequests(db, pullRequests, {
               cwd: localPath,
               repo: repo.fullName,
-              historyCoverage: "limited",
-              historyLimit: 200,
+              historyCoverage: options.all ? "all" : "limited",
+              historyLimit: options.all ? undefined : 200,
               historySince: since,
               onProgress: options.onPrIndexProgress,
             });

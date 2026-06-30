@@ -30,6 +30,7 @@ gh auth login
 anchor init
 anchor init --target cursor,codex,claude-code
 anchor init --all-targets
+anchor init --target cursor --no-autosync
 anchor demo
 anchor prompts --target codex
 anchor index
@@ -85,7 +86,7 @@ Full PR history:
 anchor index-all --concurrency 2
 ```
 
-Daily refresh:
+Daily refresh is installed automatically by `anchor init`. To refresh manually:
 
 ```bash
 anchor sync
@@ -116,7 +117,7 @@ Use `--repo owner/name` when git remote detection is unavailable, `--limit 50` f
 Use for complete merged PR history. Prefer `--concurrency 1` or `--concurrency 2` on large repos. Use `--no-code` when code context is already fresh.
 
 `anchor sync`:
-Use after the first index. It is incremental and safe to rerun. Add `--all` for a full catch-up from the sync cursor, `--since YYYY-MM-DD` for a specific window, `--no-code` for PR-only refresh, and `--concurrency 1-10` when tuning rate-limit pressure.
+Use after the first index. It is incremental and safe to rerun. Scheduled autosync runs this daily with `--all --concurrency 2`. Add `--all` for a full catch-up from the sync cursor, `--since YYYY-MM-DD` for a specific window, `--no-code` for PR-only refresh, and `--concurrency 1-10` when tuning rate-limit pressure.
 
 `anchor index-code`:
 Use when you only need current-code context or do not have GitHub auth. Add `--force` when `anchor health` reports stale code records.
@@ -133,7 +134,7 @@ Use `--share` for Slack or PR-comment Markdown. Use `--diff-file change.diff` on
 Use `--file path` for file-level guidance, `--area api` for one architecture area, `--check` for the current diff, `--diff-file change.diff` for saved diffs, `--map --format mermaid` for docs, `--map --format json` for tooling, and `--write-doc` only when you intentionally want `ANCHOR_ARCHITECTURE.md`.
 
 `anchor org ...`:
-Use `--org my-org` on every org command. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--no-graph` with `org index`/`org sync` to postpone cross-repo graph rebuilds, `org graph` to rebuild only edges/API consumers, `org graph --open` to inspect the graph in a local browser UI, `--concurrency 1-3` with `org clone` and `org sync`, `--diff-file` and `--strict` with `org impact`, `--min-coverage` with `org ci`, and `--html`/`--open`/`--output` with `org map`, `org impact`, and `org ci` to generate local human-readable HTML reports.
+Use `--org my-org` on every org command. Autosync runs daily `org sync --no-graph --concurrency 1` and weekly `org graph` for org configs that already exist when `anchor init` runs. Use `--group` and `--alias` with `org add-repo`, `--repo` to retry one repo, `--code-only` or `--prs-only` with `org index`, `--no-graph` with `org index`/`org sync` to postpone cross-repo graph rebuilds, `org graph` to rebuild only edges/API consumers, `org graph --open` to inspect the graph in a local browser UI, `--concurrency 1-3` with `org clone` and `org sync`, `--diff-file` and `--strict` with `org impact`, `--min-coverage` with `org ci`, and `--html`/`--open`/`--output` with `org map`, `org impact`, and `org ci` to generate local human-readable HTML reports.
 
 Then reload your selected AI tool and use the MCP tools `anchor_get_context`, `anchor_explain_file`, `anchor_review_diff`, `anchor_get_architecture`, `anchor_check_architecture`, and `anchor_check_cross_repo_impact`. If a tool cannot call MCP yet, use `anchor context "<task>" --file path --strict` and paste the sanitized Markdown into the agent.
 
@@ -141,7 +142,7 @@ Existing PR indexing commands use GitHub GraphQL first for batched PR metadata, 
 
 Use `anchor_get_context` with `strict: true` when the agent should only receive non-stale, high-confidence evidence.
 
-Anchor indexes PR history, local code chunks, likely related tests, regression memory, architecture patterns, and team-approved rules. `anchor health` and `anchor_index_status` include a local coverage score. All data stays in `.anchor/index.sqlite` on your machine.
+Anchor indexes PR history, local code chunks, likely related tests, regression memory, architecture patterns, and team-approved rules. `anchor health` and `anchor_index_status` include a local coverage score and autosync status. All data stays in `.anchor/index.sqlite` on your machine.
 
 Org Memory is opt-in. `anchor org ...` commands store allowlisted repo clones and one org SQLite database under `~/.anchor/orgs/<org>/`, then expose cross-repo context through `anchor_get_org_context`, `anchor_check_cross_repo_impact`, `anchor_find_api_consumers`, `anchor_get_org_architecture`, and `anchor_org_index_status`.
 
@@ -153,6 +154,6 @@ Architecture Memory is refreshed by `anchor index`, `anchor index-all`, `anchor 
 
 Docs, adoption signals, and feedback links: https://anchor-mcp.netlify.app
 
-`anchor init` also adds `.anchor/` to `.git/info/exclude`, keeping the local SQLite index out of git without changing `.gitignore`.
+`anchor init` also adds `.anchor/` to `.git/info/exclude`, keeping the local SQLite index out of git without changing `.gitignore`. It installs local autosync by default using your OS scheduler and logs to `~/.anchor/logs/autosync/`. Use `anchor init --no-autosync` or `anchor init --autosync off` to opt out.
 
 Full documentation: https://github.com/pratik7368patil/anchor#readme

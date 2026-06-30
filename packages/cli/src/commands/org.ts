@@ -36,6 +36,7 @@ type OrgOptions = {
   alias?: string;
   group?: string;
   concurrency?: number;
+  all?: boolean;
   codeOnly?: boolean;
   prsOnly?: boolean;
   graph?: boolean;
@@ -208,6 +209,7 @@ export async function runOrgIndex(options: OrgOptions & { command?: "org index" 
       force: options.force,
       since: options.since,
       concurrency: options.concurrency,
+      all: options.all,
       command,
       onLifecycleProgress: progress.onOrgProgress,
       onFetchProgress: progress.onFetchProgress,

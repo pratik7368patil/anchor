@@ -1,16 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
+import { fileURLToPath } from "node:url";
 import {
   ANCHOR_AGENT_TARGETS,
   type AnchorAgentScope,
   type AnchorAgentTarget,
+  type AutosyncInstallResult,
+  type AutosyncMode,
   anchorMcpEntry,
   agentTargetLabel,
   configureAgentTargets,
   detectGitHubRepo,
   detectGitRoot,
   ensureAnchorGitExclude,
+  installDefaultAutosync,
   parseAnchorAgentTargets,
   type AgentConfigResult,
 } from "@pratik7368patil/anchor-core";
@@ -21,17 +25,20 @@ export type InitResult = {
   gitExcludePath: string;
   gitExcludeUpdated: boolean;
   targets: AgentConfigResult[];
+  autosync: AutosyncInstallResult;
 };
 
 export type InitOptions = {
   targets: AnchorAgentTarget[];
   scope?: AnchorAgentScope;
+  autosync?: AutosyncMode;
 };
 
 export type InitCliOptions = {
   target?: string;
   allTargets?: boolean;
   scope?: AnchorAgentScope;
+  autosync?: AutosyncMode | false;
 };
 
 function anchorMcpEntryForCurrentInstall(): Record<string, unknown> {
@@ -45,6 +52,14 @@ function anchorMcpEntryForCurrentInstall(): Record<string, unknown> {
     return anchorMcpEntry(invokedPath, ["serve"]);
   }
   return anchorMcpEntry("npx", ["-y", "@pratik7368patil/anchor@latest", "serve"]);
+}
+
+function anchorScriptPathForAutosync(): string {
+  const invokedPath = process.argv[1];
+  if (invokedPath && path.isAbsolute(invokedPath) && fs.existsSync(invokedPath) && !invokedPath.endsWith(".ts")) {
+    return invokedPath;
+  }
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../index.js");
 }
 
 export function runInit(cwd: string, options: InitOptions): InitResult {
@@ -73,6 +88,12 @@ export function runInit(cwd: string, options: InitOptions): InitResult {
     anchorEntry: anchorMcpEntryForCurrentInstall(),
   });
   const gitExclude = ensureAnchorGitExclude(gitRoot);
+  const autosync = installDefaultAutosync({
+    cwd: gitRoot,
+    mode: options.autosync ?? "daily",
+    nodePath: process.execPath,
+    anchorScriptPath: anchorScriptPathForAutosync(),
+  });
 
   return {
     gitRoot,
@@ -80,6 +101,7 @@ export function runInit(cwd: string, options: InitOptions): InitResult {
     gitExcludePath: gitExclude.path,
     gitExcludeUpdated: gitExclude.updated,
     targets,
+    autosync,
   };
 }
 
@@ -104,6 +126,24 @@ export function printInitResult(result: InitResult): void {
   console.log(
     "No GitHub token was written to disk. Anchor can use GITHUB_TOKEN, GH_TOKEN, or gh auth token for indexing.",
   );
+  console.log("");
+  if (result.autosync.enabled) {
+    console.log("Autosync:");
+    console.log(`  Config: ${result.autosync.configPath}`);
+    for (const job of result.autosync.jobs) {
+      console.log(
+        `  ${job.installed ? "✓" : "!"} ${job.label} (${job.scheduler}, ${job.nextRunHint})`,
+      );
+      console.log(`    Logs: ${job.logPath}`);
+      if (!job.installed) console.log(`    ${job.message}`);
+    }
+    if (result.autosync.warnings.length > 0) {
+      for (const warning of result.autosync.warnings) console.log(`  Warning: ${warning}`);
+    }
+    console.log("  Opt out: anchor init --no-autosync");
+  } else {
+    console.log("Autosync: disabled.");
+  }
   console.log("");
   console.log("Next commands:");
   console.log("1. anchor index-code");

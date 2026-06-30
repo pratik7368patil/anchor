@@ -1,3 +1,5 @@
+import type { AutosyncStatus } from "./autosync.js";
+
 export type SourceType =
   | "pr_body"
   | "review_comment"
@@ -1164,6 +1166,7 @@ export type AnchorIndexHealth = {
   coverageGrade: CoverageGrade;
   coverageReasons: string[];
   suggestedPrompts: string[];
+  autosync?: AutosyncStatus;
 };
 
 export type SemanticStatus = {
@@ -1212,6 +1215,7 @@ export type IndexStatus = {
   suggestedPrompts: string[];
   githubTokenConfigured: boolean;
   health: "ok" | "missing_database" | "schema_invalid" | "empty_index";
+  autosync?: AutosyncStatus;
 };
 
 export type DoctorCheck = {
