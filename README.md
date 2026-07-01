@@ -348,9 +348,9 @@ Anchor can also build a local, allowlisted organization memory across multiple r
 
 ```bash
 anchor org init --org my-org
-anchor org add-repo my-org/backend-api --group backend
-anchor org add-repo my-org/frontend-app --group frontend
-anchor org add-repo my-org/shared-sdk --group shared
+anchor org add-repo --org my-org
+anchor org add-repo --org my-org --search api
+anchor org add-repo my-org/backend-api --org my-org --group backend
 anchor org sync --org my-org
 anchor org status --org my-org
 ```
@@ -385,8 +385,8 @@ anchor org ci --org my-org --strict --min-coverage 70 --html
 
 Use `--org my-org` on every org command to select the local namespace under `~/.anchor/orgs/<org>`.
 
-`anchor org add-repo <owner/name>`:
-Use `--group backend|frontend|shared|infra|docs|unknown` so org maps and impact reports are easier to scan. Use `--alias name` when the full repo name is long or similar to another repo.
+`anchor org add-repo`:
+Run without `<owner/name>` to fetch readable GitHub repos for `--org` and open a searchable multi-select picker. Type to filter, use arrows to move, space to select, and enter to confirm. Use `--search text` to prefill the picker, `--include-archived` when you intentionally want archived repos, and `--group backend|frontend|shared|infra|docs|unknown` to apply one group to every selected repo. In scripts, CI, or non-TTY shells, pass `owner/name` explicitly. Use `--alias name` only with one explicit repo.
 
 `anchor org clone`:
 Use `--repo owner/name` to retry one allowlisted repo. Use `--concurrency 1-3` to control local/network pressure while cloning or pulling multiple repos. Anchor automatically shows live progress in interactive terminals and plain logs in CI.
@@ -859,6 +859,7 @@ pnpm --filter @pratik7368patil/anchor start -- eval init
 pnpm --filter @pratik7368patil/anchor start -- eval run
 pnpm --filter @pratik7368patil/anchor start -- ci
 pnpm --filter @pratik7368patil/anchor start -- org init --org my-org
+pnpm --filter @pratik7368patil/anchor start -- org add-repo --org my-org --search api
 pnpm --filter @pratik7368patil/anchor start -- org add-repo my-org/backend-api --org my-org --group backend
 pnpm --filter @pratik7368patil/anchor start -- org sync --org my-org
 pnpm --filter @pratik7368patil/anchor start -- org graph --org my-org --html

@@ -19,7 +19,18 @@ import { runTestCommand } from "./test-command.js";
 import { runOnboarding } from "./onboarding.js";
 import { runCi } from "./ci.js";
 import { runEvalAdd, runEvalInit, runEvalRun } from "./eval.js";
-import { runOrgCi, runOrgGraph, runOrgImpact, runOrgInit, runOrgMap } from "./org.js";
+import {
+  fetchGitHubOrgRepos,
+  filterGitHubOrgRepos,
+  inferOrgRepoGroup,
+  runOrgAddRepoCommand,
+  runOrgAddRepos,
+  runOrgCi,
+  runOrgGraph,
+  runOrgImpact,
+  runOrgInit,
+  runOrgMap,
+} from "./org.js";
 import { runPlaybooksInit, runPlaybooksSuggest } from "./playbooks.js";
 import {
   runRulesAdd,
@@ -557,6 +568,201 @@ describe("progress reporter", () => {
       else process.env.ANCHOR_PROGRESS = previousProgress;
       if (previousNoColor === undefined) delete process.env.NO_COLOR;
       else process.env.NO_COLOR = previousNoColor;
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+});
+
+describe("org add-repo command", () => {
+  it("keeps direct owner/name add working for scripts", async () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const originalFetch = globalThis.fetch;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          clone_url: "https://github.com/acme/backend-api.git",
+          default_branch: "main",
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+    try {
+      runOrgInit({ org: "acme" });
+      const result = await runOrgAddRepoCommand("acme/backend-api", {
+        org: "acme",
+        group: "backend",
+      });
+      expect(result.repo?.fullName).toBe("acme/backend-api");
+      expect(result.repo?.group).toBe("backend");
+      expect(result.added).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+
+  it("requires an explicit repo when picker mode is used outside a terminal", async () => {
+    const input = new PassThrough() as NodeJS.ReadStream;
+    const output = new PassThrough() as NodeJS.WriteStream;
+    input.isTTY = false;
+    output.isTTY = false;
+    await expect(
+      runOrgAddRepoCommand(undefined, { org: "acme" }, { input, output }),
+    ).rejects.toThrow("Pass owner/name explicitly");
+  });
+
+  it("fetches org repos with pagination and filters archived repos by default", async () => {
+    const calls: string[] = [];
+    const pages = [
+      Array.from({ length: 100 }, (_, index) => ({
+        full_name: `acme/repo-${index}`,
+        clone_url: `https://github.com/acme/repo-${index}.git`,
+        default_branch: "main",
+        archived: index === 3,
+        private: false,
+      })),
+      [
+        {
+          full_name: "acme/membership-frontend",
+          clone_url: "https://github.com/acme/membership-frontend.git",
+          default_branch: "main",
+          archived: false,
+          private: true,
+          description: "Membership UI",
+        },
+      ],
+    ];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify(pages.shift() ?? []), { status: 200 });
+    }) as typeof fetch;
+
+    const repos = await fetchGitHubOrgRepos("acme", {
+      token: "test-auth-value",
+      fetchImpl,
+    });
+    expect(calls).toHaveLength(2);
+    expect(repos.some((repo) => repo.fullName === "acme/repo-3")).toBe(false);
+    expect(repos.some((repo) => repo.fullName === "acme/membership-frontend")).toBe(true);
+
+    const archivedRepos = await fetchGitHubOrgRepos("acme", {
+      token: "test-auth-value",
+      includeArchived: true,
+      fetchImpl: (async () =>
+        new Response(
+          JSON.stringify([
+            {
+              full_name: "acme/old-api",
+              clone_url: "https://github.com/acme/old-api.git",
+              default_branch: "main",
+              archived: true,
+              private: false,
+            },
+          ]),
+          { status: 200 },
+        )) as typeof fetch,
+    });
+    expect(archivedRepos.map((repo) => repo.fullName)).toEqual(["acme/old-api"]);
+  });
+
+  it("filters picker candidates with --search and requires GitHub auth for discovery", async () => {
+    const repos = [
+      {
+        fullName: "acme/membership-frontend",
+        cloneUrl: "https://github.com/acme/membership-frontend.git",
+        defaultBranch: "main",
+        archived: false,
+        private: true,
+        description: "Member portal",
+      },
+      {
+        fullName: "acme/billing-backend",
+        cloneUrl: "https://github.com/acme/billing-backend.git",
+        defaultBranch: "main",
+        archived: false,
+        private: true,
+      },
+    ];
+    expect(filterGitHubOrgRepos(repos, "member").map((repo) => repo.fullName)).toEqual([
+      "acme/membership-frontend",
+    ]);
+    await expect(fetchGitHubOrgRepos("acme", { token: "" })).rejects.toThrow(
+      "GitHub authentication is required",
+    );
+  });
+
+  it("writes multiple selected repos idempotently with inferred or overridden groups", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    try {
+      runOrgInit({ org: "acme" });
+      expect(inferOrgRepoGroup("acme/web-app")).toBe("frontend");
+      expect(inferOrgRepoGroup("acme/api-service")).toBe("backend");
+
+      const selected = [
+        {
+          fullName: "acme/web-app",
+          cloneUrl: "https://github.com/acme/web-app.git",
+          defaultBranch: "main",
+          archived: false,
+          private: true,
+        },
+        {
+          fullName: "acme/api-service",
+          cloneUrl: "https://github.com/acme/api-service.git",
+          defaultBranch: "main",
+          archived: false,
+          private: true,
+        },
+      ];
+      const added = runOrgAddRepos(selected, { org: "acme" });
+      expect(added.added).toBe(2);
+      expect(added.repos.map((repo) => `${repo.fullName}:${repo.group}`)).toEqual([
+        "acme/web-app:frontend",
+        "acme/api-service:backend",
+      ]);
+      const skipped = runOrgAddRepos(selected, { org: "acme" });
+      expect(skipped.skipped).toBe(2);
+
+      const overridden = runOrgAddRepos(selected, { org: "acme", group: "shared" });
+      expect(overridden.updated).toBe(2);
+      expect(overridden.repos.every((repo) => repo.group === "shared")).toBe(true);
+      const configText = fs.readFileSync(path.join(orgHome, "acme", "org.json"), "utf8");
+      expect(configText).not.toContain("test-auth-value");
+    } finally {
+      if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
+      else process.env.ANCHOR_ORG_HOME = previousOrgHome;
+    }
+  });
+
+  it("rejects aliases when multiple repos are selected", () => {
+    const previousOrgHome = process.env.ANCHOR_ORG_HOME;
+    const orgHome = tempDir();
+    process.env.ANCHOR_ORG_HOME = orgHome;
+    try {
+      runOrgInit({ org: "acme" });
+      expect(() =>
+        runOrgAddRepos(
+          [
+            {
+              fullName: "acme/web-app",
+              archived: false,
+              private: false,
+            },
+            {
+              fullName: "acme/api-service",
+              archived: false,
+              private: false,
+            },
+          ],
+          { org: "acme", alias: "app" },
+        ),
+      ).toThrow("--alias can only be used");
+    } finally {
       if (previousOrgHome === undefined) delete process.env.ANCHOR_ORG_HOME;
       else process.env.ANCHOR_ORG_HOME = previousOrgHome;
     }

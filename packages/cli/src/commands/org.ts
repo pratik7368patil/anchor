@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import * as readline from "node:readline";
 import { pathToFileURL } from "node:url";
 import {
   addOrgRepoConfig,
@@ -13,6 +14,7 @@ import {
   indexOrgRepos,
   initOrgConfig,
   loadOrgConfig,
+  maybeLoadOrgConfig,
   orgConfigPath,
   openOrgDatabase,
   openOrgDatabaseReadOnly,
@@ -25,7 +27,12 @@ import {
   validateOrgRepoFullName,
   validateOrgRepoGroup,
 } from "@pratik7368patil/anchor-core";
-import type { OrgRunTimelineSnapshot, OrgRunTimelineStepStatus } from "@pratik7368patil/anchor-core";
+import type {
+  AnchorOrgRepoConfig,
+  OrgRepoGroup,
+  OrgRunTimelineSnapshot,
+  OrgRunTimelineStepStatus,
+} from "@pratik7368patil/anchor-core";
 import { createProgressReporter, type ProgressMode } from "./progress.js";
 import { writeOrgGraphHtml } from "./org-graph-html.js";
 import { writeOrgReportHtml } from "./org-report-html.js";
@@ -35,6 +42,8 @@ type OrgOptions = {
   repo?: string;
   alias?: string;
   group?: string;
+  search?: string;
+  includeArchived?: boolean;
   concurrency?: number;
   all?: boolean;
   codeOnly?: boolean;
@@ -57,6 +66,38 @@ type OrgOptions = {
 type GitHubRepoMetadata = {
   cloneUrl?: string;
   defaultBranch?: string;
+};
+
+export type GitHubOrgRepo = GitHubRepoMetadata & {
+  fullName: string;
+  archived: boolean;
+  private: boolean;
+  description?: string;
+};
+
+type GitHubRepoDiscoveryOptions = {
+  includeArchived?: boolean;
+  token?: string;
+  fetchImpl?: typeof fetch;
+};
+
+type OrgAddRepoAction = {
+  repo: AnchorOrgRepoConfig;
+  action: "added" | "updated" | "skipped";
+};
+
+type OrgAddRepoResult = {
+  config: ReturnType<typeof addOrgRepoConfig>;
+  repos: AnchorOrgRepoConfig[];
+  actions: OrgAddRepoAction[];
+  added: number;
+  updated: number;
+  skipped: number;
+};
+
+type PickerIo = {
+  input?: NodeJS.ReadStream;
+  output?: NodeJS.WriteStream;
 };
 
 function requireOrg(options: OrgOptions): string {
@@ -115,6 +156,82 @@ async function resolveRepoMetadata(fullName: string): Promise<GitHubRepoMetadata
   }
 }
 
+export function inferOrgRepoGroup(fullNameOrName: string): OrgRepoGroup {
+  const name = fullNameOrName.includes("/")
+    ? (fullNameOrName.split("/").pop() ?? fullNameOrName)
+    : fullNameOrName;
+  const normalized = name.toLowerCase();
+  if (/\b(docs?|documentation|handbook)\b/.test(normalized)) return "docs";
+  if (/(infra|infrastructure|terraform|helm|k8s|kubernetes|ops|devops)/.test(normalized)) {
+    return "infra";
+  }
+  if (/(backend|api|server|service|worker|gateway)/.test(normalized)) return "backend";
+  if (/(frontend|web|ui|app|client|portal|dashboard)/.test(normalized)) return "frontend";
+  if (/(shared|core|common|sdk|lib|library|package|types?)/.test(normalized)) return "shared";
+  return "unknown";
+}
+
+export function filterGitHubOrgRepos(repos: GitHubOrgRepo[], query?: string): GitHubOrgRepo[] {
+  const normalized = query?.trim().toLowerCase();
+  if (!normalized) return repos;
+  return repos.filter((repo) =>
+    [repo.fullName, repo.fullName.split("/").pop() ?? "", repo.description ?? ""].some((value) =>
+      value.toLowerCase().includes(normalized),
+    ),
+  );
+}
+
+export async function fetchGitHubOrgRepos(
+  org: string,
+  options: GitHubRepoDiscoveryOptions = {},
+): Promise<GitHubOrgRepo[]> {
+  const authToken = options.token ?? resolveGitHubToken().token;
+  if (!authToken) {
+    throw new Error(
+      "GitHub authentication is required to search org repos. Run gh auth login, export GITHUB_TOKEN/GH_TOKEN, or pass owner/name explicitly.",
+    );
+  }
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const repos: GitHubOrgRepo[] = [];
+  for (let page = 1; ; page += 1) {
+    const url = `https://api.github.com/orgs/${encodeURIComponent(org)}/repos?type=all&sort=updated&per_page=100&page=${page}`;
+    const response = await fetchImpl(url, {
+      headers: {
+        authorization: `Bearer ${authToken}`,
+        accept: "application/vnd.github+json",
+        "user-agent": "anchor-local-mcp",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Could not list repositories for ${org} (${response.status}). Check org access, run gh auth login, or pass owner/name explicitly.`,
+      );
+    }
+    const pageItems = (await response.json()) as Array<{
+      full_name?: string;
+      clone_url?: string;
+      default_branch?: string;
+      archived?: boolean;
+      private?: boolean;
+      description?: string | null;
+    }>;
+    for (const item of pageItems) {
+      if (!item.full_name) continue;
+      if (item.archived && !options.includeArchived) continue;
+      repos.push({
+        fullName: validateOrgRepoFullName(item.full_name),
+        cloneUrl: item.clone_url,
+        defaultBranch: item.default_branch,
+        archived: Boolean(item.archived),
+        private: Boolean(item.private),
+        description: item.description ?? undefined,
+      });
+    }
+    if (pageItems.length < 100) break;
+  }
+  return repos.sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
 export function runOrgInit(options: OrgOptions) {
   const org = requireOrg(options);
   const config = initOrgConfig(org);
@@ -128,22 +245,242 @@ export function runOrgInit(options: OrgOptions) {
 }
 
 export async function runOrgAddRepo(repoFullName: string, options: OrgOptions) {
-  const org = requireOrg(options);
-  validateOrgRepoGroup(options.group);
   const metadata = await resolveRepoMetadata(repoFullName);
-  const config = addOrgRepoConfig(org, repoFullName, {
-    alias: options.alias,
-    group: options.group,
-    cloneUrl: metadata.cloneUrl,
-    defaultBranch: metadata.defaultBranch,
+  const result = runOrgAddRepos(
+    [
+      {
+        fullName: validateOrgRepoFullName(repoFullName),
+        archived: false,
+        private: false,
+        cloneUrl: metadata.cloneUrl,
+        defaultBranch: metadata.defaultBranch,
+      },
+    ],
+    options,
+  );
+  return { ...result, repo: result.repos[0] };
+}
+
+export async function runOrgAddRepoCommand(
+  repoFullName: string | undefined,
+  options: OrgOptions,
+  io: PickerIo = {},
+): Promise<OrgAddRepoResult & { repo?: AnchorOrgRepoConfig }> {
+  if (repoFullName) return runOrgAddRepo(repoFullName, options);
+  if (options.alias) {
+    throw new Error("--alias can only be used when adding one explicit owner/name repo.");
+  }
+  const org = requireOrg(options);
+  const input = io.input ?? process.stdin;
+  const output = io.output ?? process.stderr;
+  if (!input.isTTY || !output.isTTY) {
+    throw new Error(
+      "Interactive repo selection requires a terminal. Pass owner/name explicitly, for example: anchor org add-repo owner/name --org " +
+        org,
+    );
+  }
+  const discovered = await fetchGitHubOrgRepos(org, {
+    includeArchived: options.includeArchived,
   });
+  const candidates = filterGitHubOrgRepos(discovered, options.search);
+  if (candidates.length === 0) {
+    const suffix = options.search ? ` matching "${options.search}"` : "";
+    throw new Error(`No readable GitHub repositories found for ${org}${suffix}.`);
+  }
+  const selected = await selectOrgReposInteractively(discovered, {
+    initialSearch: options.search,
+    input,
+    output,
+  });
+  if (selected.length === 0) {
+    throw new Error("No repositories selected. Anchor org config was not changed.");
+  }
+  return runOrgAddRepos(selected, options);
+}
+
+export function runOrgAddRepos(repos: GitHubOrgRepo[], options: OrgOptions): OrgAddRepoResult {
+  const org = requireOrg(options);
+  const groupOverride = options.group ? validateOrgRepoGroup(options.group) : undefined;
+  if (options.alias && repos.length !== 1) {
+    throw new Error("--alias can only be used when adding one explicit owner/name repo.");
+  }
+  const before = maybeLoadOrgConfig(org);
+  const beforeByFullName = new Map(before?.repos.map((repo) => [repo.fullName, repo]) ?? []);
+  const actions: OrgAddRepoAction[] = [];
+  let config = before ?? initOrgConfig(org);
+  for (const repo of repos) {
+    const fullName = validateOrgRepoFullName(repo.fullName);
+    const existing = beforeByFullName.get(fullName);
+    const group = groupOverride ?? existing?.group ?? inferOrgRepoGroup(fullName);
+    config = addOrgRepoConfig(org, fullName, {
+      alias: options.alias,
+      group,
+      cloneUrl: repo.cloneUrl,
+      defaultBranch: repo.defaultBranch,
+    });
+    const saved = config.repos.find((item) => item.fullName === fullName);
+    if (!saved) continue;
+    actions.push({
+      repo: saved,
+      action: classifyOrgRepoAction(existing, saved),
+    });
+  }
   const db = openOrgDatabase(config.org);
   try {
     syncOrgConfigToDatabase(db, config);
-    return { config, repo: config.repos.find((item) => item.fullName === repoFullName) };
+    const added = actions.filter((item) => item.action === "added").length;
+    const updated = actions.filter((item) => item.action === "updated").length;
+    const skipped = actions.filter((item) => item.action === "skipped").length;
+    return {
+      config,
+      repos: actions.map((item) => item.repo),
+      actions,
+      added,
+      updated,
+      skipped,
+    };
   } finally {
     db.close();
   }
+}
+
+function classifyOrgRepoAction(
+  before: AnchorOrgRepoConfig | undefined,
+  after: AnchorOrgRepoConfig,
+): OrgAddRepoAction["action"] {
+  if (!before) return "added";
+  const same =
+    before.alias === after.alias &&
+    before.group === after.group &&
+    before.cloneUrl === after.cloneUrl &&
+    before.defaultBranch === after.defaultBranch &&
+    before.enabled === after.enabled;
+  return same ? "skipped" : "updated";
+}
+
+async function selectOrgReposInteractively(
+  candidates: GitHubOrgRepo[],
+  options: PickerIo & { initialSearch?: string },
+): Promise<GitHubOrgRepo[]> {
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stderr;
+  readline.emitKeypressEvents(input);
+  const rawInput = input as NodeJS.ReadStream & { isRaw?: boolean };
+  const wasRaw = Boolean(rawInput.isRaw);
+  if (input.setRawMode) input.setRawMode(true);
+  let query = options.initialSearch?.trim() ?? "";
+  let cursor = 0;
+  const selected = new Set<string>();
+
+  return await new Promise((resolve, reject) => {
+    let closed = false;
+    const cleanup = (): void => {
+      if (closed) return;
+      closed = true;
+      input.off("keypress", onKey);
+      if (input.setRawMode) input.setRawMode(wasRaw);
+      output.write("\x1b[?25h\n");
+    };
+    const currentRows = (): GitHubOrgRepo[] => filterGitHubOrgRepos(candidates, query);
+    const render = (): void => {
+      const rows = currentRows();
+      if (cursor >= rows.length) cursor = Math.max(0, rows.length - 1);
+      const width = output.columns && output.columns > 20 ? output.columns : 100;
+      const visible = visibleWindow(rows, cursor, 12);
+      output.write("\x1b[?25l\x1b[2J\x1b[H");
+      output.write("Anchor › Select org repositories\n\n");
+      output.write(`Search: ${query || "(type to filter)"}\n`);
+      output.write("Use ↑/↓ to move, space to select, enter to confirm, esc to cancel.\n\n");
+      if (rows.length === 0) {
+        output.write("No repositories match your search.\n");
+        return;
+      }
+      for (const { repo, index } of visible) {
+        const active = index === cursor ? "›" : " ";
+        const checked = selected.has(repo.fullName) ? "[x]" : "[ ]";
+        const group = inferOrgRepoGroup(repo.fullName);
+        const flags = [repo.private ? "private" : "public", repo.archived ? "archived" : undefined]
+          .filter(Boolean)
+          .join(", ");
+        const detail = flags ? ` ${flags}` : "";
+        output.write(
+          `${active} ${checked} ${truncate(repo.fullName, Math.max(24, width - 34))} [${group}]${detail}\n`,
+        );
+      }
+      output.write(`\nSelected: ${selected.size}\n`);
+    };
+    const onKey = (str: string, key: readline.Key): void => {
+      try {
+        const rows = currentRows();
+        if (key.ctrl && key.name === "c") {
+          cleanup();
+          reject(new Error("Repository selection cancelled."));
+          return;
+        }
+        if (key.name === "escape") {
+          cleanup();
+          resolve([]);
+          return;
+        }
+        if (key.name === "return") {
+          const selectedRepos = candidates.filter((repo) => selected.has(repo.fullName));
+          cleanup();
+          resolve(selectedRepos);
+          return;
+        }
+        if (key.name === "up") {
+          cursor = Math.max(0, cursor - 1);
+          render();
+          return;
+        }
+        if (key.name === "down") {
+          cursor = Math.min(Math.max(0, rows.length - 1), cursor + 1);
+          render();
+          return;
+        }
+        if (key.name === "space") {
+          const repo = rows[cursor];
+          if (repo) {
+            if (selected.has(repo.fullName)) selected.delete(repo.fullName);
+            else selected.add(repo.fullName);
+          }
+          render();
+          return;
+        }
+        if (key.name === "backspace" || key.name === "delete") {
+          query = query.slice(0, -1);
+          cursor = 0;
+          render();
+          return;
+        }
+        if (str && str >= " " && str !== "\x7f" && !key.ctrl && !key.meta) {
+          query += str;
+          cursor = 0;
+          render();
+        }
+      } catch (error) {
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    };
+    input.on("keypress", onKey);
+    render();
+  });
+}
+
+function visibleWindow(
+  rows: GitHubOrgRepo[],
+  cursor: number,
+  size: number,
+): Array<{ repo: GitHubOrgRepo; index: number }> {
+  const start = Math.max(0, Math.min(cursor - Math.floor(size / 2), rows.length - size));
+  return rows.slice(start, start + size).map((repo, offset) => ({ repo, index: start + offset }));
+}
+
+function truncate(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  if (maxLength <= 1) return value.slice(0, maxLength);
+  return `${value.slice(0, maxLength - 1)}…`;
 }
 
 export function runOrgRemoveRepo(repoFullName: string, options: OrgOptions) {
@@ -662,13 +999,23 @@ export function printOrgInit(result: ReturnType<typeof runOrgInit>): void {
   console.log(`Anchor org initialized: ${result.config.org}`);
   console.log(`Config: ${orgConfigPath(result.config.org)}`);
   console.log(`Database: ${result.databasePath}`);
-  console.log("Next: anchor org add-repo <owner/name> --org " + result.config.org);
+  console.log("Next: anchor org add-repo --org " + result.config.org);
 }
 
-export function printOrgAddRepo(result: Awaited<ReturnType<typeof runOrgAddRepo>>): void {
-  console.log(`Added org repo: ${result.repo?.fullName ?? "unknown"}`);
-  console.log(`Group: ${result.repo?.group ?? "unknown"}`);
-  console.log("Next: anchor org clone --org " + result.config.org);
+export function printOrgAddRepo(
+  result: Awaited<ReturnType<typeof runOrgAddRepoCommand>>,
+): void {
+  const total = result.repos.length;
+  console.log(
+    `Anchor org repos updated: ${total} repo${total === 1 ? "" : "s"} (${result.added} added, ${result.updated} updated, ${result.skipped} skipped)`,
+  );
+  for (const item of result.actions) {
+    console.log(`- ${item.action}: ${item.repo.fullName} [${item.repo.group}]`);
+  }
+  console.log("");
+  console.log("Next:");
+  console.log(`1. anchor org sync --org ${result.config.org} --no-graph`);
+  console.log(`2. anchor org graph --org ${result.config.org} --open`);
 }
 
 export function printOrgRemoveRepo(

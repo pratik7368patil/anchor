@@ -338,8 +338,8 @@ export const commandGroups: CommandGroup[] = [
         description: "Creates ~/.anchor/orgs/<org>/org.json and org.sqlite.",
       },
       {
-        command: "anchor org add-repo <owner/name>",
-        description: "Allowlists one repo with an optional alias and group.",
+        command: "anchor org add-repo",
+        description: "Fetches readable GitHub repos and opens a searchable allowlist picker.",
       },
       {
         command: "anchor org list",
@@ -1003,28 +1003,47 @@ export const commandDetails: Record<string, CommandDetail> = {
       },
     ],
   },
-  "anchor org add-repo <owner/name>": {
+  "anchor org add-repo": {
     recommendedUse:
-      "Use to explicitly allowlist one repo for org memory. Anchor never scans an org automatically.",
-    example: "anchor org add-repo my-org/backend-api --org my-org --group backend --alias backend",
+      "Use to search and multi-select the GitHub repos you want in org memory. Anchor never scans an org automatically.",
+    example: "anchor org add-repo --org my-org --search api",
     options: [
       {
         name: "--org name",
-        description: "Select the org namespace receiving the repo.",
-        useWhen: "Use it when adding repos from anywhere outside the org cache.",
+        description: "Select the org namespace and GitHub org/owner to search.",
+        useWhen: "Use it for every org add-repo run.",
+        example: "anchor org add-repo --org my-org",
+      },
+      {
+        name: "owner/name",
+        description: "Optional positional repo for direct scripted add.",
+        useWhen: "Use it in CI, non-TTY shells, or when you already know the repo full name.",
         example: "anchor org add-repo my-org/backend-api --org my-org",
+      },
+      {
+        name: "--search text",
+        description: "Prefill the searchable picker.",
+        useWhen: "Use it when the org has many repos and you know part of the name.",
+        example: "anchor org add-repo --org my-org --search membership",
+      },
+      {
+        name: "--include-archived",
+        description: "Include archived GitHub repos in the picker.",
+        useWhen: "Use it only when archived repos still matter for historical or migration context.",
+        example: "anchor org add-repo --org my-org --include-archived",
       },
       {
         name: "--alias name",
         description: "Set a short display name for the repo.",
-        useWhen: "Use it when full repo names are long or similar.",
+        useWhen: "Use it only with one explicit owner/name repo.",
         example: "anchor org add-repo my-org/backend-api --org my-org --alias backend",
       },
       {
         name: "--group backend|frontend|shared|infra|docs|unknown",
-        description: "Classify the repo for maps and impact output.",
-        useWhen: "Use it to make org maps and affected-repo summaries easier to scan.",
-        example: "anchor org add-repo my-org/frontend-app --org my-org --group frontend",
+        description: "Classify selected repos for maps and impact output.",
+        useWhen:
+          "Use it to apply one group to every selected repo. Without it, Anchor infers a conservative group from the repo name.",
+        example: "anchor org add-repo --org my-org --search frontend --group frontend",
       },
     ],
   },
@@ -1656,7 +1675,7 @@ export const seoLandingPages: SeoLandingPage[] = [
       "Surfaces impact checks through CLI and MCP before auth, access, API, schema, SDK, or shared-package changes.",
     ],
     command:
-      "anchor org init --org my-org\nanchor org add-repo my-org/backend-api --group backend\nanchor org add-repo my-org/frontend-app --group frontend\nanchor org sync --org my-org --no-graph\nanchor org graph --org my-org --open",
+      "anchor org init --org my-org\nanchor org add-repo --org my-org --search api\nanchor org add-repo --org my-org --search frontend\nanchor org sync --org my-org --no-graph\nanchor org graph --org my-org --open",
     privacyNote:
       "Org Memory is opt-in, local-only, read-only, and never scans every organization repo automatically.",
     relatedPaths: ["/docs/repo-and-org-memory", "/docs/cross-repo-impact-mcp", "/docs/org-memory"],

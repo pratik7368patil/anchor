@@ -1,6 +1,6 @@
 {
   "name": "@pratik7368patil/anchor-mcp-server",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "description": "MCP stdio server that serves local repo memory and org memory from GitHub PR history, code, tests, regressions, and cross-repo impact to AI coding agents.",
   "keywords": [
     "anchor",
