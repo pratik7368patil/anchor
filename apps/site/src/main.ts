@@ -621,7 +621,7 @@ anchor eval init
 anchor rules suggest
 anchor ci
 anchor org init --org my-org
-anchor org add-repo my-org/backend-api --group backend
+anchor org add-repo --org my-org --search api
 anchor org sync --org my-org --no-graph
 anchor org graph --org my-org --open`,
         true,
@@ -977,7 +977,7 @@ function renderOrgMemoryPage(): string {
       <div class="workflow-grid">
         <div>
           <strong>Explicit allowlist</strong>
-          <p><code>anchor org add-repo</code> adds only the repos you choose. Anchor never scans every org repo automatically.</p>
+          <p><code>anchor org add-repo --org my-org</code> opens a searchable picker for readable GitHub repos. Anchor never scans every org repo automatically.</p>
         </div>
         <div>
           <strong>Local cache</strong>
@@ -996,9 +996,9 @@ function renderOrgMemoryPage(): string {
         "Org rollout",
         "org-memory-code",
         `anchor org init --org my-org
-anchor org add-repo my-org/backend-api --group backend
-anchor org add-repo my-org/frontend-app --group frontend
-anchor org add-repo my-org/shared-sdk --group shared
+anchor org add-repo --org my-org --search api
+anchor org add-repo --org my-org --search frontend
+anchor org add-repo my-org/shared-sdk --org my-org --group shared
 anchor org sync --org my-org --no-graph
 anchor org graph --org my-org --open
 anchor org map --org my-org --open

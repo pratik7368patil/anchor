@@ -45,7 +45,7 @@ import {
   printOrgAddRepo,
   printOrgInit,
   printOrgRemoveRepo,
-  runOrgAddRepo,
+  runOrgAddRepoCommand,
   runOrgCi,
   runOrgClone,
   runOrgGraph,
@@ -576,13 +576,15 @@ org
 
 org
   .command("add-repo")
-  .description("Allowlist a repository for local org memory")
-  .argument("<owner/name>", "Repository full name")
+  .description("Allowlist one or more repositories for local org memory")
+  .argument("[owner/name]", "Repository full name for scripted/direct add")
   .requiredOption("--org <org>", "Org memory namespace")
   .option("--alias <name>", "Local clone alias")
   .option("--group <group>", "Repo group: backend, frontend, shared, infra, docs, or unknown")
+  .option("--search <query>", "Prefill the interactive repository picker search")
+  .option("--include-archived", "Include archived repositories in the interactive picker")
   .action(async (repo, options) => {
-    printOrgAddRepo(await runOrgAddRepo(repo, options));
+    printOrgAddRepo(await runOrgAddRepoCommand(repo, options));
   });
 
 org
