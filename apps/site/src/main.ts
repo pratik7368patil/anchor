@@ -668,7 +668,7 @@ function renderQuickstartPage(): string {
         <div>
           <span>01</span>
           <strong>Choose targets</strong>
-          <p><code>anchor init</code> asks where to configure Anchor and safely writes the selected MCP config and instructions.</p>
+          <p><code>anchor init</code> asks where to configure Anchor, writes selected MCP config/instructions, and installs local daily autosync.</p>
         </div>
         <div>
           <span>02</span>

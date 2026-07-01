@@ -118,11 +118,12 @@ export const workflowRecipes: WorkflowRecipe[] = [
       "Start with low concurrency for large repos. Anchor uses GraphQL first and stores resume checkpoints when rate limits require another run.",
   },
   {
-    title: "Daily refresh",
-    useWhen: "Use this after the first index to pick up new PRs and current code changes.",
+    title: "Fresh memory",
+    useWhen:
+      "Use this to verify the built-in autosync is healthy or to refresh manually after the first index.",
     commands: ["anchor sync", "anchor health"],
     notes:
-      "Sync is incremental and safe to run repeatedly. Add --no-code only when you want PR-only refresh.",
+      "Anchor init installs daily local autosync. Manual sync is incremental and safe to run repeatedly.",
   },
   {
     title: "Before editing with an AI agent",
@@ -436,7 +437,7 @@ const diffFileOption = (example: string): CommandOption => ({
 export const commandDetails: Record<string, CommandDetail> = {
   "anchor init": {
     recommendedUse:
-      "Run once from a repo root after installing Anchor. It asks which AI agents to configure, writes selected MCP config/instructions, and locally excludes .anchor/ from git.",
+      "Run once from a repo root after installing Anchor. It asks which AI agents to configure, writes selected MCP config/instructions, locally excludes .anchor/ from git, and installs daily local autosync by default.",
     example: "anchor init --target cursor,codex",
     options: [
       {
@@ -457,6 +458,18 @@ export const commandDetails: Record<string, CommandDetail> = {
         useWhen:
           "Use --scope user only for tools such as Antigravity that keep shared MCP config under the home directory.",
         example: "anchor init --target antigravity --scope user",
+      },
+      {
+        name: "--no-autosync",
+        description: "Skip local scheduler installation.",
+        useWhen: "Use it when a team or CI job manages Anchor refreshes separately.",
+        example: "anchor init --target cursor --no-autosync",
+      },
+      {
+        name: "--autosync daily|off",
+        description: "Explicitly choose daily autosync or turn it off.",
+        useWhen: "Use it in setup scripts where you want the default written down clearly.",
+        example: "anchor init --target cursor --autosync daily",
       },
     ],
   },
@@ -621,7 +634,7 @@ export const commandDetails: Record<string, CommandDetail> = {
   },
   "anchor sync": {
     recommendedUse:
-      "Run after the first index. It fetches PRs updated since the last sync and refreshes current code by default.",
+      "Run after the first index for manual refresh or repair. `anchor init` installs this as a daily local autosync job with full catch-up mode.",
     example: "anchor sync --concurrency 2",
     options: [
       {
@@ -664,7 +677,7 @@ export const commandDetails: Record<string, CommandDetail> = {
   },
   "anchor health": {
     recommendedUse:
-      "Use after indexing or before CI to inspect coverage, freshness, failed runs, team rules, and the next recommended command.",
+      "Use after indexing or before CI to inspect coverage, freshness, failed runs, autosync status, team rules, and the next recommended command.",
     example: "anchor health",
     options: [jsonOption("anchor health --json")],
   },
@@ -1100,7 +1113,7 @@ export const commandDetails: Record<string, CommandDetail> = {
   },
   "anchor org sync": {
     recommendedUse:
-      "Daily org command. It clone/pulls, indexes changed repos, syncs PR evidence, and rebuilds the cross-repo graph.",
+      "Manual org refresh command. Autosync runs it daily with `--no-graph` for existing org configs, while weekly autosync rebuilds the graph.",
     example: "anchor org sync --org my-org --concurrency 3",
     options: [
       {

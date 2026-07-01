@@ -358,6 +358,46 @@ describe("org memory", () => {
     }
   });
 
+  it("passes all-history mode through org sync PR fetching", async () => {
+    const root = tempDir();
+    const baseDir = path.join(root, "orgs");
+    const backendSource = createBackendRepo(root);
+    let config = initOrgConfig("acme", baseDir);
+    config = addOrgRepoConfig(
+      "acme",
+      "acme/backend-api",
+      {
+        alias: "backend-api",
+        group: "backend",
+        cloneUrl: backendSource,
+        defaultBranch: "main",
+      },
+      baseDir,
+    );
+
+    const db = openOrgDatabase("acme", baseDir);
+    try {
+      await cloneOrgRepos({ config, db, baseDir });
+      let received: { all?: boolean; limit?: number } | undefined;
+      await indexOrgRepos(db, config, {
+        token: "test-token",
+        command: "org sync",
+        prsOnly: true,
+        noGraph: true,
+        all: true,
+        baseDir,
+        fetchPullRequests: async (options) => {
+          received = { all: options.all, limit: options.limit };
+          return [];
+        },
+      });
+
+      expect(received).toEqual({ all: true, limit: undefined });
+    } finally {
+      db.close();
+    }
+  });
+
   it("does not fail on repeated org incremental indexing when test awareness rows already exist", async () => {
     const root = tempDir();
     const baseDir = path.join(root, "orgs");

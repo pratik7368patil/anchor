@@ -45,6 +45,7 @@ export * from "./evals/retrieval-evals.js";
 export * from "./feedback/feedback.js";
 export * from "./playbooks/playbooks.js";
 export * from "./watch.js";
+export * from "./autosync.js";
 export * from "./ci.js";
 export * from "./demo/demo-data.js";
 export * from "./github/client.js";

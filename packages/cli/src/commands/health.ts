@@ -24,6 +24,7 @@ export function printHealth(
   console.log(`History coverage: ${result.historyCoverage}`);
   console.log(`Stale code index: ${result.staleCodeIndex ? "yes" : "no"}`);
   console.log(`Architecture patterns: ${result.indexStatus.architecturePatternCount}`);
+  console.log(`Autosync: ${formatAutosync(result.autosync)}`);
   console.log(`Last successful run: ${result.lastSuccessfulRun ?? "never"}`);
   console.log(`Last failed run: ${result.lastFailedRun ?? "never"}`);
   console.log(`Suggested next command: ${result.suggestedNextCommand ?? "n/a"}`);
@@ -42,4 +43,14 @@ export function printHealth(
     console.log("Suggested prompts:");
     for (const prompt of result.suggestedPrompts.slice(0, 4)) console.log(`- ${prompt}`);
   }
+}
+
+function formatAutosync(result: ReturnType<typeof runHealth>["autosync"]): string {
+  if (!result?.configured) return "not configured";
+  if (!result.enabled) return "disabled";
+  const failed = result.jobs.filter((job) => job.failing).length;
+  const missing = result.jobs.filter((job) => job.enabled && !job.schedulerDetected).length;
+  if (failed > 0) return `enabled, ${failed} failing job(s)`;
+  if (missing > 0) return `enabled, ${missing} scheduler issue(s)`;
+  return `enabled (${result.jobs.length} job(s), ${result.scheduler})`;
 }

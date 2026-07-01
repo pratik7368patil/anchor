@@ -1,6 +1,6 @@
 {
   "name": "@pratik7368patil/anchor-core",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "description": "Local-first indexing and retrieval engine for AI coding agent repo memory, org memory, GitHub PR history, codebase evidence, regressions, and cross-repo impact.",
   "keywords": [
     "anchor",

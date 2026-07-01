@@ -1,6 +1,7 @@
 import type { AnchorIndexHealth, IndexStatus } from "./types.js";
 import { getIndexStatus } from "./db/database.js";
 import { validateTeamRulesFile } from "./rules/team-rules.js";
+import { getAutosyncStatus } from "./autosync.js";
 
 export function evaluateIndexHealth(status: IndexStatus, rulesOk: boolean): AnchorIndexHealth {
   const warnings: string[] = [];
@@ -11,6 +12,9 @@ export function evaluateIndexHealth(status: IndexStatus, rulesOk: boolean): Anch
   if (status.staleCodeIndex) warnings.push("Code index is older than 7 days or has never run.");
   if (!rulesOk) warnings.push("Team rules file is missing or invalid.");
   if (status.lastFailedRun) warnings.push(`Last failed index run: ${status.lastFailedRun}.`);
+  if (status.autosync) {
+    warnings.push(...status.autosync.warnings.map((warning) => `Autosync: ${warning}`));
+  }
 
   const hasError = status.health === "missing_database" || status.health === "schema_invalid";
   const healthStatus = hasError ? "error" : warnings.length > 0 ? "warning" : "ok";
@@ -26,6 +30,7 @@ export function evaluateIndexHealth(status: IndexStatus, rulesOk: boolean): Anch
     coverageGrade: status.coverageGrade,
     coverageReasons: status.coverageReasons,
     suggestedPrompts: status.suggestedPrompts,
+    autosync: status.autosync,
   };
 }
 
@@ -33,6 +38,7 @@ export function getAnchorIndexHealth(
   cwd: string,
 ): AnchorIndexHealth & { indexStatus: IndexStatus } {
   const indexStatus = getIndexStatus(cwd);
+  indexStatus.autosync = getAutosyncStatus({ cwd });
   const rulesValidation = validateTeamRulesFile(cwd);
   return {
     ...evaluateIndexHealth(indexStatus, rulesValidation.ok),

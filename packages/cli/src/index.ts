@@ -39,6 +39,7 @@ import {
   runPlaybooksSuggest,
 } from "./commands/playbooks.js";
 import { runWatch } from "./commands/watch.js";
+import { runAutosyncInternal } from "./commands/autosync.js";
 import {
   printJsonOrMarkdown,
   printOrgAddRepo,
@@ -143,6 +144,11 @@ function parseInitScopeOption(value: string): "project" | "user" {
   throw new Error("Invalid init scope. Use project or user.");
 }
 
+function parseAutosyncOption(value: string): "daily" | "off" {
+  if (value === "daily" || value === "off") return value;
+  throw new Error("Invalid autosync mode. Use daily or off.");
+}
+
 function readPackageVersion(): string {
   try {
     const packageJsonPath = path.resolve(
@@ -169,9 +175,15 @@ program
   .option("--target <targets>", "Comma-separated targets: cursor,claude-code,codex,vscode,antigravity,generic")
   .option("--all-targets", "Configure every supported target where safe")
   .option("--scope <scope>", "Configuration scope: project or user", parseInitScopeOption, "project")
+  .option("--autosync <mode>", "Autosync mode: daily or off", parseAutosyncOption, "daily")
+  .option("--no-autosync", "Skip local daily autosync scheduling")
   .action(async (options) => {
     const targets = await resolveInitTargets(options);
-    const result = runInit(process.cwd(), { targets, scope: options.scope });
+    const result = runInit(process.cwd(), {
+      targets,
+      scope: options.scope,
+      autosync: options.autosync === false ? "off" : options.autosync,
+    });
     printInitResult(result);
   });
 
@@ -463,6 +475,19 @@ program
   .option("--repo <owner/name>", "Repository name to associate with the code index")
   .action((options) => {
     runWatch(process.cwd(), options);
+  });
+
+const internal = program.command("internal", { hidden: true }).description("Internal Anchor commands");
+
+internal
+  .command("autosync-run")
+  .description("Run a scheduled Anchor autosync job")
+  .requiredOption("--kind <kind>", "Autosync kind: repo, org, or org-graph")
+  .option("--cwd <repoRoot>", "Repo root for repo autosync")
+  .option("--org <org>", "Org name for org autosync")
+  .option("--no-graph", "Skip org graph rebuild")
+  .action(async (options) => {
+    await runAutosyncInternal(options);
   });
 
 program
