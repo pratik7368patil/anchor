@@ -58,6 +58,7 @@ export * from "./org/config.js";
 export * from "./org/database.js";
 export * from "./org/heartbeat.js";
 export * from "./org/clone.js";
+export * from "./org/docs.js";
 export * from "./org/graph.js";
 export * from "./org/index.js";
 export * from "./org/impact.js";

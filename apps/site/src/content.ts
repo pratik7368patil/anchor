@@ -81,6 +81,7 @@ anchor architecture --check
 anchor review --share
 anchor org sync --org my-org --no-graph
 anchor org graph --org my-org --open
+anchor org docs --org my-org --changed-only --open
 anchor org map --org my-org --open
 anchor org impact --org my-org --repo my-org/backend-api --strict --open
 anchor org ci --org my-org --strict --min-coverage 70 --html
@@ -360,6 +361,10 @@ export const commandGroups: CommandGroup[] = [
       {
         command: "anchor org graph",
         description: "Rebuilds cross-repo edges and API consumers from already-indexed org data.",
+      },
+      {
+        command: "anchor org docs",
+        description: "Generates a linked local static HTML docs site with offline search.",
       },
       {
         command: "anchor org status",
@@ -1263,6 +1268,45 @@ export const commandDetails: Record<string, CommandDetail> = {
         example: "anchor org map --org my-org --html --output /tmp/anchor-org-map.html",
       },
       jsonOption("anchor org map --org my-org --json"),
+    ],
+  },
+  "anchor org docs": {
+    recommendedUse:
+      "Use after org graph to generate a local browsable docs site across every allowlisted repo.",
+    example: "anchor org docs --org my-org --changed-only --open",
+    options: [
+      {
+        name: "--org name",
+        description: "Select the org namespace.",
+        useWhen: "Use it for every org docs run.",
+        example: "anchor org docs --org my-org",
+      },
+      {
+        name: "--output path",
+        description: "Choose the generated docs-site directory.",
+        useWhen: "Use it when saving a docs snapshot outside the default org cache.",
+        example: "anchor org docs --org my-org --output /tmp/acme-docs",
+      },
+      {
+        name: "--open",
+        description: "Generate the docs site and open index.html in the default browser.",
+        useWhen: "Use it for local onboarding, demos, and architecture walkthroughs.",
+        example: "anchor org docs --org my-org --open",
+      },
+      {
+        name: "--changed-only",
+        description: "Skip unchanged repo pages when the previous manifest still matches.",
+        useWhen: "Use it after normal org sync and graph runs.",
+        example: "anchor org docs --org my-org --changed-only",
+      },
+      {
+        name: "--force",
+        description: "Regenerate repo pages even when changed-only would skip them.",
+        useWhen: "Use it after changing docs rendering or when a local file was deleted.",
+        example: "anchor org docs --org my-org --changed-only --force",
+      },
+      strictOption("anchor org docs --org my-org --strict"),
+      jsonOption("anchor org docs --org my-org --json"),
     ],
   },
   "anchor org impact": {
