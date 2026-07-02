@@ -362,6 +362,7 @@ Org data is stored under:
   org.json
   org.sqlite
   repos/
+  docs-site/
 ```
 
 `org.json` is the explicit allowlist. `anchor org clone` shallow-clones missing repos and pulls existing managed clones. It does not run install, build, tests, branch creation, commits, pushes, or GitHub write APIs.
@@ -376,6 +377,7 @@ anchor org sync --org my-org --since 2026-01-01
 anchor org sync --org my-org --no-graph --concurrency 2
 anchor org graph --org my-org
 anchor org graph --org my-org --open
+anchor org docs --org my-org --changed-only --open
 anchor org map --org my-org --open
 anchor org impact --org my-org --repo my-org/backend-api --strict --open
 anchor org ci --org my-org --strict --min-coverage 70 --html
@@ -407,8 +409,12 @@ For large organizations, split the expensive phases:
 ```bash
 anchor org sync --org my-org --no-graph --concurrency 2
 anchor org graph --org my-org --open
+anchor org docs --org my-org --changed-only --open
 anchor org status --org my-org
 ```
+
+`anchor org docs`:
+Generates a polished local static HTML documentation site from the existing org SQLite index. It writes `index.html`, repo pages, API and graph pages, offline browser search, and `manifest.json` under `~/.anchor/orgs/<org>/docs-site` by default. Run it after `anchor org graph`; add `--changed-only` to skip unchanged repo pages, `--force` to regenerate them anyway, `--strict` to fail when freshness or coverage is incomplete, `--open` to open the site, and `--output path/to/docs-site` to choose the output directory.
 
 `anchor org impact`:
 Use `--repo owner/name` to identify the repo being checked, `--diff-file change.diff` in CI or saved-diff review, `--strict` for API/auth/access/shared-package changes, and `--json` for automation. Add `--html` to write a standalone local impact report, `--open` to open it in your browser, and `--output path/to/impact.html` to choose the file path.
@@ -421,7 +427,7 @@ Use `--format mermaid|json` to choose CLI output. Add `--html` to write a standa
 
 Org Memory indexes current code and, when GitHub auth is available, PR history for each allowlisted repo into one local SQLite database. Re-runs are idempotent: unchanged code indexes are skipped, changed repos replace their current-code records, PRs are upserted by repo and number, recently completed PR syncs are reused when resuming unfinished graph work, and successful repos stay intact when another repo fails.
 
-Anchor builds deterministic cross-repo edges from package dependencies, imports, API/schema/client strings, SDK-like consumers, and indexed code evidence. Cross-repo edges and API consumers appear after the graph phase completes; use `anchor org graph` to rerun only that phase, or `anchor org graph --open` to inspect the graph in an offline interactive HTML view. This powers these MCP tools:
+Anchor builds deterministic cross-repo edges from package dependencies, imports, API/schema/client strings, SDK-like consumers, and indexed code evidence. Cross-repo edges and API consumers appear after the graph phase completes; use `anchor org graph` to rerun only that phase, `anchor org graph --open` to inspect the graph in an offline interactive HTML view, or `anchor org docs --changed-only --open` to generate a linked local docs site with search. This powers these MCP tools:
 
 ```text
 anchor_get_org_context

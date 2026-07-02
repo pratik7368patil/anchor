@@ -48,6 +48,7 @@ import {
   runOrgAddRepoCommand,
   runOrgCi,
   runOrgClone,
+  runOrgDocs,
   runOrgGraph,
   runOrgImpact,
   runOrgIndex,
@@ -685,6 +686,22 @@ org
   .option("--json", "Print structured metadata as JSON")
   .action((options) => {
     printJsonOrMarkdown(runOrgMap(options), options);
+  });
+
+org
+  .command("docs")
+  .description("Generate a local static HTML documentation site for an allowlisted org")
+  .requiredOption("--org <org>", "Org memory namespace")
+  .option("--output <path>", "Directory for the generated docs site")
+  .option("--open", "Generate the docs site and open it in the default browser")
+  .option("--changed-only", "Skip unchanged repo pages when the previous manifest matches")
+  .option("--force", "Regenerate repo pages even when changed-only would skip them")
+  .option("--strict", "Mark the command failed when docs coverage or freshness is incomplete")
+  .option("--json", "Print structured docs generation result as JSON")
+  .action((options) => {
+    const result = runOrgDocs(options);
+    printJsonOrMarkdown(result, options);
+    if (options.strict && !result.metadata.ok) process.exitCode = 1;
   });
 
 org

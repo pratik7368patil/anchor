@@ -16,3 +16,4 @@ allowBuilds:
   s: true
   t: true
   u: true
+  better-sqlite3: true

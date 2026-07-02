@@ -9,6 +9,7 @@ import {
   checkOrgImpact,
   cloneOrgRepos,
   findOrgApiConsumers,
+  generateOrgDocsSite,
   getOrgArchitectureMap,
   getOrgStatus,
   indexOrgRepos,
@@ -60,6 +61,7 @@ type OrgOptions = {
   diffFile?: string;
   strict?: boolean;
   minCoverage?: number;
+  changedOnly?: boolean;
   command?: "org index" | "org sync" | "org clone" | "org graph";
 };
 
@@ -641,7 +643,7 @@ export function runOrgGraph(options: OrgOptions) {
         ? (options.output ?? path.join(path.dirname(orgDatabasePath(config.org)), "org-graph.html"))
         : undefined;
     const htmlResult = htmlPath ? writeOrgGraphHtml(config, graph, htmlPath) : undefined;
-    if (htmlResult && options.open) openLocalFile(htmlResult.filePath);
+    if (htmlResult && options.open) openLocalFile(htmlResult.filePath, "graph HTML");
     return {
       markdown: [
         "# Anchor Org Graph",
@@ -673,7 +675,7 @@ export function runOrgGraph(options: OrgOptions) {
   }
 }
 
-function openLocalFile(filePath: string): void {
+function openLocalFile(filePath: string, description = "file"): void {
   const url = pathToFileURL(filePath).href;
   try {
     if (process.platform === "darwin") {
@@ -687,7 +689,7 @@ function openLocalFile(filePath: string): void {
     execFileSync("xdg-open", [url], { stdio: "ignore" });
   } catch (error) {
     throw new Error(
-      `Wrote graph HTML to ${filePath}, but could not open it automatically: ${
+      `Wrote ${description} to ${filePath}, but could not open it automatically: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
@@ -709,7 +711,7 @@ export function runOrgMap(options: OrgOptions) {
       },
       resolveOrgHtmlOutput(config.org, options, "org-map.html"),
     );
-    if (options.open) openLocalFile(htmlResult.filePath);
+    if (options.open) openLocalFile(htmlResult.filePath, "HTML report");
     return {
       markdown: [
         result.markdown,
@@ -718,6 +720,31 @@ export function runOrgMap(options: OrgOptions) {
         options.open ? "Opened in your default browser." : "Open this file in a browser.",
       ].join("\n"),
       metadata: { ...result.metadata, htmlPath: htmlResult.filePath, opened: Boolean(options.open) },
+    };
+  } finally {
+    db.close();
+  }
+}
+
+export function runOrgDocs(options: OrgOptions) {
+  const config = loadOrgConfig(requireOrg(options));
+  const db = openOrgDatabaseReadOnly(config.org);
+  try {
+    const outputDir =
+      options.output ?? path.join(path.dirname(orgDatabasePath(config.org)), "docs-site");
+    const result = generateOrgDocsSite(db, config, {
+      outputDir,
+      changedOnly: options.changedOnly,
+      force: options.force,
+      strict: options.strict,
+    });
+    if (options.open) openLocalFile(result.metadata.indexPath, "docs site");
+    return {
+      markdown: [
+        result.markdown,
+        options.open ? "Opened in your default browser." : "Open index.html in a browser.",
+      ].join("\n"),
+      metadata: { ...result.metadata, opened: Boolean(options.open) },
     };
   } finally {
     db.close();
@@ -743,7 +770,7 @@ export function runOrgImpact(options: OrgOptions) {
       },
       resolveOrgHtmlOutput(config.org, options, "org-impact.html"),
     );
-    if (options.open) openLocalFile(htmlResult.filePath);
+    if (options.open) openLocalFile(htmlResult.filePath, "HTML report");
     return {
       markdown: [
         result.markdown,
@@ -795,7 +822,7 @@ export function runOrgCi(options: OrgOptions) {
       },
       resolveOrgHtmlOutput(config.org, options, "org-ci.html"),
     );
-    if (options.open) openLocalFile(htmlResult.filePath);
+    if (options.open) openLocalFile(htmlResult.filePath, "HTML report");
     return {
       markdown: [
         result.markdown,
